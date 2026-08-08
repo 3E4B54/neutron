@@ -605,10 +605,10 @@ test("assembler emits modern persistent Motoko actor shape", () => {
     ),
   );
   expect(source).toMatch(
-    /public query\(\{ caller = NeutronCaller \}\) func kernel_runtime_info[\s\S]*?assert\(NeutronKernel\.is_authorized\(NeutronCaller\)\)/,
+    /public query\(\{ caller = NeutronCaller \}\) func kernel_runtime_info[\s\S]*?assert\(NeutronKernel\.is_session_authorized\(NeutronCaller\)\)/,
   );
   expect(source).toMatch(
-    /func app_hello__hello_world[\s\S]*?assert\(NeutronKernel\.scope_active\(NeutronAppScope_a5_hello\)\);[\s\S]*?assert\(NeutronKernel\.is_authorized\(NeutronCaller\)\);[\s\S]*?NeutronAppInit_a5_hello\.hello_world/,
+    /func app_hello__hello_world[\s\S]*?assert\(NeutronKernel\.scope_active\(NeutronAppScope_a5_hello\)\);[\s\S]*?assert\(NeutronKernel\.is_app_authorized\(\{ caller = NeutronCaller; scope = NeutronAppScope_a5_hello \}\)\);[\s\S]*?NeutronAppInit_a5_hello\.hello_world/,
   );
   expect(source).toMatch(
     /func app_hello__hello_world[\s\S]*?app_usage_instruction_begin\(NeutronAppScope_a5_hello, 1_200_000\)[\s\S]*?NeutronAppInit_a5_hello\.hello_world[\s\S]*?app_usage_instruction_finish\(NeutronAppUsageMeasurement\)/,

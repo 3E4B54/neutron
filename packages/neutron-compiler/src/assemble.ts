@@ -1517,7 +1517,7 @@ function createRuntimeInfo(
       }];
       memories : [{ id : Text; owner : Text; version : Nat; schema : Text }];
     } {
-      assert(${KERNEL_INIT}.is_authorized(NeutronCaller));
+      assert(${KERNEL_INIT}.is_session_authorized(NeutronCaller));
       {
         deployment_id = "${deploymentId}";
         assembler_id = "${ASSEMBLER_ID}";
@@ -1593,9 +1593,16 @@ function create_func(
     return "";
   }
   no_inject(name);
+  const tenantReadableKernelMethod =
+    modname === "kernel" && name === "kernel_install_status";
+
   const authorization =
     conf.allow !== "unauthorized"
-      ? `        assert(${KERNEL_INIT}.is_authorized(NeutronCaller));\n`
+      ? modname === "kernel"
+        ? tenantReadableKernelMethod
+          ? `        assert(${KERNEL_INIT}.is_session_authorized(NeutronCaller));\n`
+          : `        assert(${KERNEL_INIT}.is_authorized(NeutronCaller));\n`
+        : `        assert(${KERNEL_INIT}.is_app_authorized({ caller = NeutronCaller; scope = ${appScopeName(modname)} }));\n`
       : "";
   const scopeGuard = appScopeGuard(modname, "        ");
   const systemInstantiation = kernelSystemInstantiation(modname, name);

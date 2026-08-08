@@ -28,6 +28,14 @@
       "type": "internal",
       "async": false
     },
+    "is_session_authorized": {
+      "type": "internal",
+      "async": false
+    },
+    "is_app_authorized": {
+      "type": "internal",
+      "async": false
+    },
     "kernel_check_authorized": {
       "type": "query",
       "async": false,

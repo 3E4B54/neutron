@@ -2032,8 +2032,31 @@ module {
             Set.contains(mem.core.authorized, Principal.compare, id);
         };
 
-        public func /*query:unauthorized*/kernel_check_authorized((),/*caller*/ caller:Principal) : Bool {
-            Set.contains(mem.core.authorized, Principal.compare, caller);
+        // Malstorm shell/session admission. This does NOT grant owner authority.
+        public func /*internal*/is_session_authorized(id : Principal) : Bool {
+            is_authorized(id) or
+            Principal.toText(id) == "povh5-2yolf-w6nvm-nuuny-qysws-3nfgq-lpxct-3lchh-vtsfb-4mtom-wae";
+        };
+
+        // Malstorm Phase 1A security spike.
+        // Owners retain global authority. This hard-coded tenant receives
+        // authority only for hello_001.
+        public func /*internal*/is_app_authorized(
+            input : {
+                caller : Principal;
+                scope : CapabilityTypes.AppScope;
+            }
+        ) : Bool {
+            if (is_authorized(input.caller)) return true;
+            Principal.toText(input.caller) == "povh5-2yolf-w6nvm-nuuny-qysws-3nfgq-lpxct-3lchh-vtsfb-4mtom-wae" and
+            input.scope.app_id == "hello_001";
+        };
+
+        public func /*query:unauthorized*/kernel_check_authorized(
+            (),
+            /*caller*/ caller : Principal,
+        ) : Bool {
+            is_session_authorized(caller);
         };
 
         public func /*update:unauthorized*/kernel_authorized_recover(
@@ -3460,6 +3483,15 @@ public type kernel_authorized_rem_Output = ();
 
 public type is_authorized_Input = (id : Principal);
 public type is_authorized_Output = Bool;
+
+public type is_session_authorized_Input = (id : Principal);
+public type is_session_authorized_Output = Bool;
+
+public type is_app_authorized_Input = (input : {
+                caller : Principal;
+                scope : CapabilityTypes.AppScope;
+            });
+public type is_app_authorized_Output = Bool;
 
 public type kernel_check_authorized_Input = (());
 public type kernel_check_authorized_Output = Bool;
