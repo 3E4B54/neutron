@@ -226,6 +226,28 @@ for (const app of config.apps) {
 const deploy =
   await readJson<JsonObject>(deployTemplatePath);
 
+const shardConfig = await readJson<{
+  shared: string[];
+}>("malstorm-shards.json");
+
+if (
+  !Array.isArray(shardConfig.shared) ||
+  shardConfig.shared.length === 0
+) {
+  throw new Error("malstorm-shards.json must define shared shards");
+}
+
+if (
+  typeof deploy.target !== "object" ||
+  deploy.target === null
+) {
+  throw new Error(
+    `${deployTemplatePath}: target section missing`,
+  );
+}
+
+deploy.target.nodes = shardConfig.shared;
+
 if (
   typeof deploy.artifacts !== "object" ||
   deploy.artifacts === null

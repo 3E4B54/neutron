@@ -49,12 +49,23 @@ if (runtime.kind !== "pocketic") {
 console.log("");
 console.log("Seeding Malstorm app catalog and pools...");
 
-await bootstrapAppPools({
-  canisterId: deploymentResult.canisterId,
-  host: runtime.gateway.url,
-});
+for (const node of deploymentResult.nodes) {
+  console.log("");
+  console.log(
+    `Shard ${node.label}: ${node.canisterId}`,
+  );
+
+  await bootstrapAppPools({
+    canisterId: node.canisterId,
+    host: runtime.gateway.url,
+  });
+}
 
 console.log("");
 console.log("Malstorm deployment ready.");
-console.log(`Canister: ${deploymentResult.canisterId}`);
-console.log(`URL: ${deploymentResult.url}`);
+
+for (const node of deploymentResult.nodes) {
+  console.log(
+    `${node.label}: ${node.canisterId} ${node.url}`,
+  );
+}
