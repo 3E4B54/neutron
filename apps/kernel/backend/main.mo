@@ -2078,6 +2078,39 @@ module {
             );
         };
 
+        // Public Malstorm tenant enrollment.
+        //
+        // A caller may enroll only itself. Enrollment creates an empty grant
+        // list; app instances are subsequently obtained through the allocator.
+        public func /*update:unauthorized*/kernel_tenant_join(
+            (),
+            /*caller*/ caller : Principal,
+        ) : () {
+            // Never create a shared tenant for the anonymous principal.
+            assert(caller != Principal.fromText("2vxsx-fae"));
+
+            if (is_authorized(caller)) {
+                return;
+            };
+
+            if (
+                Map.containsKey(
+                    malstormTenantsMem.grants,
+                    Principal.compare,
+                    caller,
+                )
+            ) {
+                return;
+            };
+
+            Map.add(
+                malstormTenantsMem.grants,
+                Principal.compare,
+                caller,
+                [],
+            );
+        };
+
         public func /*internal*/is_app_authorized(
             input : {
                 caller : Principal;
@@ -3909,6 +3942,9 @@ public type is_authorized_Output = Bool;
 
 public type is_session_authorized_Input = (id : Principal);
 public type is_session_authorized_Output = Bool;
+
+public type kernel_tenant_join_Input = (());
+public type kernel_tenant_join_Output = ();
 
 public type is_app_authorized_Input = (input : {
                 caller : Principal;

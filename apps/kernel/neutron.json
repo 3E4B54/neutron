@@ -36,6 +36,14 @@
       "type": "internal",
       "async": false
     },
+    "kernel_tenant_join": {
+      "type": "update",
+      "async": false,
+      "arg": [
+        "caller"
+      ],
+      "allow": "unauthorized"
+    },
     "is_app_authorized": {
       "type": "internal",
       "async": false
