@@ -37,6 +37,23 @@ jobs:
         with:
           bun-version: '1.3.13'
 
-      # Neutron's Motoko packaging scripts expect the Mops CLI to be
-      # available on PATH. The local Plasmon development environment has
-      # historically installed this manually
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      # Neutron's Motoko packaging scripts expect the Mops CLI and the
+      # kernel's Motoko dependencies to be available. Plasmon's local WSL
+      # environment has historically installed Mops separately as well.
+      - name: Install Motoko dependencies
+        run: |
+          npm install --global ic-mops
+          cd apps/kernel
+          mops install
+
+      # Keep fast regression feedback separate from packaging. Do not run the
+      # kernel build as an additional sanity step: `package` below already runs
+      # validate -> build -> mopack -> pack, and the build is expensive.
+      - name: Run kernel tests
+        run: npm --workspace neutron-kernel test
+
+      - name: Package kernel
+        run: npm --workspace neutron-kernel run package
