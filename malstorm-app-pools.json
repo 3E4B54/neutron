@@ -1,0 +1,22 @@
+{
+  "apps": [
+    {
+      "app_id": "hello",
+      "name": "Hello",
+      "description": "Example Neutron application",
+      "instances": [
+        "hello_001",
+        "hello_002"
+      ]
+    },
+    {
+      "app_id": "demo",
+      "name": "Demo",
+      "description": "Second test application",
+      "instances": [
+        "demo_001",
+        "demo_002"
+      ]
+    }
+  ]
+}

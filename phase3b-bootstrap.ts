@@ -1,0 +1,210 @@
+import { Actor, HttpAgent } from "@dfinity/agent";
+import { IDL } from "@dfinity/candid";
+import { Principal } from "@dfinity/principal";
+import { localIdentityFromSeed } from "./packages/neutron-provision/src/kernel.ts";
+
+type AppConfig = {
+  app_id: string;
+  name: string;
+  description: string;
+  instances: string[];
+};
+
+type Config = {
+  apps: AppConfig[];
+};
+
+const [canisterId, configPath = "malstorm-app-pools.json"] =
+  Bun.argv.slice(2);
+
+if (!canisterId) {
+  console.error(
+    "Usage: bun phase3b-bootstrap.ts CANISTER [CONFIG]",
+  );
+  process.exit(1);
+}
+
+const config = JSON.parse(
+  await Bun.file(configPath).text(),
+) as Config;
+
+if (!Array.isArray(config.apps)) {
+  throw new Error("config.apps must be an array");
+}
+
+/*
+ * Validate locally before changing canister state.
+ */
+const logicalIds = new Set<string>();
+const physicalIds = new Set<string>();
+
+for (const app of config.apps) {
+  if (!app.app_id) {
+    throw new Error("app_id cannot be empty");
+  }
+
+  if (!app.name) {
+    throw new Error(`${app.app_id}: name cannot be empty`);
+  }
+
+  if (logicalIds.has(app.app_id)) {
+    throw new Error(`duplicate logical app_id: ${app.app_id}`);
+  }
+
+  logicalIds.add(app.app_id);
+
+  if (!Array.isArray(app.instances) || app.instances.length === 0) {
+    throw new Error(`${app.app_id}: instances cannot be empty`);
+  }
+
+  for (const instanceId of app.instances) {
+    if (physicalIds.has(instanceId)) {
+      throw new Error(
+        `physical app instance appears more than once: ${instanceId}`,
+      );
+    }
+
+    physicalIds.add(instanceId);
+  }
+}
+
+const idlFactory = ({
+  IDL,
+}: {
+  IDL: typeof import("@dfinity/candid").IDL;
+}) =>
+  IDL.Service({
+    kernel_app_catalog_register: IDL.Func(
+      [
+        IDL.Record({
+          app_id: IDL.Text,
+          name: IDL.Text,
+          description: IDL.Text,
+        }),
+      ],
+      [],
+      [],
+    ),
+
+    kernel_app_instance_register: IDL.Func(
+      [
+        IDL.Record({
+          app_id: IDL.Text,
+          app_instance_id: IDL.Text,
+        }),
+      ],
+      [],
+      [],
+    ),
+
+    kernel_app_instances_for_app: IDL.Func(
+      [
+        IDL.Record({
+          app_id: IDL.Text,
+        }),
+      ],
+      [IDL.Vec(IDL.Text)],
+      ["query"],
+    ),
+
+    kernel_app_catalog_get: IDL.Func(
+      [
+        IDL.Record({
+          app_id: IDL.Text,
+        }),
+      ],
+      [IDL.Vec(IDL.Text)],
+      ["query"],
+    ),
+  });
+
+type BootstrapActor = {
+  kernel_app_catalog_register(input: {
+    app_id: string;
+    name: string;
+    description: string;
+  }): Promise<void>;
+
+  kernel_app_instance_register(input: {
+    app_id: string;
+    app_instance_id: string;
+  }): Promise<void>;
+
+  kernel_app_instances_for_app(input: {
+    app_id: string;
+  }): Promise<string[]>;
+
+  kernel_app_catalog_get(input: {
+    app_id: string;
+  }): Promise<string[]>;
+};
+
+const identity = localIdentityFromSeed(2);
+
+console.log(
+  "Admin principal:",
+  identity.getPrincipal().toText(),
+);
+
+const agent = await HttpAgent.create({
+  host: "http://127.0.0.1:8000",
+  identity,
+  verifyQuerySignatures: false,
+});
+
+await agent.fetchRootKey();
+
+const actor = Actor.createActor<BootstrapActor>(
+  idlFactory,
+  {
+    agent,
+    canisterId: Principal.fromText(canisterId),
+  },
+);
+
+for (const app of config.apps) {
+  console.log(`\nApp: ${app.app_id}`);
+
+  await actor.kernel_app_catalog_register({
+    app_id: app.app_id,
+    name: app.name,
+    description: app.description,
+  });
+
+  console.log(
+    `  catalog: ${app.name}`,
+  );
+
+  for (const appInstanceId of app.instances) {
+    await actor.kernel_app_instance_register({
+      app_id: app.app_id,
+      app_instance_id: appInstanceId,
+    });
+
+    console.log(
+      `  instance: ${appInstanceId}`,
+    );
+  }
+
+  const metadata =
+    await actor.kernel_app_catalog_get({
+      app_id: app.app_id,
+    });
+
+  const instances =
+    await actor.kernel_app_instances_for_app({
+      app_id: app.app_id,
+    });
+
+  console.log(
+    "  metadata:",
+    metadata,
+  );
+
+  console.log(
+    "  registered instances:",
+    instances,
+  );
+}
+
+console.log("\nBootstrap complete.");
