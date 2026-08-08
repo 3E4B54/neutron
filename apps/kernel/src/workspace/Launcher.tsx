@@ -24,7 +24,12 @@ import {
   useAppsStore,
   type AppInstallSource,
 } from "../reducer/apps.ts";
-import { allocateAppInstance, getAvailableApps, logout, retireAppInstance, useAuthStore } from "../reducer/auth.ts";
+import {
+  allocateAppInstance,
+  getAvailableApps,
+  logout,
+  useAuthStore,
+} from "../reducer/auth.ts";
 import { isAbortError } from "../tools/package_url.ts";
 import {
   launcherEntriesFromApps,
@@ -60,7 +65,6 @@ export function Launcher(props: LauncherProps) {
   const [availableApps, setAvailableApps] = useState<Awaited<ReturnType<typeof getAvailableApps>>>([]);
   const [allocateBusyAppId, setAllocateBusyAppId] = useState<string | null>(null);
   const [allocateError, setAllocateError] = useState<string | null>(null);
-  const [retireBusyAppId, setRetireBusyAppId] = useState<string | null>(null);
   const [installSource, setInstallSource] = useState<
     "file" | "url" | "uninstall" | null
   >(null);
@@ -76,7 +80,6 @@ export function Launcher(props: LauncherProps) {
   const openerRef = useRef<HTMLElement | null>(null);
   const apps = useAppsStore((state) => state.list);
   const owner = useAuthStore((state) => state.owner);
-  const principal = useAuthStore((state) => state.principal);
   const appIds = useAuthStore((state) => state.appIds);
   const operationBusy = useAppsStore((state) => state.operationBusy);
   const authorityPending = useAppsStore(isAuthorityPendingState);
@@ -484,11 +487,9 @@ export function Launcher(props: LauncherProps) {
           ) : null}
           {!owner ? (
             <div className="launcher-tile-row">
-              <div style={{ overflow: "hidden", fontSize: "0.75rem" }}>
-                Principal: {principal}
-              </div>
               <button
                 type="button"
+                className="btn btn-sec"
                 onClick={() => {
                   void logout();
                 }}
@@ -519,7 +520,7 @@ export function Launcher(props: LauncherProps) {
                         .then((appInstanceId) => {
                           if (appInstanceId === null) {
                             setAllocateError(
-                              `No ${app.name} app instances are available.`,
+                              `${app.name} is temporarily unavailable.`,
                             );
                           }
                         })
@@ -549,51 +550,6 @@ export function Launcher(props: LauncherProps) {
               ))}
             </>
           ) : null}
-
-          {/* Phase 4B lifecycle test controls. */}
-          {!owner
-            ? appIds.map((appInstanceId) => (
-                <div
-                  className="launcher-tile-row"
-                  key={`retire-${appInstanceId}`}
-                >
-                  <button
-                    type="button"
-                    disabled={retireBusyAppId !== null}
-                    onClick={() => {
-                      if (retireBusyAppId !== null) return;
-
-                      if (
-                        !window.confirm(
-                          `Delete ${appInstanceId}? This physical instance will be permanently retired.`,
-                        )
-                      ) {
-                        return;
-                      }
-
-                      setRetireBusyAppId(appInstanceId);
-                      setAllocateError(null);
-
-                      void retireAppInstance(appInstanceId)
-                        .catch((error) => {
-                          setAllocateError(
-                            error instanceof Error
-                              ? error.message
-                              : `Unable to delete ${appInstanceId}.`,
-                          );
-                        })
-                        .finally(() => {
-                          setRetireBusyAppId(null);
-                        });
-                    }}
-                  >
-                    {retireBusyAppId === appInstanceId
-                      ? `Deleting ${appInstanceId}...`
-                      : `Delete ${appInstanceId}`}
-                  </button>
-                </div>
-              ))
-            : null}
 
           {allocateError ? (
             <div className="launcher-install-error" role="alert">
