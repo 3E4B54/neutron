@@ -1,6 +1,5 @@
-import { expect, mock, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import * as React from "react";
 import type { NeutronCertifiedAssetsCapabilityConfig } from "neutron-tools/src/capabilities/catalog.js";
 import {
   loadCertifiedAssetsSettings,

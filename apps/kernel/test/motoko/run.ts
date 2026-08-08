@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,7 +8,10 @@ import {
   parsePackageString,
   type PackageMap,
 } from "neutron-scripts/src/walk.js";
-import { prepareMotokoProgram } from "neutron-scripts/src/motoko.js";
+import {
+  createMotokoProgramPreparationCache,
+  prepareMotokoProgram,
+} from "neutron-scripts/src/motoko.js";
 
 const execute = promisify(execFile);
 const compiledTests = [
@@ -59,13 +62,28 @@ if (requestedTests && tests.length !== new Set(requestedTests).size) {
   const unknown = requestedTests.filter((test) => !allTests.includes(test));
   throw new Error(`Unknown MOTOKO_TEST: ${unknown.join(",")}`);
 }
+const exactPassTranscript =
+  process.env.MOTOKO_EXACT_PASS_TRANSCRIPT === "1";
+const workerMode = process.env.MOTOKO_WORKER === "1";
+const motokoJobs = resolveMotokoJobs(tests.length);
+const parallelMode =
+  !workerMode &&
+  !exactPassTranscript &&
+  motokoJobs > 1 &&
+  tests.length > 1;
+
+if (parallelMode) {
+  console.log(
+    `Running ${tests.length} Motoko tests with ${motokoJobs} workers`,
+  );
+  await runParallelWorkers(tests, motokoJobs);
+} else {
 const cwd = process.cwd();
 const testRoot = path.resolve("test/motoko");
 const temporary = await fs.mkdtemp(
   path.join(os.tmpdir(), "neutron-motoko-test-"),
 );
-const exactPassTranscript =
-  process.env.MOTOKO_EXACT_PASS_TRANSCRIPT === "1";
+
 const originalConsoleLog = console.log;
 if (exactPassTranscript) {
   console.log = () => {};
@@ -74,20 +92,27 @@ if (exactPassTranscript) {
 try {
   const packages = await resolvePackages(cwd);
   const mo = await loadMotoko();
+  const preparationCache = createMotokoProgramPreparationCache();
   let wasmtime: string | undefined;
 
   for (const [index, test] of tests.entries()) {
+    if (!exactPassTranscript) {
+      console.log(`[${index + 1}/${tests.length}] Motoko test: ${test}`);
+    }
     const prepared = await prepareMotokoProgram({
       compiler: mo,
       sourcePath: path.join(testRoot, test),
       packages,
       allowDangerous: true,
+      cache: preparationCache,
     });
+
     if (interpretedTests.includes(test)) {
       await mo.run(prepared.entryPath);
       reportPass(test);
       continue;
     }
+
     const compiled = await mo.wasm(prepared.entryPath, "wasi");
     const wasmPath = path.join(temporary, `${index}.wasm`);
     await fs.writeFile(wasmPath, compiled.wasm);
@@ -99,6 +124,73 @@ try {
   console.log = originalConsoleLog;
   await disposeMotokoCompiler();
   await fs.rm(temporary, { recursive: true, force: true });
+}
+
+}
+
+function resolveMotokoJobs(testCount: number): number {
+  const configured = process.env.MOTOKO_JOBS;
+  if (configured !== undefined) {
+    if (!/^[1-9]\d*$/u.test(configured)) {
+      throw new Error("MOTOKO_JOBS must be a positive integer");
+    }
+    return Math.min(Number(configured), testCount);
+  }
+
+  const available =
+    typeof os.availableParallelism === "function"
+      ? os.availableParallelism()
+      : os.cpus().length;
+
+  return Math.max(1, Math.min(4, available, testCount));
+}
+
+async function runParallelWorkers(
+  selectedTests: string[],
+  jobs: number,
+): Promise<void> {
+  const groups = Array.from({ length: jobs }, () => [] as string[]);
+
+  for (const [index, test] of selectedTests.entries()) {
+    groups[index % jobs]!.push(test);
+  }
+
+  const runnerPath = path.resolve(process.argv[1]!);
+
+  await Promise.all(
+    groups
+      .filter((group) => group.length > 0)
+      .map(
+        (group, workerIndex) =>
+          new Promise<void>((resolve, reject) => {
+            const child = spawn(process.execPath, [runnerPath], {
+              cwd: process.cwd(),
+              stdio: ["ignore", "inherit", "inherit"],
+              env: {
+                ...process.env,
+                MOTOKO_WORKER: "1",
+                MOTOKO_TEST: group.join(","),
+                MOTOKO_EXACT_PASS_TRANSCRIPT: "1",
+              },
+            });
+
+            child.once("error", reject);
+            child.once("exit", (code, signal) => {
+              if (code === 0) {
+                resolve();
+                return;
+              }
+
+              reject(
+                new Error(
+                  `Motoko worker ${workerIndex + 1} failed ` +
+                    `(exit=${code ?? "null"}, signal=${signal ?? "none"})`,
+                ),
+              );
+            });
+          }),
+      ),
+  );
 }
 
 async function resolvePackages(cwd: string): Promise<PackageMap> {
