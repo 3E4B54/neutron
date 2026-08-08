@@ -35,6 +35,7 @@ import type {
 import type { CertifiedAssetsSettingsActor } from "../settings/certified_assets_settings.ts";
 import { certifiedAssetsSettingsIdl } from "../settings/certified_assets_settings_idl.ts";
 import { clearTrayState } from "../tray/service.ts";
+import { setWorkspacePersistenceScope } from "../workspace/store.ts";
 import { clearConnectionRequestsForAuth } from "./connections.ts";
 import { removeAllCallRequests } from "./request.ts";
 import { AuthGeneration } from "./auth_generation.ts";
@@ -51,6 +52,7 @@ type IcblastClient = (canister: string, candid?: string) => Promise<any>;
 
 export type KernelActor = CertifiedAssetsSettingsActor & {
   kernel_check_authorized(req: null): Promise<boolean>;
+  kernel_tenant_join(req: null): Promise<void>;
   kernel_my_is_owner(req: null): Promise<boolean>;
   kernel_my_tenant_apps(req: null): Promise<string[]>;
   kernel_app_instance_allocate(req: {
@@ -228,7 +230,12 @@ let neutronBootstrapCan: ActorSubclass<KernelActor> | null = null;
 let neutronCanGeneration = 0;
 let activeIdentity: Identity | null = null;
 const identityActivation = new AuthGeneration();
-const internetIdentityReady = InternetIdentity.create();
+let internetIdentityReady = InternetIdentity.create();
+
+async function recreateInternetIdentity(): Promise<void> {
+  internetIdentityReady = InternetIdentity.create();
+  await internetIdentityReady;
+}
 let logoutActive = false;
 const proxyNonMethods = new Set([
   "then",
@@ -306,6 +313,16 @@ export async function activateIdentity(
   resetNeutronCan();
 
   const principal = nextPrincipal;
+
+  setWorkspacePersistenceScope(
+    logged
+      ? {
+          canisterId: getNeutronId(),
+          principal,
+        }
+      : null,
+  );
+
   if (!logged) {
     if (!activationIsCurrent()) return;
     useAuthStore
@@ -349,13 +366,28 @@ export async function activateIdentity(
     authorized = confirmation.value;
   }
   if (!authorized) {
+    const joinResult = await identityActivation.wait(
+      activationGeneration,
+      neutronResult.value.kernel_tenant_join(null),
+    );
+    if (!joinResult.current) return;
+
+    const confirmation = await identityActivation.wait(
+      activationGeneration,
+      neutronResult.value.kernel_check_authorized(null),
+    );
+    if (!confirmation.current) return;
+
+    authorized = confirmation.value;
+  }
+
+  if (!authorized) {
     if (!activationIsCurrent()) return;
     useAuthStore.getState().setAuth({
       logged: true,
       authorized: false,
       principal,
-      authError:
-        "This principal is not authorized for this Neutron canister. Authorize it manually or log out and use a different identity.",
+      authError: "Unable to enroll this principal as a Malstorm tenant.",
     });
     return;
   }
@@ -430,22 +462,37 @@ export async function logout(): Promise<void> {
   if (logoutActive) return;
   logoutActive = true;
   const logoutGeneration = identityActivation.begin();
+
   removeAllCallRequests();
   clearTrayState();
   clearConnectionRequestsForAuth();
   clearPendingSetupBestEffort();
+
   try {
     await internetIdentityReady;
     if (!identityActivation.isCurrent(logoutGeneration)) return;
+
+    // Finish destroying the previous II session before exposing the login UI.
+    await InternetIdentity.logout();
+
+    if (!identityActivation.isCurrent(logoutGeneration)) return;
+
+    // icblast's InternetIdentity wrapper is a mutable singleton. Replace the
+    // logged-out AuthClient with a fresh client before another login attempt.
+    await recreateInternetIdentity();
+
+    if (!identityActivation.isCurrent(logoutGeneration)) return;
+
     ic = createIcblast(runtimeIcblastOptions()) as IcblastClient;
     resetNeutronCan();
     activeIdentity = null;
+    setWorkspacePersistenceScope(null);
+
     useAuthStore.getState().setAuth({
       logged: false,
       authorized: false,
       principal: ANONYMOUS_PRINCIPAL,
     });
-    await InternetIdentity.logout();
   } finally {
     logoutActive = false;
   }
@@ -1008,6 +1055,11 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
       [],
     ),
     kernel_check_authorized: IDL.Func([IDL.Null], [IDL.Bool], ["query"]),
+    kernel_tenant_join: IDL.Func(
+      [IDL.Null],
+      [],
+      [],
+    ),
     kernel_my_is_owner: IDL.Func(
       [IDL.Null],
       [IDL.Bool],

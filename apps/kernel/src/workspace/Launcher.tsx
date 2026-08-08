@@ -24,7 +24,7 @@ import {
   useAppsStore,
   type AppInstallSource,
 } from "../reducer/apps.ts";
-import { allocateAppInstance, getAvailableApps, retireAppInstance, useAuthStore } from "../reducer/auth.ts";
+import { allocateAppInstance, getAvailableApps, logout, retireAppInstance, useAuthStore } from "../reducer/auth.ts";
 import { isAbortError } from "../tools/package_url.ts";
 import {
   launcherEntriesFromApps,
@@ -76,6 +76,7 @@ export function Launcher(props: LauncherProps) {
   const openerRef = useRef<HTMLElement | null>(null);
   const apps = useAppsStore((state) => state.list);
   const owner = useAuthStore((state) => state.owner);
+  const principal = useAuthStore((state) => state.principal);
   const appIds = useAuthStore((state) => state.appIds);
   const operationBusy = useAppsStore((state) => state.operationBusy);
   const authorityPending = useAppsStore(isAuthorityPendingState);
@@ -481,6 +482,22 @@ export function Launcher(props: LauncherProps) {
             </div>
           </div>
           ) : null}
+          {!owner ? (
+            <div className="launcher-tile-row">
+              <div style={{ overflow: "hidden", fontSize: "0.75rem" }}>
+                Principal: {principal}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void logout();
+                }}
+              >
+                Logout
+              </button>
+            </div>
+          ) : null}
+
           {!owner ? (
             <>
               {availableApps.map((app) => (

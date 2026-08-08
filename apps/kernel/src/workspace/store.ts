@@ -18,11 +18,15 @@ import type {
 } from "./types.ts";
 import { isWorkspaceId, WORKSPACE_IDS } from "./types.ts";
 
-const STORAGE_KEY = "neutron-kernel-workspaces-v2";
+const STORAGE_KEY_PREFIX = "neutron-kernel-workspaces-v2";
 const PERSIST_DELAY_MS = 120;
 const DEFAULT_WORKSPACE_COUNT = 3;
 
-let pendingPersistState: PersistedWorkspaceRoot | null = null;
+let activeStorageKey: string | null = null;
+let pendingPersistState: {
+  storageKey: string;
+  state: PersistedWorkspaceRoot;
+} | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 type DefaultWorkspaceId = 1 | 2 | 3;
@@ -404,10 +408,20 @@ function withActiveWorkspace(
 }
 
 function loadInitialState(): PersistedWorkspaceRoot {
+  return loadWorkspaceState(activeStorageKey);
+}
+
+function loadWorkspaceState(
+  storageKey: string | null,
+): PersistedWorkspaceRoot {
   const fallback = defaultWorkspaceRoot();
-  if (typeof window === "undefined") return fallback;
+
+  if (typeof window === "undefined" || storageKey === null) {
+    return fallback;
+  }
+
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return fallback;
     return sanitizePersistedState(JSON.parse(raw));
   } catch {
@@ -416,11 +430,21 @@ function loadInitialState(): PersistedWorkspaceRoot {
 }
 
 function persistWorkspaceState(state: PersistedWorkspaceRoot): void {
-  if (typeof window === "undefined") return;
+  if (
+    typeof window === "undefined" ||
+    activeStorageKey === null
+  ) {
+    return;
+  }
+
   pendingPersistState = {
-    activeWorkspaceId: state.activeWorkspaceId,
-    workspaces: state.workspaces,
+    storageKey: activeStorageKey,
+    state: {
+      activeWorkspaceId: state.activeWorkspaceId,
+      workspaces: state.workspaces,
+    },
   };
+
   if (persistTimer) return;
   persistTimer = setTimeout(flushWorkspaceState, PERSIST_DELAY_MS);
 }
@@ -430,20 +454,65 @@ function flushWorkspaceState(): void {
     clearTimeout(persistTimer);
     persistTimer = null;
   }
-  if (typeof window === "undefined" || !pendingPersistState) return;
-  const state = pendingPersistState;
+
+  if (
+    typeof window === "undefined" ||
+    pendingPersistState === null
+  ) {
+    return;
+  }
+
+  const pending = pendingPersistState;
   pendingPersistState = null;
+
   try {
     window.localStorage.setItem(
-      STORAGE_KEY,
+      pending.storageKey,
       JSON.stringify({
-        activeWorkspaceId: state.activeWorkspaceId,
-        workspaces: state.workspaces,
+        activeWorkspaceId: pending.state.activeWorkspaceId,
+        workspaces: pending.state.workspaces,
       }),
     );
   } catch {
     // Local storage is best-effort only.
   }
+}
+
+export function setWorkspacePersistenceScope(
+  scope: {
+    canisterId: string;
+    principal: string;
+  } | null,
+): void {
+  flushWorkspaceState();
+
+  const nextStorageKey =
+    scope === null
+      ? null
+      : `${STORAGE_KEY_PREFIX}:${scope.canisterId}:${scope.principal}`;
+
+  if (activeStorageKey === nextStorageKey) {
+    return;
+  }
+
+  activeStorageKey = nextStorageKey;
+
+  if (typeof window !== "undefined") {
+    // The old unscoped key may contain another principal's workspace.
+    // Never migrate it into a scoped workspace.
+    try {
+      window.localStorage.removeItem(STORAGE_KEY_PREFIX);
+    } catch {
+      // Local storage is best-effort only.
+    }
+  }
+
+  const workspace = loadWorkspaceState(activeStorageKey);
+
+  useWorkspaceStore.setState({
+    ...workspace,
+    workspaceDropTargetId: null,
+  });
 }
 
 if (
