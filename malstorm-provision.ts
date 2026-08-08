@@ -1,0 +1,60 @@
+import { main } from "./packages/neutron-provision/src/cli.ts";
+import {
+  runLocalReinstall,
+  type LocalReinstallResult,
+} from "./packages/neutron-provision/src/local_deploy.ts";
+import { bootstrapAppPools } from "./phase3b-bootstrap.ts";
+
+const [configPath, command] = Bun.argv.slice(2);
+
+if (!configPath || command !== "reinstall") {
+  console.error(
+    "Usage: bun malstorm-provision.ts CONFIG.ndeploy.json reinstall",
+  );
+  process.exit(1);
+}
+
+let deploymentResult: LocalReinstallResult | undefined;
+
+await main(
+  [configPath, "reinstall"],
+  console,
+  {
+    localReinstall: async (options, dependencies) => {
+      const result = await runLocalReinstall(
+        options,
+        dependencies,
+      );
+
+      deploymentResult = result;
+      return result;
+    },
+  },
+);
+
+if (!deploymentResult) {
+  throw new Error(
+    "Malstorm bootstrap currently supports PocketIC reinstall only",
+  );
+}
+
+const runtime = deploymentResult.session.runtime;
+
+if (runtime.kind !== "pocketic") {
+  throw new Error(
+    "Malstorm local bootstrap expected a PocketIC runtime",
+  );
+}
+
+console.log("");
+console.log("Seeding Malstorm app catalog and pools...");
+
+await bootstrapAppPools({
+  canisterId: deploymentResult.canisterId,
+  host: runtime.gateway.url,
+});
+
+console.log("");
+console.log("Malstorm deployment ready.");
+console.log(`Canister: ${deploymentResult.canisterId}`);
+console.log(`URL: ${deploymentResult.url}`);

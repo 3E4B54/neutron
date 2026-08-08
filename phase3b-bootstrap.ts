@@ -14,59 +14,11 @@ type Config = {
   apps: AppConfig[];
 };
 
-const [canisterId, configPath = "malstorm-app-pools.json"] =
-  Bun.argv.slice(2);
-
-if (!canisterId) {
-  console.error(
-    "Usage: bun phase3b-bootstrap.ts CANISTER [CONFIG]",
-  );
-  process.exit(1);
-}
-
-const config = JSON.parse(
-  await Bun.file(configPath).text(),
-) as Config;
-
-if (!Array.isArray(config.apps)) {
-  throw new Error("config.apps must be an array");
-}
-
-/*
- * Validate locally before changing canister state.
- */
-const logicalIds = new Set<string>();
-const physicalIds = new Set<string>();
-
-for (const app of config.apps) {
-  if (!app.app_id) {
-    throw new Error("app_id cannot be empty");
-  }
-
-  if (!app.name) {
-    throw new Error(`${app.app_id}: name cannot be empty`);
-  }
-
-  if (logicalIds.has(app.app_id)) {
-    throw new Error(`duplicate logical app_id: ${app.app_id}`);
-  }
-
-  logicalIds.add(app.app_id);
-
-  if (!Array.isArray(app.instances) || app.instances.length === 0) {
-    throw new Error(`${app.app_id}: instances cannot be empty`);
-  }
-
-  for (const instanceId of app.instances) {
-    if (physicalIds.has(instanceId)) {
-      throw new Error(
-        `physical app instance appears more than once: ${instanceId}`,
-      );
-    }
-
-    physicalIds.add(instanceId);
-  }
-}
+type BootstrapOptions = {
+  canisterId: string;
+  configPath?: string;
+  host?: string;
+};
 
 const idlFactory = ({
   IDL,
@@ -139,72 +91,117 @@ type BootstrapActor = {
   }): Promise<string[]>;
 };
 
-const identity = localIdentityFromSeed(2);
-
-console.log(
-  "Admin principal:",
-  identity.getPrincipal().toText(),
-);
-
-const agent = await HttpAgent.create({
-  host: "http://127.0.0.1:8000",
-  identity,
-  verifyQuerySignatures: false,
-});
-
-await agent.fetchRootKey();
-
-const actor = Actor.createActor<BootstrapActor>(
-  idlFactory,
-  {
-    agent,
-    canisterId: Principal.fromText(canisterId),
-  },
-);
-
-for (const app of config.apps) {
-  console.log(`\nApp: ${app.app_id}`);
-
-  await actor.kernel_app_catalog_register({
-    app_id: app.app_id,
-    name: app.name,
-    description: app.description,
-  });
-
-  console.log(
-    `  catalog: ${app.name}`,
-  );
-
-  for (const appInstanceId of app.instances) {
-    await actor.kernel_app_instance_register({
-      app_id: app.app_id,
-      app_instance_id: appInstanceId,
-    });
-
-    console.log(
-      `  instance: ${appInstanceId}`,
-    );
+function validateConfig(config: Config): void {
+  if (!Array.isArray(config.apps)) {
+    throw new Error("config.apps must be an array");
   }
 
-  const metadata =
-    await actor.kernel_app_catalog_get({
-      app_id: app.app_id,
-    });
+  const logicalIds = new Set<string>();
+  const physicalIds = new Set<string>();
 
-  const instances =
-    await actor.kernel_app_instances_for_app({
-      app_id: app.app_id,
-    });
+  for (const app of config.apps) {
+    if (!app.app_id) {
+      throw new Error("app_id cannot be empty");
+    }
 
-  console.log(
-    "  metadata:",
-    metadata,
-  );
+    if (!app.name) {
+      throw new Error(`${app.app_id}: name cannot be empty`);
+    }
 
-  console.log(
-    "  registered instances:",
-    instances,
-  );
+    if (logicalIds.has(app.app_id)) {
+      throw new Error(`duplicate logical app_id: ${app.app_id}`);
+    }
+
+    logicalIds.add(app.app_id);
+
+    if (!Array.isArray(app.instances) || app.instances.length === 0) {
+      throw new Error(`${app.app_id}: instances cannot be empty`);
+    }
+
+    for (const instanceId of app.instances) {
+      if (physicalIds.has(instanceId)) {
+        throw new Error(
+          `physical app instance appears more than once: ${instanceId}`,
+        );
+      }
+
+      physicalIds.add(instanceId);
+    }
+  }
 }
 
-console.log("\nBootstrap complete.");
+export async function bootstrapAppPools({
+  canisterId,
+  configPath = "malstorm-app-pools.json",
+  host = "http://127.0.0.1:8000",
+}: BootstrapOptions): Promise<void> {
+  const config = JSON.parse(
+    await Bun.file(configPath).text(),
+  ) as Config;
+
+  validateConfig(config);
+
+  const identity = localIdentityFromSeed(2);
+
+  const agent = await HttpAgent.create({
+    host,
+    identity,
+    verifyQuerySignatures: false,
+  });
+
+  await agent.fetchRootKey();
+
+  const actor = Actor.createActor<BootstrapActor>(idlFactory, {
+    agent,
+    canisterId: Principal.fromText(canisterId),
+  });
+
+  for (const app of config.apps) {
+    console.log(`App: ${app.app_id}`);
+
+    await actor.kernel_app_catalog_register({
+      app_id: app.app_id,
+      name: app.name,
+      description: app.description,
+    });
+
+    for (const appInstanceId of app.instances) {
+      await actor.kernel_app_instance_register({
+        app_id: app.app_id,
+        app_instance_id: appInstanceId,
+      });
+    }
+
+    console.log(
+      "  metadata:",
+      await actor.kernel_app_catalog_get({
+        app_id: app.app_id,
+      }),
+    );
+
+    console.log(
+      "  instances:",
+      await actor.kernel_app_instances_for_app({
+        app_id: app.app_id,
+      }),
+    );
+  }
+}
+
+if (import.meta.main) {
+  const [canisterId, configPath] = Bun.argv.slice(2);
+
+  if (!canisterId) {
+    console.error(
+      "Usage: bun phase3b-bootstrap.ts CANISTER [CONFIG]",
+    );
+    process.exit(1);
+  }
+
+  await bootstrapAppPools({
+    canisterId,
+    ...(configPath ? { configPath } : {}),
+  });
+
+  console.log("Bootstrap complete.");
+}
