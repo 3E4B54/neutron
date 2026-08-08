@@ -8,6 +8,7 @@
   "init_arg": [
     "memory_kernel",
     "memory_kernel_activation",
+    "memory_malstorm_tenants",
     "deployment_id",
     "active_app_instance_inventory",
     "canister_principal"
@@ -43,6 +44,18 @@
         "caller"
       ],
       "allow": "unauthorized"
+    },
+    "kernel_tenant_grant": {
+      "type": "update",
+      "async": false
+    },
+    "kernel_tenant_revoke": {
+      "type": "update",
+      "async": false
+    },
+    "kernel_tenant_apps": {
+      "type": "query",
+      "async": false
     },
     "kernel_authorized_recover": {
       "type": "update",
@@ -399,6 +412,15 @@
       "schemas": {
         "1": {
           "src": "memory/activation/v1.mo"
+        }
+      },
+      "migrations": []
+    },
+    "malstorm_tenants": {
+      "version": 1,
+      "schemas": {
+        "1": {
+          "src": "memory/malstorm_tenants/v1.mo"
         }
       },
       "migrations": []

@@ -44,6 +44,7 @@ import GatewayAuthority "./http_routes/GatewayAuthority";
 import RouteNamespace "./http_routes/Namespace";
 import KernelMemory "./memory/kernel/v3";
 import ActivationMemory "./memory/activation/v1";
+import MalstormTenantsMemory "./memory/malstorm_tenants/v1";
 import ActivationService "./activation/Service";
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
@@ -569,6 +570,7 @@ module {
     public class Init(
         mem : KernelMemory.Mem,
         activationMem : ActivationMemory.Mem,
+        malstormTenantsMem : MalstormTenantsMemory.Mem,
         runningDeploymentId : Text,
         activeAppInstanceInventory : [InstallTypes.RuntimeApp],
         canisterPrincipal : Principal,
@@ -2032,24 +2034,55 @@ module {
             Set.contains(mem.core.authorized, Principal.compare, id);
         };
 
-        // Malstorm shell/session admission. This does NOT grant owner authority.
-        public func /*internal*/is_session_authorized(id : Principal) : Bool {
-            is_authorized(id) or
-            Principal.toText(id) == "povh5-2yolf-w6nvm-nuuny-qysws-3nfgq-lpxct-3lchh-vtsfb-4mtom-wae";
+        // Malstorm tenant authorization.
+        //
+        // Neutron owners retain global authority. Non-owner principals enter
+        // the Malstorm shell only when they have at least one Element grant.
+        func malstorm_tenant_apps(id : Principal) : [Text] {
+            switch (
+                Map.get(
+                    malstormTenantsMem.grants,
+                    Principal.compare,
+                    id,
+                )
+            ) {
+                case (?apps) apps;
+                case null [];
+            };
         };
 
-        // Malstorm Phase 1A security spike.
-        // Owners retain global authority. This hard-coded tenant receives
-        // authority only for hello_001.
+        func malstorm_tenant_has_app(
+            id : Principal,
+            appId : Text,
+        ) : Bool {
+            Array.any(
+                malstorm_tenant_apps(id),
+                func(grantedAppId : Text) : Bool {
+                    grantedAppId == appId;
+                },
+            );
+        };
+
+        public func /*internal*/is_session_authorized(id : Principal) : Bool {
+            is_authorized(id) or
+            Map.containsKey(
+                malstormTenantsMem.grants,
+                Principal.compare,
+                id,
+            );
+        };
+
         public func /*internal*/is_app_authorized(
             input : {
                 caller : Principal;
                 scope : CapabilityTypes.AppScope;
             }
         ) : Bool {
-            if (is_authorized(input.caller)) return true;
-            Principal.toText(input.caller) == "povh5-2yolf-w6nvm-nuuny-qysws-3nfgq-lpxct-3lchh-vtsfb-4mtom-wae" and
-            input.scope.app_id == "hello_001";
+            is_authorized(input.caller) or
+            malstorm_tenant_has_app(
+                input.caller,
+                input.scope.app_id,
+            );
         };
 
         public func /*query:unauthorized*/kernel_check_authorized(
@@ -2057,6 +2090,84 @@ module {
             /*caller*/ caller : Principal,
         ) : Bool {
             is_session_authorized(caller);
+        };
+
+        // Owner-only through the compiler-generated kernel authorization
+        // wrapper. A grant may target only a currently installed non-kernel app.
+        public func /*update*/kernel_tenant_grant(
+            input : {
+                principal : Principal;
+                app_id : Text;
+            },
+        ) : () {
+            assert(SettingsAccess.validPrincipal(input.principal));
+            assert(input.app_id != "kernel");
+            assert(
+                InstallMemory.committedScope(
+                    mem.install,
+                    input.app_id,
+                ) != null
+            );
+
+            let current = malstorm_tenant_apps(input.principal);
+
+            if (
+                Array.any(
+                    current,
+                    func(appId : Text) : Bool {
+                        appId == input.app_id;
+                    },
+                )
+            ) return;
+
+            Map.add(
+                malstormTenantsMem.grants,
+                Principal.compare,
+                input.principal,
+                Array.sort(
+                    Array.concat(current, [input.app_id]),
+                    Text.compare,
+                ),
+            );
+        };
+
+        // Owner-only. Revoking the final app removes the principal entirely,
+        // which also removes shell/session admission.
+        public func /*update*/kernel_tenant_revoke(
+            input : {
+                principal : Principal;
+                app_id : Text;
+            },
+        ) : () {
+            let current = malstorm_tenant_apps(input.principal);
+            let remaining = Array.filter(
+                current,
+                func(appId : Text) : Bool {
+                    appId != input.app_id;
+                },
+            );
+
+            if (remaining.size() == 0) {
+                Map.remove(
+                    malstormTenantsMem.grants,
+                    Principal.compare,
+                    input.principal,
+                );
+            } else {
+                Map.add(
+                    malstormTenantsMem.grants,
+                    Principal.compare,
+                    input.principal,
+                    remaining,
+                );
+            };
+        };
+
+        // Owner-only administrative view for now.
+        public func /*query*/kernel_tenant_apps(
+            input : { principal : Principal },
+        ) : [Text] {
+            malstorm_tenant_apps(input.principal);
         };
 
         public func /*update:unauthorized*/kernel_authorized_recover(
@@ -3495,6 +3606,21 @@ public type is_app_authorized_Output = Bool;
 
 public type kernel_check_authorized_Input = (());
 public type kernel_check_authorized_Output = Bool;
+
+public type kernel_tenant_grant_Input = (input : {
+                principal : Principal;
+                app_id : Text;
+            },);
+public type kernel_tenant_grant_Output = ();
+
+public type kernel_tenant_revoke_Input = (input : {
+                principal : Principal;
+                app_id : Text;
+            },);
+public type kernel_tenant_revoke_Output = ();
+
+public type kernel_tenant_apps_Input = (input : { principal : Principal },);
+public type kernel_tenant_apps_Output = [Text];
 
 public type kernel_authorized_recover_Input = (id : Principal);
 public type kernel_authorized_recover_Output = ();
