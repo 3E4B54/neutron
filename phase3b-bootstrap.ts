@@ -5,9 +5,11 @@ import { localIdentityFromSeed } from "./packages/neutron-provision/src/kernel.t
 
 type AppConfig = {
   app_id: string;
+  template?: string;
   name: string;
   description: string;
-  instances: string[];
+  capacity?: number;
+  instances?: string[];
 };
 
 type Config = {
@@ -91,6 +93,30 @@ type BootstrapActor = {
   }): Promise<string[]>;
 };
 
+function appInstanceIds(app: AppConfig): string[] {
+  if (Array.isArray(app.instances) && app.instances.length > 0) {
+    return app.instances;
+  }
+
+  const capacity = app.capacity;
+
+  if (
+    typeof capacity !== "number" ||
+    !Number.isInteger(capacity) ||
+    capacity < 1
+  ) {
+    throw new Error(
+      `${app.app_id}: capacity must be a positive integer`,
+    );
+  }
+
+  return Array.from(
+    { length: capacity },
+    (_, index) =>
+      `${app.app_id}_${String(index + 1).padStart(3, "0")}`,
+  );
+}
+
 function validateConfig(config: Config): void {
   if (!Array.isArray(config.apps)) {
     throw new Error("config.apps must be an array");
@@ -114,11 +140,9 @@ function validateConfig(config: Config): void {
 
     logicalIds.add(app.app_id);
 
-    if (!Array.isArray(app.instances) || app.instances.length === 0) {
-      throw new Error(`${app.app_id}: instances cannot be empty`);
-    }
+    const instanceIds = appInstanceIds(app);
 
-    for (const instanceId of app.instances) {
+    for (const instanceId of instanceIds) {
       if (physicalIds.has(instanceId)) {
         throw new Error(
           `physical app instance appears more than once: ${instanceId}`,
@@ -165,7 +189,7 @@ export async function bootstrapAppPools({
       description: app.description,
     });
 
-    for (const appInstanceId of app.instances) {
+    for (const appInstanceId of appInstanceIds(app)) {
       await actor.kernel_app_instance_register({
         app_id: app.app_id,
         app_instance_id: appInstanceId,

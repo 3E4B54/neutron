@@ -2,21 +2,17 @@
   "apps": [
     {
       "app_id": "hello",
+      "template": "apps/hello_001",
       "name": "Hello",
       "description": "Example Neutron application",
-      "instances": [
-        "hello_001",
-        "hello_002"
-      ]
+      "capacity": 32
     },
     {
       "app_id": "demo",
+      "template": "apps/demo_001",
       "name": "Demo",
       "description": "Second test application",
-      "instances": [
-        "demo_001",
-        "demo_002"
-      ]
+      "capacity": 32
     }
   ]
 }
