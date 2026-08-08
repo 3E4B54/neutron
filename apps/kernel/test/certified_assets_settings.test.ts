@@ -323,158 +323,27 @@ test("Kernel Certified Assets Settings expose no app-owned cleanup hook", async 
 });
 
 test("Certified Assets controls load once per generic installation scope", async () => {
-  const requests: unknown[] = [];
-  const actor = {
-    async kernel_certified_assets_scope_info(candidate: unknown) {
-      requests.push(candidate);
-      throw new Error("temporary query failure");
-    },
-    async kernel_certified_assets_usage() {
-      return null;
-    },
-  };
-  const authModule = new URL("../src/reducer/auth.ts", import.meta.url).href;
-  mock.module(authModule, () => ({
-    getNeutronCan: async () => actor,
-  }));
+  // mock.module() is process-global in Bun. Keep the focused auth replacement
+  // in a child process so this test cannot alter auth exports for later tests.
+  const fixture = new URL(
+    "./certified_assets_settings_controls.isolated.ts",
+    import.meta.url,
+  ).pathname;
+  const repositoryRoot = new URL("../../..", import.meta.url).pathname;
+  const child = Bun.spawn([process.execPath, "test", fixture], {
+    cwd: repositoryRoot,
+    env: process.env,
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
 
-  const internals = (
-    React as unknown as {
-      __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE: {
-        H: unknown;
-      };
-    }
-  ).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
-  const slots: unknown[] = [];
-  const dependencies: Array<readonly unknown[] | undefined> = [];
-  const cleanups: Array<undefined | (() => void)> = [];
-  let cursor = 0;
-  let dirty = false;
-  let effects: Array<() => void> = [];
-
-  const dispatcher = {
-    useCallback<T extends (...args: never[]) => unknown>(
-      callback: T,
-      deps: readonly unknown[],
-    ): T {
-      const index = cursor++;
-      if (!sameDependencies(dependencies[index], deps)) {
-        slots[index] = callback;
-        dependencies[index] = deps;
-      }
-      return slots[index] as T;
-    },
-    useEffect(
-      create: () => void | (() => void),
-      deps: readonly unknown[],
-    ): void {
-      const index = cursor++;
-      if (sameDependencies(dependencies[index], deps)) return;
-      dependencies[index] = deps;
-      effects.push(() => {
-        cleanups[index]?.();
-        const cleanup = create();
-        cleanups[index] = typeof cleanup === "function" ? cleanup : undefined;
-      });
-    },
-    useRef<T>(initialValue: T): { current: T } {
-      const index = cursor++;
-      if (!(index in slots)) slots[index] = { current: initialValue };
-      return slots[index] as { current: T };
-    },
-    useState<T>(
-      initialValue: T | (() => T),
-    ): [T, (next: T | ((current: T) => T)) => void] {
-      const index = cursor++;
-      if (!(index in slots)) {
-        slots[index] =
-          typeof initialValue === "function"
-            ? (initialValue as () => T)()
-            : initialValue;
-      }
-      return [
-        slots[index] as T,
-        (next) => {
-          const current = slots[index] as T;
-          slots[index] =
-            typeof next === "function"
-              ? (next as (value: T) => T)(current)
-              : next;
-          dirty = true;
-        },
-      ];
-    },
-  };
-
-  try {
-    const { CertifiedAssetsSettingsControls } = await import(
-      "../src/settings/CertifiedAssetsSettingsControls.tsx"
-    );
-    const baseProps = {
-      actionsDisabled: false,
-      appId: "example_app",
-      appName: "Example app",
-      manifest,
-      open: true,
-      routeSummaries: [],
-    };
-    let installationUid = "7";
-    const render = () => {
-      cursor = 0;
-      effects = [];
-      const previousDispatcher = internals.H;
-      internals.H = dispatcher;
-      try {
-        CertifiedAssetsSettingsControls({
-          ...baseProps,
-          capabilitySummary: {
-            enabled: true,
-            installationUid,
-            declarationFingerprint: "a".repeat(64),
-          } as Parameters<
-            typeof CertifiedAssetsSettingsControls
-          >[0]["capabilitySummary"],
-        });
-      } finally {
-        internals.H = previousDispatcher;
-      }
-      for (const effect of effects) effect();
-    };
-    const settle = async (expectedCalls: number) => {
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        await Bun.sleep(0);
-        if (dirty) {
-          dirty = false;
-          render();
-        }
-        if (requests.length === expectedCalls && !dirty) {
-          await Bun.sleep(0);
-          if (!dirty) return;
-        }
-      }
-      throw new Error(`Timed out waiting for ${expectedCalls} scoped loads`);
-    };
-
-    render();
-    await settle(1);
-    render();
-    render();
-    await settle(1);
-    expect(requests).toEqual([{ app_id: "example_app", installation_uid: 7n }]);
-
-    installationUid = "8";
-    render();
-    await settle(2);
-    render();
-    await settle(2);
-    expect(requests).toEqual([
-      { app_id: "example_app", installation_uid: 7n },
-      { app_id: "example_app", installation_uid: 8n },
-    ]);
-  } finally {
-    for (const cleanup of cleanups) cleanup?.();
-    mock.restore();
-  }
+  expect(exitCode, `${stdout}\n${stderr}`).toBe(0);
+  expect(`${stdout}\n${stderr}`).toContain("1 pass");
 });
 
 function stringifyNats(value: unknown): unknown {

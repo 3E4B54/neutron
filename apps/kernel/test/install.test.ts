@@ -492,7 +492,7 @@ test("frontend deployments signal sibling tabs at activation and commit", async 
     new URL("../src/reducer/apps.ts", import.meta.url),
     "utf8",
   );
-  expect(source.match(/announceActivationStep\(/g)?.length).toBe(4);
+  expect(source.match(/announceActivationStep\(/g)?.length).toBe(5);
   const activationHelper = source.slice(
     source.indexOf("function announceActivationStep"),
     source.indexOf("const delay ="),
@@ -549,7 +549,7 @@ test("manual install and uninstall use a consistent checked deployment baseline"
   );
   expect(
     source.match(/vetKeysEnvironment: runtimeCompilerEnvironment\(\)/g),
-  ).toHaveLength(3);
+  ).toHaveLength(4);
   expect(source).toContain(
     'getRuntimeDeployment().target === "pocketic"',
   );
@@ -743,8 +743,12 @@ test("kernel settings snapshot is authenticated and reports bounded memory", asy
     arg: ["this"],
   });
   expect(Object.keys(manifest.memory).sort()).toEqual([
+    "app_catalog",
+    "app_instance_lifecycle",
+    "app_instances",
     "kernel",
     "kernel_activation",
+    "malstorm_tenants",
   ]);
   expect(manifest.memory.kernel.version).toBe(3);
   expect(manifest.memory.kernel.migrations).toBeUndefined();

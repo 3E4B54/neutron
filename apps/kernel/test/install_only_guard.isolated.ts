@@ -74,6 +74,7 @@ mock.module("neutron-compiler/src/install.js", () => ({
   recoverPendingInstall: async () => ({ status: "none" }),
   readKernelPackageState: async () => compilerState,
   REMOTE_NEUTRON_PACKAGE_DECODE_LIMITS: {},
+  unpackNeutronPackage: () => ({}),
 }));
 
 const actor = {

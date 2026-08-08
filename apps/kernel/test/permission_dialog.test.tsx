@@ -73,19 +73,18 @@ test("launcher exposes a real modal dialog boundary", () => {
   expect(html).toContain('aria-modal="true"');
   expect(html).toContain('aria-label="App launcher"');
   expect(html).toContain('tabindex="-1"');
-  expect(html).toContain('role="group"');
-  expect(html).toContain('aria-label="Install app from"');
-  expect(html).toContain('aria-label="Install app from File"');
-  expect(html).toContain('aria-label="Install app from URL"');
-  expect(html).toContain('data-tid="launcher-install-package"');
-  expect(html).toContain('data-tid="launcher-install-package-url"');
-  expect(html).toContain(
+  expect(html).toContain('class="launcher-backdrop"');
+  expect(html).toContain('data-tid="launcher-search"');
+  expect(html).toContain('data-tid="launcher-reset-workspace"');
+
+  // Plasmon keeps Neutron's raw File/URL package installer internally, but
+  // deliberately hides it from the normal launcher workflow.
+  expect(html).not.toContain('aria-label="Install app from"');
+  expect(html).not.toContain('data-tid="launcher-install-package"');
+  expect(html).not.toContain('data-tid="launcher-install-package-url"');
+  expect(html).not.toContain(
     'class="launcher-tile-row launcher-install-entry"',
   );
-  expect(html).toContain('class="launcher-install-icon"');
-  expect(
-    html.indexOf('class="launcher-tile-row launcher-install-entry"'),
-  ).toBeGreaterThan(html.indexOf('class="launcher-results"'));
 });
 
 test("launcher reuses its controls as a non-modal workspace region", () => {
@@ -96,15 +95,23 @@ test("launcher reuses its controls as a non-modal workspace region", () => {
   expect(html).toContain('aria-label="App launcher"');
   expect(html).toContain('class="launcher launcher--workspace"');
   expect(html).toContain('data-tid="workspace-launcher"');
-  expect(html).toContain('data-tid="workspace-launcher-install-package"');
-  expect(html).toContain('data-tid="workspace-launcher-install-package-url"');
-  expect(html).toContain(
-    'class="launcher-tile-row launcher-install-entry"',
-  );
+  expect(html).toContain('data-tid="workspace-launcher-search"');
   expect(html).not.toContain('class="launcher-actions');
   expect(html).not.toContain('aria-modal="true"');
   expect(html).not.toContain('class="launcher-backdrop"');
   expect(html).not.toContain('data-tid="launcher-reset-workspace"');
+
+  // The workspace placement follows the same Plasmon product surface: raw
+  // Neutron File/URL package installation remains an internal capability.
+  expect(html).not.toContain(
+    'data-tid="workspace-launcher-install-package"',
+  );
+  expect(html).not.toContain(
+    'data-tid="workspace-launcher-install-package-url"',
+  );
+  expect(html).not.toContain(
+    'class="launcher-tile-row launcher-install-entry"',
+  );
 });
 
 test("a pending install disables launcher mutations without hiding the launcher", async () => {
@@ -122,7 +129,7 @@ test("a pending install disables launcher mutations without hiding the launcher"
     "const appMutationBlocked = operationBusy || authorityPending",
   );
   expect(source.match(/disabled=\{installSource !== null \|\| appMutationBlocked\}/g))
-    .toHaveLength(4);
+    .toHaveLength(7);
 });
 
 test("only the interactive empty workspace mounts the shared launcher", () => {

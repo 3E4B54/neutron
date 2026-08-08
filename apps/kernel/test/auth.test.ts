@@ -27,19 +27,25 @@ test("the current authorization response remains usable", async () => {
   });
 });
 
-test("an unauthorized identity remains in Neutron for manual authorization", async () => {
+test("an unauthorized identity enrolls as a Plasmon tenant before continuing", async () => {
   const source = await readFile(
     new URL("../src/reducer/auth.ts", import.meta.url),
     "utf8",
   );
-  const start = source.indexOf("if (!authorized)");
-  const end = source.indexOf("\n  if (!activationIsCurrent())", start);
-  const unauthorizedFlow = source.slice(start, end);
+  const start = source.indexOf(
+    "if (!authorized) {\n    const joinResult",
+  );
+  const end = source.indexOf("\n  const ownerResult", start);
+  const enrollmentFlow = source.slice(start, end);
 
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
-  expect(unauthorizedFlow).toContain("Authorize it manually");
-  expect(unauthorizedFlow).not.toContain("window.location");
+  expect(enrollmentFlow).toContain("kernel_tenant_join(null)");
+  expect(enrollmentFlow).toContain("kernel_check_authorized(null)");
+  expect(enrollmentFlow).toContain(
+    "Unable to enroll this principal as a Plasmon tenant.",
+  );
+  expect(enrollmentFlow).not.toContain("window.location");
   expect(source).not.toContain("ICP_DISPENSER_URL");
 });
 
