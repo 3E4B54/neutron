@@ -2092,6 +2092,26 @@ module {
             is_session_authorized(caller);
         };
 
+        // Self-scoped Malstorm session metadata.
+        // Caller identity is compiler-injected; callers can inspect only
+        // their own role and grants.
+        public func /*query:unauthorized*/kernel_my_is_owner(
+            (),
+            /*caller*/ caller : Principal,
+        ) : Bool {
+            is_authorized(caller);
+        };
+
+        public func /*query:unauthorized*/kernel_my_tenant_apps(
+            (),
+            /*caller*/ caller : Principal,
+        ) : [Text] {
+            if (is_authorized(caller)) {
+                return [];
+            };
+            malstorm_tenant_apps(caller);
+        };
+
         // Owner-only through the compiler-generated kernel authorization
         // wrapper. A grant may target only a currently installed non-kernel app.
         public func /*update*/kernel_tenant_grant(
@@ -3606,6 +3626,12 @@ public type is_app_authorized_Output = Bool;
 
 public type kernel_check_authorized_Input = (());
 public type kernel_check_authorized_Output = Bool;
+
+public type kernel_my_is_owner_Input = (());
+public type kernel_my_is_owner_Output = Bool;
+
+public type kernel_my_tenant_apps_Input = (());
+public type kernel_my_tenant_apps_Output = [Text];
 
 public type kernel_tenant_grant_Input = (input : {
                 principal : Principal;

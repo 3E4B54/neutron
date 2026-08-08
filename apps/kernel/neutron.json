@@ -45,6 +45,22 @@
       ],
       "allow": "unauthorized"
     },
+    "kernel_my_is_owner": {
+      "type": "query",
+      "async": false,
+      "arg": [
+        "caller"
+      ],
+      "allow": "unauthorized"
+    },
+    "kernel_my_tenant_apps": {
+      "type": "query",
+      "async": false,
+      "arg": [
+        "caller"
+      ],
+      "allow": "unauthorized"
+    },
     "kernel_tenant_grant": {
       "type": "update",
       "async": false

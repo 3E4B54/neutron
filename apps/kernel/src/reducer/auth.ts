@@ -51,6 +51,8 @@ type IcblastClient = (canister: string, candid?: string) => Promise<any>;
 
 export type KernelActor = CertifiedAssetsSettingsActor & {
   kernel_check_authorized(req: null): Promise<boolean>;
+  kernel_my_is_owner(req: null): Promise<boolean>;
+  kernel_my_tenant_apps(req: null): Promise<string[]>;
   kernel_install_code(req: {
     wasm: Uint8Array;
     candid: string;
@@ -161,6 +163,8 @@ type AuthState = {
   logged: boolean;
   authorized: boolean;
   principal: string;
+  owner: boolean;
+  appIds: string[];
   sessionGeneration: number;
   loading: boolean;
   authError: string | null;
@@ -168,6 +172,8 @@ type AuthState = {
     logged: boolean;
     authorized: boolean;
     principal: string;
+    owner?: boolean;
+    appIds?: string[];
     authError?: string | null;
   }) => void;
 };
@@ -176,14 +182,25 @@ export const useAuthStore = create<AuthState>((set) => ({
   logged: false,
   authorized: false,
   principal: "2vxsx-fae",
+  owner: false,
+  appIds: [],
   sessionGeneration: 0,
   loading: true,
   authError: null,
-  setAuth: ({ logged, authorized, principal, authError = null }) =>
+  setAuth: ({
+    logged,
+    authorized,
+    principal,
+    owner = false,
+    appIds = [],
+    authError = null,
+  }) =>
     set((state) => ({
       logged,
       authorized,
       principal,
+      owner,
+      appIds,
       sessionGeneration: state.sessionGeneration + 1,
       authError,
       loading: false,
@@ -333,10 +350,26 @@ export async function activateIdentity(
     return;
   }
 
+  const ownerResult = await identityActivation.wait(
+    activationGeneration,
+    neutronResult.value.kernel_my_is_owner(null),
+  );
+  if (!ownerResult.current) return;
+
+  const appIdsResult = await identityActivation.wait(
+    activationGeneration,
+    neutronResult.value.kernel_my_tenant_apps(null),
+  );
+  if (!appIdsResult.current) return;
   if (!activationIsCurrent()) return;
-  useAuthStore
-    .getState()
-    .setAuth({ logged: true, authorized: true, principal });
+
+  useAuthStore.getState().setAuth({
+    logged: true,
+    authorized: true,
+    principal,
+    owner: ownerResult.value,
+    appIds: appIdsResult.value,
+  });
 }
 
 export async function logout(): Promise<void> {
@@ -921,6 +954,16 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
       [],
     ),
     kernel_check_authorized: IDL.Func([IDL.Null], [IDL.Bool], ["query"]),
+    kernel_my_is_owner: IDL.Func(
+      [IDL.Null],
+      [IDL.Bool],
+      ["query"],
+    ),
+    kernel_my_tenant_apps: IDL.Func(
+      [IDL.Null],
+      [IDL.Vec(IDL.Text)],
+      ["query"],
+    ),
     kernel_controller_add: IDL.Func(
       [IDL.Principal],
       [KernelAccessSnapshot],

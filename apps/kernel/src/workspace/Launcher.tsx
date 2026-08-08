@@ -24,6 +24,7 @@ import {
   useAppsStore,
   type AppInstallSource,
 } from "../reducer/apps.ts";
+import { useAuthStore } from "../reducer/auth.ts";
 import { isAbortError } from "../tools/package_url.ts";
 import {
   launcherEntriesFromApps,
@@ -70,6 +71,8 @@ export function Launcher(props: LauncherProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const apps = useAppsStore((state) => state.list);
+  const owner = useAuthStore((state) => state.owner);
+  const appIds = useAuthStore((state) => state.appIds);
   const operationBusy = useAppsStore((state) => state.operationBusy);
   const authorityPending = useAppsStore(isAuthorityPendingState);
   const appMutationBlocked = operationBusy || authorityPending;
@@ -123,17 +126,28 @@ export function Launcher(props: LauncherProps) {
     }
   };
 
+  const visibleApps = useMemo(() => {
+    if (owner) return apps;
+
+    const allowed = new Set(appIds);
+    return Object.fromEntries(
+      Object.entries(apps).filter(([appId]) => allowed.has(appId)),
+    ) as typeof apps;
+  }, [apps, owner, appIds]);
+
   const entries = useMemo(
-    () => launcherEntriesFromApps(apps, query),
-    [apps, query],
+    () => launcherEntriesFromApps(visibleApps, query),
+    [visibleApps, query],
   );
+
   const dependencyPlan = useMemo(() => {
+    if (!owner) return null;
     try {
       return planAppRegistryDependencies(apps);
     } catch {
       return null;
     }
-  }, [apps]);
+  }, [apps, owner]);
 
   if (!open) return null;
 
@@ -149,6 +163,7 @@ export function Launcher(props: LauncherProps) {
   };
 
   const installPackage = async (source: AppInstallSource) => {
+    if (!owner) return;
     if (
       installRunRef.current ||
       useAppsStore.getState().operationBusy ||
@@ -209,6 +224,7 @@ export function Launcher(props: LauncherProps) {
   };
 
   const uninstallPackage = async (appId: string, appName: string) => {
+    if (!owner) return;
     if (
       installRunRef.current ||
       useAppsStore.getState().operationBusy ||
@@ -383,12 +399,16 @@ export function Launcher(props: LauncherProps) {
           </div>
         ) : null}
         <div className="launcher-results">
+          {owner ? (
           <div className="launcher-tile-row launcher-install-entry">
             <div className="launcher-install-tile">
-              <span aria-hidden="true" className="launcher-install-icon">
-                <IoAdd />
-              </span>
-              <div
+              {owner ? (
+                <span aria-hidden="true" className="launcher-install-icon">
+                  <IoAdd />
+                </span>
+              ) : null}
+              {owner ? (
+<div
                 aria-label="Install app from"
                 className="launcher-install-buttons"
                 role="group"
@@ -396,7 +416,7 @@ export function Launcher(props: LauncherProps) {
                 <button
                   aria-label="Install app from File"
                   className="launcher-install-button"
-                  data-tid={testId(launcherSystemActions.installPackage)}
+            data-tid={testId(launcherSystemActions.installPackage)}
                   disabled={installSource !== null || appMutationBlocked}
                   onClick={() => {
                     closeUrlInstall(false);
@@ -411,7 +431,7 @@ export function Launcher(props: LauncherProps) {
                   aria-expanded={urlInstallOpen}
                   aria-label="Install app from URL"
                   className={`launcher-install-button${urlInstallOpen ? " is-active" : ""}`}
-                  data-tid={testId(launcherSystemActions.installPackageUrl)}
+            data-tid={testId(launcherSystemActions.installPackageUrl)}
                   disabled={installSource !== null || appMutationBlocked}
                   onClick={() => {
                     if (urlInstallOpen) closeUrlInstall(false);
@@ -426,8 +446,10 @@ export function Launcher(props: LauncherProps) {
                   <span>URL</span>
                 </button>
               </div>
+              ) : null}
             </div>
           </div>
+          ) : null}
           {entries.map((entry) => {
             const impact = dependencyPlan
               ? appDependencyImpact(dependencyPlan, entry.appId)
@@ -466,18 +488,20 @@ export function Launcher(props: LauncherProps) {
                   <img src={entry.icon} alt="" />
                   <span className="launcher-tile-title">{entry.title}</span>
                 </button>
-                <button
-                  type="button"
-                  className="launcher-uninstall"
-                  title={uninstallTitle}
-                  aria-label={uninstallTitle}
-                  disabled={uninstallDisabled}
-                  onClick={() =>
-                    void uninstallPackage(entry.appId, entry.appName)
-                  }
-                >
-                  <IoTrashOutline aria-hidden="true" />
-                </button>
+                {owner ? (
+                  <button
+                    type="button"
+                    className="launcher-uninstall"
+                    title={uninstallTitle}
+                    aria-label={uninstallTitle}
+                    disabled={uninstallDisabled}
+                    onClick={() =>
+                      void uninstallPackage(entry.appId, entry.appName)
+                    }
+                  >
+                    <IoTrashOutline aria-hidden="true" />
+                  </button>
+                ) : null}
               </div>
             );
           })}
