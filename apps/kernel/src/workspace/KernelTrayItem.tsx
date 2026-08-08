@@ -12,7 +12,7 @@ import {
   IoSettingsOutline,
 } from "react-icons/io5";
 import { getNeutronId } from "../config.ts";
-import { logout } from "../reducer/auth.ts";
+import { logout, useAuthStore } from "../reducer/auth.ts";
 import type {
   KernelMemorySnapshot,
   KernelSettingsSnapshot,
@@ -47,26 +47,41 @@ export function KernelTrayItem({
   });
   const refreshGeneration = useRef(0);
   const canisterId = getNeutronId();
+  const owner = useAuthStore((state) => state.owner);
 
   const refresh = useCallback(async () => {
+    if (!owner) return;
+
     const generation = ++refreshGeneration.current;
-    setSnapshot((current) => ({ ...current, error: null, loading: true }));
+    setSnapshot((current) => ({
+      ...current,
+      error: null,
+      loading: true,
+    }));
+
     try {
       const [system, memory] = await Promise.all([
         loadKernelSettingsSnapshot(),
         loadKernelMemorySnapshot(),
       ]);
+
       if (generation !== refreshGeneration.current) return;
-      setSnapshot({ data: { memory, system }, error: null, loading: false });
+
+      setSnapshot({
+        data: { memory, system },
+        error: null,
+        loading: false,
+      });
     } catch (reason) {
       if (generation !== refreshGeneration.current) return;
+
       setSnapshot((current) => ({
         ...current,
         error: errorMessage(reason),
         loading: false,
       }));
     }
-  }, []);
+  }, [owner]);
 
   useEffect(
     () => () => {
@@ -75,12 +90,23 @@ export function KernelTrayItem({
     [],
   );
 
+  useEffect(() => {
+    if (owner) return;
+
+    refreshGeneration.current += 1;
+    setSnapshot({
+      data: null,
+      error: null,
+      loading: false,
+    });
+  }, [owner]);
+
   return (
     <TrayPopover
       buttonLabel="Kernel overview"
       itemClassName="kernel-tray-item"
       onOpenChange={(open) => {
-        if (open) void refresh();
+        if (open && owner) void refresh();
       }}
       popoverClassName="app-tray-popover--kernel"
       popoverId="kernel-tray-popover"
@@ -93,57 +119,65 @@ export function KernelTrayItem({
     >
       {({ close }) => (
         <div className="kernel-tray-content">
-          <section className="kernel-tray-overview" aria-label="Kernel overview">
+          <section
+            className="kernel-tray-overview"
+            aria-label="Kernel overview"
+          >
             <div className="kernel-tray-section-heading">
               <span>Canister</span>
-              <button
-                aria-label="Refresh kernel overview"
-                className="icon-button kernel-tray-refresh"
-                data-tid="kernel-tray-retry"
-                disabled={snapshot.loading}
-                onClick={() => void refresh()}
-                title="Refresh kernel overview"
-                type="button"
-              >
-                <IoRefresh aria-hidden="true" />
-              </button>
+
+              {owner ? (
+                <button
+                  aria-label="Refresh kernel overview"
+                  className="icon-button kernel-tray-refresh"
+                  data-tid="kernel-tray-retry"
+                  disabled={snapshot.loading}
+                  onClick={() => void refresh()}
+                  title="Refresh kernel overview"
+                  type="button"
+                >
+                  <IoRefresh aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
-            <code className="kernel-tray-canister" title={canisterId}>
-              {canisterId}
-            </code>
+
+            <code>{canisterId}</code>
           </section>
 
-          {snapshot.error ? (
+          {owner && snapshot.error ? (
             <div className="kernel-tray-error" role="alert">
               <strong>System metrics are unavailable.</strong>
               <span>{snapshot.error}</span>
             </div>
           ) : null}
 
-          {snapshot.data ? (
+          {owner && snapshot.data ? (
             <KernelTrayMetrics
               memory={snapshot.data.memory}
               snapshot={snapshot.data.system}
             />
-          ) : snapshot.loading ? (
+          ) : owner && snapshot.loading ? (
             <div className="kernel-tray-loading" role="status">
               Loading system metrics…
             </div>
           ) : null}
 
           <div className="kernel-tray-actions">
-            <button
-              className="kernel-tray-action kernel-tray-action--primary"
-              data-tid="kernel-tray-settings"
-              onClick={() => {
-                close();
-                onOpenSettings();
-              }}
-              type="button"
-            >
-              <IoSettingsOutline aria-hidden="true" />
-              <span>Open Settings</span>
-            </button>
+            {owner ? (
+              <button
+                className="kernel-tray-action kernel-tray-action--primary"
+                data-tid="kernel-tray-settings"
+                onClick={() => {
+                  close();
+                  onOpenSettings();
+                }}
+                type="button"
+              >
+                <IoSettingsOutline aria-hidden="true" />
+                <span>Open Settings</span>
+              </button>
+            ) : null}
+
             <button
               className="kernel-tray-action"
               data-tid="kernel-tray-logout"
