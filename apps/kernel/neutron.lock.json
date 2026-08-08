@@ -28,6 +28,15 @@
         }
       },
       "migrations": {}
+    },
+    "app_instances": {
+      "schemas": {
+        "1": {
+          "hash": "469f7077175ee37e54d8a19a477236620d6e31b6608a39525bba3d0483d376ed",
+          "entry": "bf5f52669e845ca4704c2481c3bee5e11019daffe11c8d535c64aebebcd42286"
+        }
+      },
+      "migrations": {}
     }
   }
 }

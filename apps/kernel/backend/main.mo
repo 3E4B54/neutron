@@ -45,6 +45,7 @@ import RouteNamespace "./http_routes/Namespace";
 import KernelMemory "./memory/kernel/v3";
 import ActivationMemory "./memory/activation/v1";
 import MalstormTenantsMemory "./memory/malstorm_tenants/v1";
+import AppInstancesMemory "./memory/app_instances/v1";
 import ActivationService "./activation/Service";
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
@@ -571,6 +572,7 @@ module {
         mem : KernelMemory.Mem,
         activationMem : ActivationMemory.Mem,
         malstormTenantsMem : MalstormTenantsMemory.Mem,
+        appInstancesMem : AppInstancesMemory.Mem,
         runningDeploymentId : Text,
         activeAppInstanceInventory : [InstallTypes.RuntimeApp],
         canisterPrincipal : Principal,
@@ -2112,18 +2114,6 @@ module {
             malstorm_tenant_apps(caller);
         };
 
-        // Phase 2A app-instance pool.
-        //
-        // Hard-coded only for the allocation spike. Later this becomes
-        // persistent app/app-instance metadata.
-        func app_instance_pool(appId : Text) : [Text] {
-            if (appId == "hello") {
-                ["hello_001", "hello_002"];
-            } else {
-                [];
-            };
-        };
-
         // Returns true when any tenant currently owns this app instance.
         func app_instance_assigned(appInstanceId : Text) : Bool {
             for ((_, grantedApps) in Map.entries(malstormTenantsMem.grants)) {
@@ -2141,18 +2131,103 @@ module {
             false;
         };
 
+        // Owner-only through the compiler-generated kernel wrapper.
+        //
+        // Register a physically installed Neutron app instance as belonging
+        // to a logical app. Registration is idempotent for the same mapping.
+        public func /*update*/kernel_app_instance_register(
+            input : {
+                app_id : Text;
+                app_instance_id : Text;
+            },
+        ) : () {
+            assert(input.app_instance_id != "kernel");
+            assert(
+                InstallMemory.committedScope(
+                    mem.install,
+                    input.app_instance_id,
+                ) != null
+            );
+
+            switch (
+                Map.get(
+                    appInstancesMem.instances,
+                    Text.compare,
+                    input.app_instance_id,
+                )
+            ) {
+                case null {
+                    Map.add(
+                        appInstancesMem.instances,
+                        Text.compare,
+                        input.app_instance_id,
+                        input.app_id,
+                    );
+                };
+                case (?existingAppId) {
+                    assert(existingAppId == input.app_id);
+                };
+            };
+        };
+
+        // Owner-only administrative query.
+        public func /*query*/kernel_app_instances_for_app(
+            input : { app_id : Text },
+        ) : [Text] {
+            var result : [Text] = [];
+
+            for (
+                (appInstanceId, registeredAppId)
+                in Map.entries(appInstancesMem.instances)
+            ) {
+                if (registeredAppId == input.app_id) {
+                    result := Array.concat(result, [appInstanceId]);
+                };
+            };
+
+            Array.sort(result, Text.compare);
+        };
+
         // Tenant-facing allocator.
         //
-        // The caller chooses an app, never a specific app instance.
-        // The kernel selects the first currently unassigned instance.
+        // Caller requests only the logical app. The kernel chooses the
+        // lexicographically first registered, installed, unassigned instance.
         public func /*update:unauthorized*/kernel_app_instance_allocate(
             input : { app_id : Text },
             /*caller*/ caller : Principal,
         ) : ?Text {
             assert(is_session_authorized(caller));
 
-            for (appInstanceId in app_instance_pool(input.app_id).vals()) {
-                if (not app_instance_assigned(appInstanceId)) {
+            var selected : ?Text = null;
+
+            for (
+                (appInstanceId, registeredAppId)
+                in Map.entries(appInstancesMem.instances)
+            ) {
+                if (
+                    registeredAppId == input.app_id and
+                    InstallMemory.committedScope(
+                        mem.install,
+                        appInstanceId,
+                    ) != null and
+                    not app_instance_assigned(appInstanceId)
+                ) {
+                    switch (selected) {
+                        case null {
+                            selected := ?appInstanceId;
+                        };
+                        case (?current) {
+                            if (Text.compare(appInstanceId, current) == #less) {
+                                selected := ?appInstanceId;
+                            };
+                        };
+                    };
+                };
+            };
+
+            switch (selected) {
+                case null null;
+                case (?appInstanceId) {
                     let current = malstorm_tenant_apps(caller);
 
                     Map.add(
@@ -2165,11 +2240,9 @@ module {
                         ),
                     );
 
-                    return ?appInstanceId;
+                    ?appInstanceId;
                 };
             };
-
-            null;
         };
 
         // Owner-only through the compiler-generated kernel authorization
@@ -3700,6 +3773,15 @@ public type kernel_my_is_owner_Output = Bool;
 
 public type kernel_my_tenant_apps_Input = (());
 public type kernel_my_tenant_apps_Output = [Text];
+
+public type kernel_app_instance_register_Input = (input : {
+                app_id : Text;
+                app_instance_id : Text;
+            },);
+public type kernel_app_instance_register_Output = ();
+
+public type kernel_app_instances_for_app_Input = (input : { app_id : Text },);
+public type kernel_app_instances_for_app_Output = [Text];
 
 public type kernel_app_instance_allocate_Input = (input : { app_id : Text });
 public type kernel_app_instance_allocate_Output = ?Text;
