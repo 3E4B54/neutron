@@ -387,7 +387,7 @@ export async function activateIdentity(
       logged: true,
       authorized: false,
       principal,
-      authError: "Unable to enroll this principal as a Malstorm tenant.",
+      authError: "Unable to enroll this principal as a Plasmon tenant.",
     });
     return;
   }

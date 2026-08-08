@@ -2,7 +2,7 @@ import Map "mo:core/Map";
 import Principal "mo:core/Principal";
 
 module {
-    // Malstorm tenant -> assigned Element/Isotope app ids.
+    // Tenant -> assigned physical app instance ids.
     //
     // Intentionally simple for v1. Typical tenants will have only a
     // handful of grants, so copying/scanning a small [Text] is preferable

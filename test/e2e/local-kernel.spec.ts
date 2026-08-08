@@ -1,4 +1,5 @@
 import { Actor, HttpAgent, type ActorMethod } from "@dfinity/agent";
+import { IDL } from "@dfinity/candid";
 import { Principal } from "@dfinity/principal";
 import type { AppRegistry } from "neutron-compiler/src/install.js";
 import {
@@ -12,6 +13,7 @@ import {
 import {
   localCanisterOrigin,
 } from "neutron-tools/src/runtime.js";
+import { physicalAppMethodName } from "neutron-tools/src/physical_names.js";
 import {
   createKernelActor,
   localIdentityFromSeed,
@@ -1685,6 +1687,287 @@ async function revokeTestPrincipal(principal: string): Promise<void> {
     actor.kernel_authorized_rem(Principal.fromText(principal))
   );
 }
+
+
+test("Plasmon tenants cannot cross owner or allocation boundaries", async () => {
+  const runtime = resolveLocalNeutronRuntime();
+  const developerSeed = runtime.developerIdentitySeed;
+
+  // Keep these well away from the developer seed and the +1 seed used by
+  // several existing Neutron authorization tests.
+  const tenantASeed = (developerSeed + 101) % 256;
+  const tenantBSeed = (developerSeed + 102) % 256;
+
+  const plasmonTestIdl = ({ IDL }: { IDL: typeof import("@dfinity/candid").IDL }) =>
+    IDL.Service({
+      kernel_tenant_join: IDL.Func([IDL.Null], [], []),
+      kernel_check_authorized: IDL.Func(
+        [IDL.Null],
+        [IDL.Bool],
+        ["query"],
+      ),
+      kernel_my_is_owner: IDL.Func(
+        [IDL.Null],
+        [IDL.Bool],
+        ["query"],
+      ),
+      kernel_my_tenant_apps: IDL.Func(
+        [IDL.Null],
+        [IDL.Vec(IDL.Text)],
+        ["query"],
+      ),
+      kernel_app_instance_allocate: IDL.Func(
+        [IDL.Record({ app_id: IDL.Text })],
+        [IDL.Opt(IDL.Text)],
+        [],
+      ),
+      kernel_tenant_revoke: IDL.Func(
+        [
+          IDL.Record({
+            principal: IDL.Principal,
+            app_id: IDL.Text,
+          }),
+        ],
+        [],
+        [],
+      ),
+      kernel_install_abort: IDL.Func(
+        [IDL.Record({ deployment_id: IDL.Text })],
+        [IDL.Null],
+        [],
+      ),
+    });
+
+  type PlasmonTestActor = {
+    kernel_tenant_join(req: null): Promise<void>;
+    kernel_check_authorized(req: null): Promise<boolean>;
+    kernel_my_is_owner(req: null): Promise<boolean>;
+    kernel_my_tenant_apps(req: null): Promise<string[]>;
+    kernel_app_instance_allocate(req: {
+      app_id: string;
+    }): Promise<[] | [string]>;
+    kernel_tenant_revoke(req: {
+      principal: Principal;
+      app_id: string;
+    }): Promise<void>;
+    kernel_install_abort(req: {
+      deployment_id: string;
+    }): Promise<null>;
+  };
+
+  const createActorForSeed = async (
+    seed: number,
+  ): Promise<PlasmonTestActor> => {
+    const agent = await HttpAgent.create({
+      host: localGatewayUrl(),
+      identity: localIdentityFromSeed(seed),
+      verifyQuerySignatures: false,
+    });
+
+    await agent.fetchRootKey();
+
+    return Actor.createActor<PlasmonTestActor>(plasmonTestIdl, {
+      agent,
+      canisterId: resolveCanisterId(),
+    });
+  };
+
+  const callPhysicalHelloWorld = async (
+    seed: number,
+    appId: string,
+    name: string,
+  ): Promise<string> => {
+    const method = physicalAppMethodName(appId, "hello_world");
+
+    const physicalIdl = ({
+      IDL,
+    }: {
+      IDL: typeof import("@dfinity/candid").IDL;
+    }) =>
+      IDL.Service({
+        [method]: IDL.Func(
+          [IDL.Text],
+          [IDL.Text],
+          [],
+        ),
+      });
+
+    const agent = await HttpAgent.create({
+      host: localGatewayUrl(),
+      identity: localIdentityFromSeed(seed),
+      verifyQuerySignatures: false,
+    });
+
+    await agent.fetchRootKey();
+
+    const actor = Actor.createActor<Record<string, ActorMethod>>(
+      physicalIdl,
+      {
+        agent,
+        canisterId: resolveCanisterId(),
+      },
+    );
+
+    const fn = actor[method];
+    if (!fn) {
+      throw new Error(`Missing physical app method ${method}`);
+    }
+
+    return await fn(name) as string;
+  };
+
+  const owner = await createActorForSeed(developerSeed);
+  const tenantA = await createActorForSeed(tenantASeed);
+  const tenantB = await createActorForSeed(tenantBSeed);
+
+  const tenantAPrincipal = localIdentityFromSeed(
+    tenantASeed,
+  ).getPrincipal();
+  const tenantBPrincipal = localIdentityFromSeed(
+    tenantBSeed,
+  ).getPrincipal();
+
+  await tenantA.kernel_tenant_join(null);
+  await tenantB.kernel_tenant_join(null);
+
+  expect(await tenantA.kernel_check_authorized(null)).toBe(true);
+  expect(await tenantB.kernel_check_authorized(null)).toBe(true);
+
+  expect(await tenantA.kernel_my_is_owner(null)).toBe(false);
+  expect(await tenantB.kernel_my_is_owner(null)).toBe(false);
+  expect(await owner.kernel_my_is_owner(null)).toBe(true);
+
+  /*
+   * A registered tenant must still be rejected by the physical deployment
+   * authority. Use a nonexistent deployment so the control probe is harmless.
+   */
+  const fakeDeployment =
+    `plasmon-security-probe-${Date.now()}-does-not-exist`;
+
+  await expect(
+    tenantA.kernel_install_abort({
+      deployment_id: fakeDeployment,
+    }),
+  ).rejects.toThrow();
+
+  await expect(
+    owner.kernel_install_abort({
+      deployment_id: fakeDeployment,
+    }),
+  ).resolves.toBeNull();
+
+  const allocations: Array<{
+    principal: Principal;
+    appId: string;
+  }> = [];
+
+  const allocate = async (
+    actor: typeof tenantA,
+    principal: Principal,
+    logicalAppId: string,
+  ): Promise<string> => {
+    const result = await actor.kernel_app_instance_allocate({
+      app_id: logicalAppId,
+    });
+
+    expect(result).toHaveLength(1);
+
+    const appId = result[0]!;
+    allocations.push({ principal, appId });
+    return appId;
+  };
+
+  try {
+    await allocate(tenantA, tenantAPrincipal, "hello");
+    await allocate(tenantA, tenantAPrincipal, "hello");
+    await allocate(tenantA, tenantAPrincipal, "demo");
+    await allocate(tenantA, tenantAPrincipal, "demo");
+
+    await allocate(tenantB, tenantBPrincipal, "hello");
+    await allocate(tenantB, tenantBPrincipal, "hello");
+    await allocate(tenantB, tenantBPrincipal, "demo");
+    await allocate(tenantB, tenantBPrincipal, "demo");
+
+    const aGrants = [...await tenantA.kernel_my_tenant_apps(null)].sort();
+    const bGrants = [...await tenantB.kernel_my_tenant_apps(null)].sort();
+
+    expect(aGrants).toHaveLength(4);
+    expect(bGrants).toHaveLength(4);
+
+    const overlap = aGrants.filter((appId) =>
+      bGrants.includes(appId),
+    );
+
+    expect(overlap).toEqual([]);
+
+    for (const appId of aGrants) {
+      expect(bGrants).not.toContain(appId);
+    }
+
+    for (const appId of bGrants) {
+      expect(aGrants).not.toContain(appId);
+    }
+
+    /*
+     * Prove AppScope enforcement using the physical actor methods.
+     * This deliberately bypasses the launcher and directly invokes the
+     * generated app_<physical-id>__hello_world methods.
+     */
+    const aHello = aGrants.find((appId) =>
+      appId.startsWith("hello_"),
+    );
+    const bHello = bGrants.find((appId) =>
+      appId.startsWith("hello_"),
+    );
+
+    if (!aHello || !bHello) {
+      throw new Error("Expected each tenant to have a Hello app instance");
+    }
+
+    await expect(
+      callPhysicalHelloWorld(
+        tenantASeed,
+        aHello,
+        "tenant-a-own-atom",
+      ),
+    ).resolves.toEqual(expect.any(String));
+
+    await expect(
+      callPhysicalHelloWorld(
+        tenantBSeed,
+        bHello,
+        "tenant-b-own-atom",
+      ),
+    ).resolves.toEqual(expect.any(String));
+
+    await expect(
+      callPhysicalHelloWorld(
+        tenantASeed,
+        bHello,
+        "tenant-a-attacking-b",
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      callPhysicalHelloWorld(
+        tenantBSeed,
+        aHello,
+        "tenant-b-attacking-a",
+      ),
+    ).rejects.toThrow();
+  } finally {
+    /*
+     * Revoke only grants created by this test. Revocation makes the physical
+     * slots available again, so repeated test runs do not consume the pool.
+     */
+    for (const allocation of allocations.reverse()) {
+      await owner.kernel_tenant_revoke({
+        principal: allocation.principal,
+        app_id: allocation.appId,
+      });
+    }
+  }
+});
 
 function localDeveloperIdentity() {
   return localIdentityFromSeed(

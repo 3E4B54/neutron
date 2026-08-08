@@ -44,7 +44,7 @@ import GatewayAuthority "./http_routes/GatewayAuthority";
 import RouteNamespace "./http_routes/Namespace";
 import KernelMemory "./memory/kernel/v3";
 import ActivationMemory "./memory/activation/v1";
-import MalstormTenantsMemory "./memory/malstorm_tenants/v1";
+import TenantsMemory "./memory/malstorm_tenants/v1";
 import AppInstancesMemory "./memory/app_instances/v1";
 import AppInstanceLifecycleMemory "./memory/app_instance_lifecycle/v1";
 import AppCatalogMemory "./memory/app_catalog/v1";
@@ -573,7 +573,7 @@ module {
     public class Init(
         mem : KernelMemory.Mem,
         activationMem : ActivationMemory.Mem,
-        malstormTenantsMem : MalstormTenantsMemory.Mem,
+        tenantsMem : TenantsMemory.Mem,
         appInstancesMem : AppInstancesMemory.Mem,
             appInstanceLifecycleMem : AppInstanceLifecycleMemory.Mem,
             appCatalogMem : AppCatalogMemory.Mem,
@@ -2040,14 +2040,14 @@ module {
             Set.contains(mem.core.authorized, Principal.compare, id);
         };
 
-        // Malstorm tenant authorization.
+        // Tenant authorization.
         //
         // Neutron owners retain global authority. A non-owner principal is a
         // tenant when it has an entry in the tenant map, even with zero grants.
-        func malstorm_tenant_apps(id : Principal) : [Text] {
+        func tenant_apps(id : Principal) : [Text] {
             switch (
                 Map.get(
-                    malstormTenantsMem.grants,
+                    tenantsMem.grants,
                     Principal.compare,
                     id,
                 )
@@ -2057,12 +2057,12 @@ module {
             };
         };
 
-        func malstorm_tenant_has_app(
+        func tenant_has_app(
             id : Principal,
             appId : Text,
         ) : Bool {
             Array.any(
-                malstorm_tenant_apps(id),
+                tenant_apps(id),
                 func(grantedAppId : Text) : Bool {
                     grantedAppId == appId;
                 },
@@ -2072,13 +2072,13 @@ module {
         public func /*internal*/is_session_authorized(id : Principal) : Bool {
             is_authorized(id) or
             Map.containsKey(
-                malstormTenantsMem.grants,
+                tenantsMem.grants,
                 Principal.compare,
                 id,
             );
         };
 
-        // Public Malstorm tenant enrollment.
+        // Public tenant enrollment.
         //
         // A caller may enroll only itself. Enrollment creates an empty grant
         // list; app instances are subsequently obtained through the allocator.
@@ -2095,7 +2095,7 @@ module {
 
             if (
                 Map.containsKey(
-                    malstormTenantsMem.grants,
+                    tenantsMem.grants,
                     Principal.compare,
                     caller,
                 )
@@ -2104,7 +2104,7 @@ module {
             };
 
             Map.add(
-                malstormTenantsMem.grants,
+                tenantsMem.grants,
                 Principal.compare,
                 caller,
                 [],
@@ -2118,7 +2118,7 @@ module {
             }
         ) : Bool {
             is_authorized(input.caller) or
-            malstorm_tenant_has_app(
+            tenant_has_app(
                 input.caller,
                 input.scope.app_id,
             );
@@ -2131,7 +2131,7 @@ module {
             is_session_authorized(caller);
         };
 
-        // Self-scoped Malstorm session metadata.
+        // Self-scoped tenant session metadata.
         // Caller identity is compiler-injected; callers can inspect only
         // their own role and grants.
         public func /*query:unauthorized*/kernel_my_is_owner(
@@ -2148,7 +2148,7 @@ module {
             if (is_authorized(caller)) {
                 return [];
             };
-            malstorm_tenant_apps(caller);
+            tenant_apps(caller);
         };
 
         // Returns true when any tenant currently owns this app instance.
@@ -2175,7 +2175,7 @@ module {
         ) : () {
             assert(is_session_authorized(caller));
             assert(
-                malstorm_tenant_has_app(
+                tenant_has_app(
                     caller,
                     input.app_instance_id,
                 )
@@ -2205,7 +2205,7 @@ module {
         };
 
         func app_instance_assigned(appInstanceId : Text) : Bool {
-            for ((_, grantedApps) in Map.entries(malstormTenantsMem.grants)) {
+            for ((_, grantedApps) in Map.entries(tenantsMem.grants)) {
                 if (
                     Array.any(
                         grantedApps,
@@ -2418,10 +2418,10 @@ module {
             switch (selected) {
                 case null null;
                 case (?appInstanceId) {
-                    let current = malstorm_tenant_apps(caller);
+                    let current = tenant_apps(caller);
 
                     Map.add(
-                        malstormTenantsMem.grants,
+                        tenantsMem.grants,
                         Principal.compare,
                         caller,
                         Array.sort(
@@ -2449,7 +2449,7 @@ module {
             // remains idempotent.
             assert(
                 not app_instance_assigned(input.app_id) or
-                malstorm_tenant_has_app(input.principal, input.app_id)
+                tenant_has_app(input.principal, input.app_id)
             );
 
             assert(SettingsAccess.validPrincipal(input.principal));
@@ -2461,7 +2461,7 @@ module {
                 ) != null
             );
 
-            let current = malstorm_tenant_apps(input.principal);
+            let current = tenant_apps(input.principal);
 
             if (
                 Array.any(
@@ -2473,7 +2473,7 @@ module {
             ) return;
 
             Map.add(
-                malstormTenantsMem.grants,
+                tenantsMem.grants,
                 Principal.compare,
                 input.principal,
                 Array.sort(
@@ -2485,14 +2485,14 @@ module {
 
         // Owner-only. An empty grant list is retained so tenant membership
         // remains independent from app ownership. A tenant with zero apps
-        // may still enter Malstorm and allocate a new app instance.
+        // may still enter the application platform and allocate a new app instance.
         public func /*update*/kernel_tenant_revoke(
             input : {
                 principal : Principal;
                 app_id : Text;
             },
         ) : () {
-            let current = malstorm_tenant_apps(input.principal);
+            let current = tenant_apps(input.principal);
             let remaining = Array.filter(
                 current,
                 func(appId : Text) : Bool {
@@ -2501,7 +2501,7 @@ module {
             );
 
             Map.add(
-                malstormTenantsMem.grants,
+                tenantsMem.grants,
                 Principal.compare,
                 input.principal,
                 remaining,
@@ -2512,7 +2512,7 @@ module {
         public func /*query*/kernel_tenant_apps(
             input : { principal : Principal },
         ) : [Text] {
-            malstorm_tenant_apps(input.principal);
+            tenant_apps(input.principal);
         };
 
         public func /*update:unauthorized*/kernel_authorized_recover(
