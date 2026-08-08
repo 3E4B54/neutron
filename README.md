@@ -198,7 +198,7 @@ Example:
 Generate deployment capacity with:
 
 ```bash
-bun plasmon-capacity.ts
+npm run plasmon:generate
 ```
 
 Generated artifacts are stored under:
@@ -233,23 +233,19 @@ The existing Neutron local provisioner creates and manages the fleet.
 Generate the deployment:
 
 ```bash
-bun plasmon-capacity.ts
+npm run plasmon:generate
 ```
 
 With PocketIC already being served, deploy with:
 
 ```bash
-bun plasmon-provision.ts \
-  plasmon.ndeploy.json \
-  reinstall
+npm run plasmon:deploy
 ```
 
 Inspect the resulting fleet with:
 
 ```bash
-npm run provision -- \
-  plasmon.ndeploy.json \
-  status
+npm run plasmon:status
 ```
 
 The Plasmon provisioning wrapper bootstraps the app catalog and physical-instance registry on every node.
@@ -259,27 +255,21 @@ The Plasmon provisioning wrapper bootstraps the app catalog and physical-instanc
 Terminal 1:
 
 ```bash
-npm run provision -- \
-  plasmon.ndeploy.json \
-  serve
+npm run plasmon:serve
 ```
 
 Terminal 2:
 
 ```bash
-bun plasmon-capacity.ts
+npm run plasmon:generate
 
-bun plasmon-provision.ts \
-  plasmon.ndeploy.json \
-  reinstall
+npm run plasmon:deploy
 ```
 
 Then obtain the authoritative current canister URLs with:
 
 ```bash
-npm run provision -- \
-  plasmon.ndeploy.json \
-  status
+npm run plasmon:status
 ```
 
 PocketIC canister IDs may change or be reused across local sessions. Do not rely on an old browser bookmark as the source of truth.
