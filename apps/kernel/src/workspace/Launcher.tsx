@@ -24,7 +24,7 @@ import {
   useAppsStore,
   type AppInstallSource,
 } from "../reducer/apps.ts";
-import { allocateAppInstance, getAvailableApps, useAuthStore } from "../reducer/auth.ts";
+import { allocateAppInstance, getAvailableApps, retireAppInstance, useAuthStore } from "../reducer/auth.ts";
 import { isAbortError } from "../tools/package_url.ts";
 import {
   launcherEntriesFromApps,
@@ -60,6 +60,7 @@ export function Launcher(props: LauncherProps) {
   const [availableApps, setAvailableApps] = useState<Awaited<ReturnType<typeof getAvailableApps>>>([]);
   const [allocateBusyAppId, setAllocateBusyAppId] = useState<string | null>(null);
   const [allocateError, setAllocateError] = useState<string | null>(null);
+  const [retireBusyAppId, setRetireBusyAppId] = useState<string | null>(null);
   const [installSource, setInstallSource] = useState<
     "file" | "url" | "uninstall" | null
   >(null);
@@ -531,6 +532,51 @@ export function Launcher(props: LauncherProps) {
               ))}
             </>
           ) : null}
+
+          {/* Phase 4B lifecycle test controls. */}
+          {!owner
+            ? appIds.map((appInstanceId) => (
+                <div
+                  className="launcher-tile-row"
+                  key={`retire-${appInstanceId}`}
+                >
+                  <button
+                    type="button"
+                    disabled={retireBusyAppId !== null}
+                    onClick={() => {
+                      if (retireBusyAppId !== null) return;
+
+                      if (
+                        !window.confirm(
+                          `Delete ${appInstanceId}? This physical instance will be permanently retired.`,
+                        )
+                      ) {
+                        return;
+                      }
+
+                      setRetireBusyAppId(appInstanceId);
+                      setAllocateError(null);
+
+                      void retireAppInstance(appInstanceId)
+                        .catch((error) => {
+                          setAllocateError(
+                            error instanceof Error
+                              ? error.message
+                              : `Unable to delete ${appInstanceId}.`,
+                          );
+                        })
+                        .finally(() => {
+                          setRetireBusyAppId(null);
+                        });
+                    }}
+                  >
+                    {retireBusyAppId === appInstanceId
+                      ? `Deleting ${appInstanceId}...`
+                      : `Delete ${appInstanceId}`}
+                  </button>
+                </div>
+              ))
+            : null}
 
           {allocateError ? (
             <div className="launcher-install-error" role="alert">

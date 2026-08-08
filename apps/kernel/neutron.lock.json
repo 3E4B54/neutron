@@ -46,6 +46,15 @@
         }
       },
       "migrations": {}
+    },
+    "app_instance_lifecycle": {
+      "schemas": {
+        "1": {
+          "hash": "283f81377a4b0f420ca8d999de12a7316e3676bae13d94317a4a57ab9f0e5457",
+          "entry": "f7cd5bec99c2b62c980796d80b952d96474c98d50388afaeae459be0e7743c1d"
+        }
+      },
+      "migrations": {}
     }
   }
 }

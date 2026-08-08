@@ -10,6 +10,7 @@
     "memory_kernel_activation",
     "memory_malstorm_tenants",
     "memory_app_instances",
+    "memory_app_instance_lifecycle",
     "memory_app_catalog",
     "deployment_id",
     "active_app_instance_inventory",
@@ -62,6 +63,18 @@
         "caller"
       ],
       "allow": "unauthorized"
+    },
+    "kernel_app_instance_retire": {
+      "type": "update",
+      "async": false,
+      "arg": [
+        "caller"
+      ],
+      "allow": "unauthorized"
+    },
+    "kernel_app_instance_is_retired": {
+      "type": "query",
+      "async": false
     },
     "kernel_app_instance_register": {
       "type": "update",
@@ -493,6 +506,15 @@
       "schemas": {
         "1": {
           "src": "memory/app_catalog/v1.mo"
+        }
+      },
+      "migrations": []
+    },
+    "app_instance_lifecycle": {
+      "version": 1,
+      "schemas": {
+        "1": {
+          "src": "memory/app_instance_lifecycle/v1.mo"
         }
       },
       "migrations": []

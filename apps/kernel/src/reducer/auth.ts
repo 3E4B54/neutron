@@ -56,6 +56,9 @@ export type KernelActor = CertifiedAssetsSettingsActor & {
   kernel_app_instance_allocate(req: {
     app_id: string;
   }): Promise<[] | [string]>;
+  kernel_app_instance_retire(req: {
+    app_instance_id: string;
+  }): Promise<void>;
   kernel_available_apps(req: null): Promise<string[]>;
   kernel_app_catalog_get(req: {
     app_id: string;
@@ -1024,6 +1027,15 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
       [IDL.Opt(IDL.Text)],
       [],
     ),
+    kernel_app_instance_retire: IDL.Func(
+      [
+        IDL.Record({
+          app_instance_id: IDL.Text,
+        }),
+      ],
+      [],
+      [],
+    ),
     kernel_available_apps: IDL.Func(
       [IDL.Null],
       [IDL.Vec(IDL.Text)],
@@ -1196,3 +1208,20 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
     ),
   });
 };
+
+
+export async function retireAppInstance(
+  appInstanceId: string,
+): Promise<void> {
+  const neutron = await getNeutronCan();
+
+  await neutron.kernel_app_instance_retire({
+    app_instance_id: appInstanceId,
+  });
+
+  const appIds = await neutron.kernel_my_tenant_apps(null);
+
+  useAuthStore.setState({
+    appIds,
+  });
+}

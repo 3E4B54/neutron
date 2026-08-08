@@ -46,6 +46,7 @@ import KernelMemory "./memory/kernel/v3";
 import ActivationMemory "./memory/activation/v1";
 import MalstormTenantsMemory "./memory/malstorm_tenants/v1";
 import AppInstancesMemory "./memory/app_instances/v1";
+import AppInstanceLifecycleMemory "./memory/app_instance_lifecycle/v1";
 import AppCatalogMemory "./memory/app_catalog/v1";
 import ActivationService "./activation/Service";
 import Array "mo:core/Array";
@@ -574,6 +575,7 @@ module {
         activationMem : ActivationMemory.Mem,
         malstormTenantsMem : MalstormTenantsMemory.Mem,
         appInstancesMem : AppInstancesMemory.Mem,
+            appInstanceLifecycleMem : AppInstanceLifecycleMemory.Mem,
             appCatalogMem : AppCatalogMemory.Mem,
         runningDeploymentId : Text,
         activeAppInstanceInventory : [InstallTypes.RuntimeApp],
@@ -2040,8 +2042,8 @@ module {
 
         // Malstorm tenant authorization.
         //
-        // Neutron owners retain global authority. Non-owner principals enter
-        // the Malstorm shell only when they have at least one Element grant.
+        // Neutron owners retain global authority. A non-owner principal is a
+        // tenant when it has an entry in the tenant map, even with zero grants.
         func malstorm_tenant_apps(id : Principal) : [Text] {
             switch (
                 Map.get(
@@ -2117,6 +2119,58 @@ module {
         };
 
         // Returns true when any tenant currently owns this app instance.
+        func app_instance_retired(appInstanceId : Text) : Bool {
+            switch (
+                Map.get(
+                    appInstanceLifecycleMem.retired,
+                    Text.compare,
+                    appInstanceId,
+                )
+            ) {
+                case null false;
+                case (?retired) retired;
+            };
+        };
+
+        // Tenant-facing deletion.
+        //
+        // Removing an instance revokes the caller's grant and permanently
+        // retires the physical instance. It is intentionally not reusable.
+        public func /*update:unauthorized*/kernel_app_instance_retire(
+            input : { app_instance_id : Text },
+            /*caller*/ caller : Principal,
+        ) : () {
+            assert(is_session_authorized(caller));
+            assert(
+                malstorm_tenant_has_app(
+                    caller,
+                    input.app_instance_id,
+                )
+            );
+
+            Map.add(
+                appInstanceLifecycleMem.retired,
+                Text.compare,
+                input.app_instance_id,
+                true,
+            );
+
+            // Reuse the existing grant-removal implementation. Authorization
+            // for kernel_tenant_revoke is applied by its generated external
+            // wrapper; this direct internal call performs only the mutation.
+            kernel_tenant_revoke({
+                principal = caller;
+                app_id = input.app_instance_id;
+            });
+        };
+
+        // Owner-only lifecycle inspection.
+        public func /*query*/kernel_app_instance_is_retired(
+            input : { app_instance_id : Text },
+        ) : Bool {
+            app_instance_retired(input.app_instance_id);
+        };
+
         func app_instance_assigned(appInstanceId : Text) : Bool {
             for ((_, grantedApps) in Map.entries(malstormTenantsMem.grants)) {
                 if (
@@ -2274,6 +2328,7 @@ module {
                         mem.install,
                         appInstanceId,
                     ) != null and
+                    not app_instance_retired(appInstanceId) and
                     not app_instance_assigned(appInstanceId) and
                     not Array.any(
                         result,
@@ -2311,6 +2366,7 @@ module {
                         mem.install,
                         appInstanceId,
                     ) != null and
+                    not app_instance_retired(appInstanceId) and
                     not app_instance_assigned(appInstanceId)
                 ) {
                     switch (selected) {
@@ -2354,6 +2410,7 @@ module {
                 app_id : Text;
             },
         ) : () {
+            assert(not app_instance_retired(input.app_id));
             // An app instance belongs to at most one tenant.
             // Re-granting an instance already owned by this same tenant
             // remains idempotent.
@@ -2393,8 +2450,9 @@ module {
             );
         };
 
-        // Owner-only. Revoking the final app removes the principal entirely,
-        // which also removes shell/session admission.
+        // Owner-only. An empty grant list is retained so tenant membership
+        // remains independent from app ownership. A tenant with zero apps
+        // may still enter Malstorm and allocate a new app instance.
         public func /*update*/kernel_tenant_revoke(
             input : {
                 principal : Principal;
@@ -2409,20 +2467,12 @@ module {
                 },
             );
 
-            if (remaining.size() == 0) {
-                Map.remove(
-                    malstormTenantsMem.grants,
-                    Principal.compare,
-                    input.principal,
-                );
-            } else {
-                Map.add(
-                    malstormTenantsMem.grants,
-                    Principal.compare,
-                    input.principal,
-                    remaining,
-                );
-            };
+            Map.add(
+                malstormTenantsMem.grants,
+                Principal.compare,
+                input.principal,
+                remaining,
+            );
         };
 
         // Owner-only administrative view for now.
@@ -3874,6 +3924,12 @@ public type kernel_my_is_owner_Output = Bool;
 
 public type kernel_my_tenant_apps_Input = (());
 public type kernel_my_tenant_apps_Output = [Text];
+
+public type kernel_app_instance_retire_Input = (input : { app_instance_id : Text });
+public type kernel_app_instance_retire_Output = ();
+
+public type kernel_app_instance_is_retired_Input = (input : { app_instance_id : Text },);
+public type kernel_app_instance_is_retired_Output = Bool;
 
 public type kernel_app_instance_register_Input = (input : {
                 app_id : Text;
