@@ -56,6 +56,7 @@ export type KernelActor = CertifiedAssetsSettingsActor & {
   kernel_app_instance_allocate(req: {
     app_id: string;
   }): Promise<[] | [string]>;
+  kernel_available_apps(req: null): Promise<string[]>;
   kernel_install_code(req: {
     wasm: Uint8Array;
     candid: string;
@@ -373,6 +374,11 @@ export async function activateIdentity(
     owner: ownerResult.value,
     appIds: appIdsResult.value,
   });
+}
+
+export async function getAvailableApps(): Promise<string[]> {
+  const neutron = await getNeutronCan();
+  return neutron.kernel_available_apps(null);
 }
 
 export async function allocateAppInstance(
@@ -994,6 +1000,11 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
       ],
       [IDL.Opt(IDL.Text)],
       [],
+    ),
+    kernel_available_apps: IDL.Func(
+      [IDL.Null],
+      [IDL.Vec(IDL.Text)],
+      ["query"],
     ),
     kernel_controller_add: IDL.Func(
       [IDL.Principal],

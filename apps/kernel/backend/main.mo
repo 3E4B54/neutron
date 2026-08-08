@@ -2188,6 +2188,42 @@ module {
             Array.sort(result, Text.compare);
         };
 
+        // Tenant-facing catalog.
+        //
+        // Returns each logical app that currently has at least one registered,
+        // installed and unassigned app instance.
+        public func /*query:unauthorized*/kernel_available_apps(
+            (),
+            /*caller*/ caller : Principal,
+        ) : [Text] {
+            assert(is_session_authorized(caller));
+
+            var result : [Text] = [];
+
+            for (
+                (appInstanceId, appId)
+                in Map.entries(appInstancesMem.instances)
+            ) {
+                if (
+                    InstallMemory.committedScope(
+                        mem.install,
+                        appInstanceId,
+                    ) != null and
+                    not app_instance_assigned(appInstanceId) and
+                    not Array.any(
+                        result,
+                        func(existingAppId : Text) : Bool {
+                            existingAppId == appId;
+                        },
+                    )
+                ) {
+                    result := Array.concat(result, [appId]);
+                };
+            };
+
+            Array.sort(result, Text.compare);
+        };
+
         // Tenant-facing allocator.
         //
         // Caller requests only the logical app. The kernel chooses the
@@ -3782,6 +3818,9 @@ public type kernel_app_instance_register_Output = ();
 
 public type kernel_app_instances_for_app_Input = (input : { app_id : Text },);
 public type kernel_app_instances_for_app_Output = [Text];
+
+public type kernel_available_apps_Input = (());
+public type kernel_available_apps_Output = [Text];
 
 public type kernel_app_instance_allocate_Input = (input : { app_id : Text });
 public type kernel_app_instance_allocate_Output = ?Text;

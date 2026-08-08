@@ -24,7 +24,7 @@ import {
   useAppsStore,
   type AppInstallSource,
 } from "../reducer/apps.ts";
-import { allocateAppInstance, useAuthStore } from "../reducer/auth.ts";
+import { allocateAppInstance, getAvailableApps, useAuthStore } from "../reducer/auth.ts";
 import { isAbortError } from "../tools/package_url.ts";
 import {
   launcherEntriesFromApps,
@@ -57,7 +57,8 @@ export function Launcher(props: LauncherProps) {
   const testId = (id: string) =>
     placement === "modal" ? id : `workspace-${id}`;
   const [query, setQuery] = useState("");
-  const [allocateBusy, setAllocateBusy] = useState(false);
+  const [availableApps, setAvailableApps] = useState<string[]>([]);
+  const [allocateBusyAppId, setAllocateBusyAppId] = useState<string | null>(null);
   const [allocateError, setAllocateError] = useState<string | null>(null);
   const [installSource, setInstallSource] = useState<
     "file" | "url" | "uninstall" | null
@@ -136,6 +137,33 @@ export function Launcher(props: LauncherProps) {
       Object.entries(apps).filter(([appId]) => allowed.has(appId)),
     ) as typeof apps;
   }, [apps, owner, appIds]);
+
+  useEffect(() => {
+    if (!open || owner) {
+      setAvailableApps([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    void getAvailableApps()
+      .then((apps) => {
+        if (!cancelled) setAvailableApps(apps);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAllocateError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load available apps.",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, owner, appIds]);
 
   const entries = useMemo(
     () => launcherEntriesFromApps(visibleApps, query),
@@ -453,42 +481,51 @@ export function Launcher(props: LauncherProps) {
           </div>
           ) : null}
           {!owner ? (
-            <div className="launcher-tile-row">
-              <button
-                type="button"
-                className="launcher-tile"
-                disabled={allocateBusy}
-                onClick={() => {
-                  if (allocateBusy) return;
+            <>
+              {availableApps.map((appId) => (
+                <div
+                  className="launcher-tile-row"
+                  key={`available-${appId}`}
+                >
+                  <button
+                    type="button"
+                    className="launcher-tile"
+                    disabled={allocateBusyAppId !== null}
+                    onClick={() => {
+                      if (allocateBusyAppId !== null) return;
 
-                  setAllocateBusy(true);
-                  setAllocateError(null);
+                      setAllocateBusyAppId(appId);
+                      setAllocateError(null);
 
-                  void allocateAppInstance("hello")
-                    .then((appInstanceId) => {
-                      if (appInstanceId === null) {
-                        setAllocateError(
-                          "No Hello app instances are available.",
-                        );
-                      }
-                    })
-                    .catch((error) => {
-                      setAllocateError(
-                        error instanceof Error
-                          ? error.message
-                          : "Unable to allocate Hello.",
-                      );
-                    })
-                    .finally(() => {
-                      setAllocateBusy(false);
-                    });
-                }}
-              >
-                <span className="launcher-tile-title">
-                  {allocateBusy ? "Adding Hello..." : "Add Hello"}
-                </span>
-              </button>
-            </div>
+                      void allocateAppInstance(appId)
+                        .then((appInstanceId) => {
+                          if (appInstanceId === null) {
+                            setAllocateError(
+                              `No ${appId} app instances are available.`,
+                            );
+                          }
+                        })
+                        .catch((error) => {
+                          setAllocateError(
+                            error instanceof Error
+                              ? error.message
+                              : `Unable to allocate ${appId}.`,
+                          );
+                        })
+                        .finally(() => {
+                          setAllocateBusyAppId(null);
+                        });
+                    }}
+                  >
+                    <span className="launcher-tile-title">
+                      {allocateBusyAppId === appId
+                        ? `Creating ${appId}...`
+                        : `New ${appId}`}
+                    </span>
+                  </button>
+                </div>
+              ))}
+            </>
           ) : null}
 
           {allocateError ? (
