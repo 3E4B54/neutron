@@ -53,6 +53,9 @@ export type KernelActor = CertifiedAssetsSettingsActor & {
   kernel_check_authorized(req: null): Promise<boolean>;
   kernel_my_is_owner(req: null): Promise<boolean>;
   kernel_my_tenant_apps(req: null): Promise<string[]>;
+  kernel_app_instance_allocate(req: {
+    app_id: string;
+  }): Promise<[] | [string]>;
   kernel_install_code(req: {
     wasm: Uint8Array;
     candid: string;
@@ -370,6 +373,25 @@ export async function activateIdentity(
     owner: ownerResult.value,
     appIds: appIdsResult.value,
   });
+}
+
+export async function allocateAppInstance(
+  appId: string,
+): Promise<string | null> {
+  const neutron = await getNeutronCan();
+
+  const result = await neutron.kernel_app_instance_allocate({
+    app_id: appId,
+  });
+
+  const allocated = result[0] ?? null;
+
+  if (allocated !== null) {
+    const appIds = await neutron.kernel_my_tenant_apps(null);
+    useAuthStore.setState({ appIds });
+  }
+
+  return allocated;
 }
 
 export async function logout(): Promise<void> {
@@ -963,6 +985,15 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
       [IDL.Null],
       [IDL.Vec(IDL.Text)],
       ["query"],
+    ),
+    kernel_app_instance_allocate: IDL.Func(
+      [
+        IDL.Record({
+          app_id: IDL.Text,
+        }),
+      ],
+      [IDL.Opt(IDL.Text)],
+      [],
     ),
     kernel_controller_add: IDL.Func(
       [IDL.Principal],

@@ -2112,6 +2112,66 @@ module {
             malstorm_tenant_apps(caller);
         };
 
+        // Phase 2A app-instance pool.
+        //
+        // Hard-coded only for the allocation spike. Later this becomes
+        // persistent app/app-instance metadata.
+        func app_instance_pool(appId : Text) : [Text] {
+            if (appId == "hello") {
+                ["hello_001", "hello_002"];
+            } else {
+                [];
+            };
+        };
+
+        // Returns true when any tenant currently owns this app instance.
+        func app_instance_assigned(appInstanceId : Text) : Bool {
+            for ((_, grantedApps) in Map.entries(malstormTenantsMem.grants)) {
+                if (
+                    Array.any(
+                        grantedApps,
+                        func(grantedAppId : Text) : Bool {
+                            grantedAppId == appInstanceId;
+                        },
+                    )
+                ) {
+                    return true;
+                };
+            };
+            false;
+        };
+
+        // Tenant-facing allocator.
+        //
+        // The caller chooses an app, never a specific app instance.
+        // The kernel selects the first currently unassigned instance.
+        public func /*update:unauthorized*/kernel_app_instance_allocate(
+            input : { app_id : Text },
+            /*caller*/ caller : Principal,
+        ) : ?Text {
+            assert(is_session_authorized(caller));
+
+            for (appInstanceId in app_instance_pool(input.app_id).vals()) {
+                if (not app_instance_assigned(appInstanceId)) {
+                    let current = malstorm_tenant_apps(caller);
+
+                    Map.add(
+                        malstormTenantsMem.grants,
+                        Principal.compare,
+                        caller,
+                        Array.sort(
+                            Array.concat(current, [appInstanceId]),
+                            Text.compare,
+                        ),
+                    );
+
+                    return ?appInstanceId;
+                };
+            };
+
+            null;
+        };
+
         // Owner-only through the compiler-generated kernel authorization
         // wrapper. A grant may target only a currently installed non-kernel app.
         public func /*update*/kernel_tenant_grant(
@@ -2120,6 +2180,14 @@ module {
                 app_id : Text;
             },
         ) : () {
+            // An app instance belongs to at most one tenant.
+            // Re-granting an instance already owned by this same tenant
+            // remains idempotent.
+            assert(
+                not app_instance_assigned(input.app_id) or
+                malstorm_tenant_has_app(input.principal, input.app_id)
+            );
+
             assert(SettingsAccess.validPrincipal(input.principal));
             assert(input.app_id != "kernel");
             assert(
@@ -3632,6 +3700,9 @@ public type kernel_my_is_owner_Output = Bool;
 
 public type kernel_my_tenant_apps_Input = (());
 public type kernel_my_tenant_apps_Output = [Text];
+
+public type kernel_app_instance_allocate_Input = (input : { app_id : Text });
+public type kernel_app_instance_allocate_Output = ?Text;
 
 public type kernel_tenant_grant_Input = (input : {
                 principal : Principal;

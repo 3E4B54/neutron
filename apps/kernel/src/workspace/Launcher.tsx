@@ -24,7 +24,7 @@ import {
   useAppsStore,
   type AppInstallSource,
 } from "../reducer/apps.ts";
-import { useAuthStore } from "../reducer/auth.ts";
+import { allocateAppInstance, useAuthStore } from "../reducer/auth.ts";
 import { isAbortError } from "../tools/package_url.ts";
 import {
   launcherEntriesFromApps,
@@ -57,6 +57,8 @@ export function Launcher(props: LauncherProps) {
   const testId = (id: string) =>
     placement === "modal" ? id : `workspace-${id}`;
   const [query, setQuery] = useState("");
+  const [allocateBusy, setAllocateBusy] = useState(false);
+  const [allocateError, setAllocateError] = useState<string | null>(null);
   const [installSource, setInstallSource] = useState<
     "file" | "url" | "uninstall" | null
   >(null);
@@ -450,6 +452,51 @@ export function Launcher(props: LauncherProps) {
             </div>
           </div>
           ) : null}
+          {!owner ? (
+            <div className="launcher-tile-row">
+              <button
+                type="button"
+                className="launcher-tile"
+                disabled={allocateBusy}
+                onClick={() => {
+                  if (allocateBusy) return;
+
+                  setAllocateBusy(true);
+                  setAllocateError(null);
+
+                  void allocateAppInstance("hello")
+                    .then((appInstanceId) => {
+                      if (appInstanceId === null) {
+                        setAllocateError(
+                          "No Hello app instances are available.",
+                        );
+                      }
+                    })
+                    .catch((error) => {
+                      setAllocateError(
+                        error instanceof Error
+                          ? error.message
+                          : "Unable to allocate Hello.",
+                      );
+                    })
+                    .finally(() => {
+                      setAllocateBusy(false);
+                    });
+                }}
+              >
+                <span className="launcher-tile-title">
+                  {allocateBusy ? "Adding Hello..." : "Add Hello"}
+                </span>
+              </button>
+            </div>
+          ) : null}
+
+          {allocateError ? (
+            <div className="launcher-install-error" role="alert">
+              {allocateError}
+            </div>
+          ) : null}
+
           {entries.map((entry) => {
             const impact = dependencyPlan
               ? appDependencyImpact(dependencyPlan, entry.appId)

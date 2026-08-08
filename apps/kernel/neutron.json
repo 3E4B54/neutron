@@ -61,6 +61,14 @@
       ],
       "allow": "unauthorized"
     },
+    "kernel_app_instance_allocate": {
+      "type": "update",
+      "async": false,
+      "arg": [
+        "caller"
+      ],
+      "allow": "unauthorized"
+    },
     "kernel_tenant_grant": {
       "type": "update",
       "async": false
