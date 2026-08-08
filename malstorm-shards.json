@@ -1,6 +1,5 @@
 {
   "shared": [
-    "local",
-    "shared-002"
+    "local"
   ]
 }
