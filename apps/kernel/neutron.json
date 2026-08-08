@@ -88,7 +88,15 @@
       "type": "update",
       "async": false
     },
+    "kernel_app_pool_register": {
+      "type": "update",
+      "async": false
+    },
     "kernel_app_instances_for_app": {
+      "type": "query",
+      "async": false
+    },
+    "kernel_app_catalog_list": {
       "type": "query",
       "async": false
     },

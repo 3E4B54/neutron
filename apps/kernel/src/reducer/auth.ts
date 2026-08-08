@@ -62,9 +62,19 @@ export type KernelActor = CertifiedAssetsSettingsActor & {
     app_instance_id: string;
   }): Promise<void>;
   kernel_available_apps(req: null): Promise<string[]>;
+  kernel_app_catalog_list(req: null): Promise<string[]>;
   kernel_app_catalog_get(req: {
     app_id: string;
   }): Promise<string[]>;
+  kernel_app_instances_for_app(req: {
+    app_id: string;
+  }): Promise<string[]>;
+  kernel_app_pool_register(req: {
+    app_id: string;
+    name: string;
+    description: string;
+    app_instance_ids: string[];
+  }): Promise<void>;
   kernel_install_code(req: {
     wasm: Uint8Array;
     candid: string;
@@ -434,6 +444,35 @@ export async function getAvailableApps(): Promise<AvailableApp[]> {
         appId,
         name: metadata[0] ?? appId,
         description: metadata[1] ?? "",
+      };
+    }),
+  );
+}
+
+export type CatalogApp = AvailableApp & {
+  capacity: number;
+};
+
+export async function getCatalogApps(): Promise<CatalogApp[]> {
+  const neutron = await getNeutronCan();
+  const appIds = await neutron.kernel_app_catalog_list(null);
+
+  return Promise.all(
+    appIds.map(async (appId) => {
+      const [metadata, instances] = await Promise.all([
+        neutron.kernel_app_catalog_get({
+          app_id: appId,
+        }),
+        neutron.kernel_app_instances_for_app({
+          app_id: appId,
+        }),
+      ]);
+
+      return {
+        appId,
+        name: metadata[0] ?? appId,
+        description: metadata[1] ?? "",
+        capacity: instances.length,
       };
     }),
   );
@@ -1093,6 +1132,11 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
       [IDL.Vec(IDL.Text)],
       ["query"],
     ),
+    kernel_app_catalog_list: IDL.Func(
+      [IDL.Null],
+      [IDL.Vec(IDL.Text)],
+      ["query"],
+    ),
     kernel_app_catalog_get: IDL.Func(
       [
         IDL.Record({
@@ -1101,6 +1145,27 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
       ],
       [IDL.Vec(IDL.Text)],
       ["query"],
+    ),
+    kernel_app_instances_for_app: IDL.Func(
+      [
+        IDL.Record({
+          app_id: IDL.Text,
+        }),
+      ],
+      [IDL.Vec(IDL.Text)],
+      ["query"],
+    ),
+    kernel_app_pool_register: IDL.Func(
+      [
+        IDL.Record({
+          app_id: IDL.Text,
+          name: IDL.Text,
+          description: IDL.Text,
+          app_instance_ids: IDL.Vec(IDL.Text),
+        }),
+      ],
+      [],
+      [],
     ),
     kernel_controller_add: IDL.Func(
       [IDL.Principal],

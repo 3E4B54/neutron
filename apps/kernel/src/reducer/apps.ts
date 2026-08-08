@@ -17,9 +17,11 @@ import {
   deployPreparedPackages,
   normalizeAppRegistry,
   planAppRegistryDependencies,
+  preparePackageInstall,
   REMOTE_NEUTRON_PACKAGE_DECODE_LIMITS,
   recoverPendingInstall,
   readKernelPackageState,
+  unpackNeutronPackage,
   type AppRegistry,
   type CompileResult,
   type DeployPackageStep,
@@ -28,6 +30,7 @@ import {
   type InstallStagedAsset,
   type KernelPackageState,
   type PreparedPackageInstall,
+  type UnpackedNeutronPackage,
 } from "neutron-compiler/src/install.js";
 import { disposeMotokoCompiler } from "neutron-motoko-wasm";
 import { getRuntimeDeployment } from "../runtime_deployment.ts";
@@ -1880,6 +1883,609 @@ async function uninstallAppInternal(appId: string): Promise<AppInstallResult> {
     });
     throw installError;
   }
+}
+
+
+export type AppPoolInstallInput = {
+  pkg: Uint8Array;
+  capacity: number;
+  name?: string;
+  description?: string;
+
+  /*
+   * Zero-based physical identity offset.
+   *
+   * startIndex = 0 → app_001...
+   * startIndex = 4 → app_005...
+   */
+  startIndex?: number;
+};
+
+export type AppPoolInstallResult = {
+  appId: string;
+  appInstanceIds: string[];
+  apps: AppRegistry;
+};
+
+type PackageJsonObject = Record<string, unknown>;
+
+export type AppPoolPackageSelection = {
+  fileName: string;
+  pkg: Uint8Array;
+  appId: string;
+  name: string;
+  version: number;
+  description: string;
+};
+
+export async function select_app_pool_package():
+  Promise<AppPoolPackageSelection> {
+  const file = await pickFile();
+  const pkg = new Uint8Array(
+    await readFile(file),
+  );
+  const neutron = await getNeutronCan();
+
+  const {
+    neutronConfig,
+    preparedPackage,
+  } = await get_app_details(neutron, pkg);
+
+  if (
+    neutronConfig.id === "kernel" ||
+    preparedPackage.isKernel
+  ) {
+    throw new Error("The Kernel cannot be published as an Element");
+  }
+
+  return {
+    fileName: file.name,
+    pkg,
+    appId: neutronConfig.id,
+    name: neutronConfig.name,
+    version: neutronConfig.version,
+    description: neutronConfig.description ?? "",
+  };
+}
+function physicalAppInstanceId(
+  logicalAppId: string,
+  index: number,
+): string {
+  return `${logicalAppId}_${String(index + 1).padStart(3, "0")}`;
+}
+
+function appPoolTemplatePath(logicalAppId: string): string {
+  return `/plasmon/templates/${logicalAppId}.neutron`;
+}
+
+async function readRetainedAppPoolTemplate(
+  logicalAppId: string,
+): Promise<Uint8Array> {
+  const response = await fetch(appPoolTemplatePath(logicalAppId), {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `No retained package template is available for Element ${logicalAppId}`,
+    );
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
+}
+function packageJson(
+  unpacked: UnpackedNeutronPackage,
+  path: string,
+): PackageJsonObject {
+  const bytes = unpacked[path];
+
+  if (!bytes) {
+    throw new Error(`Package is missing ${path}`);
+  }
+
+  let value: unknown;
+
+  try {
+    value = JSON.parse(new TextDecoder().decode(bytes));
+  } catch (error) {
+    throw new Error(`Package ${path} is not valid JSON`, {
+      cause: error,
+    });
+  }
+
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    throw new Error(`Package ${path} must contain a JSON object`);
+  }
+
+  return value as PackageJsonObject;
+}
+
+function setPackageJson(
+  unpacked: UnpackedNeutronPackage,
+  path: string,
+  value: PackageJsonObject,
+): void {
+  unpacked[path] = new TextEncoder().encode(
+    JSON.stringify(value),
+  );
+}
+
+function clonePackageForPhysicalApp(
+  template: UnpackedNeutronPackage,
+  appInstanceId: string,
+  appName: string,
+): UnpackedNeutronPackage {
+  /*
+   * Large immutable module/web byte arrays are intentionally shared.
+   * Only the identity-bearing JSON entries are replaced.
+   */
+  const clone = Object.assign(
+    Object.create(null),
+    template,
+  ) as UnpackedNeutronPackage;
+
+  const manifest = packageJson(clone, "neutron.json");
+  manifest.id = appInstanceId;
+  manifest.name = appName;
+
+  if (Array.isArray(manifest.tiles)) {
+    manifest.tiles = manifest.tiles.map((tile) => {
+      if (
+        typeof tile !== "object" ||
+        tile === null ||
+        Array.isArray(tile)
+      ) {
+        return tile;
+      }
+
+      return {
+        ...(tile as PackageJsonObject),
+        title: appName,
+      };
+    });
+  }
+
+  setPackageJson(clone, "neutron.json", manifest);
+
+  const schema = packageJson(clone, "schema.json");
+
+  if (
+    typeof schema.app !== "object" ||
+    schema.app === null ||
+    Array.isArray(schema.app)
+  ) {
+    throw new Error("Package schema.json has no app metadata");
+  }
+
+  schema.app = {
+    ...(schema.app as PackageJsonObject),
+    id: appInstanceId,
+    name: appName,
+  };
+
+  setPackageJson(clone, "schema.json", schema);
+
+  const lock = packageJson(clone, "neutron.lock.json");
+  lock.app = appInstanceId;
+  setPackageJson(clone, "neutron.lock.json", lock);
+
+  return clone;
+}
+
+/*
+ * Install one logical application as a pool of isolated physical app
+ * instances. Product terminology (Element/Atom) deliberately stays outside
+ * this generic runtime implementation.
+ */
+export async function install_app_pool({
+  pkg,
+  capacity,
+  name,
+  description = "",
+  startIndex = 0,
+}: AppPoolInstallInput): Promise<AppPoolInstallResult> {
+  if (!Number.isSafeInteger(capacity) || capacity < 1) {
+    throw new Error("App capacity must be a positive integer");
+  }
+
+  if (!Number.isSafeInteger(startIndex) || startIndex < 0) {
+    throw new Error("App pool start index must be a non-negative integer");
+  }
+
+  beginOperation();
+
+  const installId = ++installSequence;
+  let deploymentCommitted = false;
+
+  useAppsStore.getState().setCompiled(null);
+  useAppsStore.getState().setInstallError(null);
+
+  try {
+    const neutron = await getNeutronCan();
+
+    /*
+     * Use the normal Neutron package validation/disclosure path for the
+     * uploaded template.
+     */
+    const {
+      neutronConfig,
+      preparedPackage: templatePrepared,
+    } = await get_app_details(neutron, pkg);
+
+    const logicalAppId = neutronConfig.id;
+    const appName = name?.trim() || neutronConfig.name;
+
+    if (
+      logicalAppId === "kernel" ||
+      templatePrepared.isKernel
+    ) {
+      throw new Error("The Kernel cannot be published as an app pool");
+    }
+
+    if (!appName) {
+      throw new Error("App name cannot be empty");
+    }
+
+    const dependencies =
+      templatePrepared.manifest.dependencies ?? {};
+
+    if (Object.keys(dependencies).length > 0) {
+      throw new Error(
+        "App pools with application dependencies are not supported yet",
+      );
+    }
+
+    /*
+     * Decode the raw archive into its canonical top-level package entries.
+     * Physical packages are then derived entirely in memory.
+     */
+    const unpackedTemplate = unpackNeutronPackage(pkg);
+
+    const appInstanceIds = Array.from(
+      { length: capacity },
+      (_, index) =>
+        physicalAppInstanceId(
+          logicalAppId,
+          startIndex + index,
+        ),
+    );
+
+    const { state, expectedDeploymentId } =
+      await readCurrentKernelState();
+
+    if (
+      state.apps[logicalAppId] ||
+      state.existingConfigs[logicalAppId]
+    ) {
+      throw new Error(
+        `App ${logicalAppId} is already physically installed and cannot be used as a new logical app pool`,
+      );
+    }
+
+    for (const appInstanceId of appInstanceIds) {
+      if (
+        state.apps[appInstanceId] ||
+        state.existingConfigs[appInstanceId]
+      ) {
+        throw new Error(
+          `Physical app instance ${appInstanceId} is already installed`,
+        );
+      }
+    }
+
+    const preparedPackages = appInstanceIds.map(
+      (appInstanceId) =>
+        preparePackageInstall(
+          clonePackageForPhysicalApp(
+            unpackedTemplate,
+            appInstanceId,
+            appName,
+          ),
+        ),
+    );
+
+    const {
+      capabilityDisclosures,
+      permissions,
+      appExplanations,
+      planFingerprint,
+    } = configInstallDisclosures(neutronConfig);
+
+    if (
+      planFingerprint !==
+      templatePrepared.capabilityPlanFingerprint
+    ) {
+      throw new Error(
+        "Prepared package capability plan mismatch",
+      );
+    }
+
+    /*
+     * One owner approval describes the uploaded logical package. All physical
+     * clones have already been proven to carry the identical capability plan.
+     */
+    /*
+     * Neutron's approval dialog waits for compilation metadata before the
+     * owner can approve. Start compilation and approval concurrently, exactly
+     * like the normal single-package installer.
+     *
+     * These are all brand-new physical IDs, so there are no previous app
+     * asset prefixes requiring update cleanup.
+     */
+    const compilePromise = compilePackages({
+      packages: preparedPackages,
+      existingModules: state.existingModules,
+      existingConfigs: state.existingConfigs,
+      existingStable: state.previousStable,
+      connectionProviderSupport: state.connectionProviderSupport,
+      deploymentNonce: createDeploymentNonce(),
+      vetKeysEnvironment: runtimeCompilerEnvironment(),
+    }).then((compiled) => {
+      if (installId === installSequence) {
+        useAppsStore.getState().setCompiled({
+          size: Math.ceil(compiled.wasm.length / 1024),
+        });
+      }
+
+      return compiled;
+    });
+
+    const [compiled] = await Promise.all([
+      compilePromise,
+      appRequest({
+        id: logicalAppId,
+        packageName: appName,
+        packageVersion: neutronConfig.version,
+        packageDigest: hashContent(pkg),
+        size: Math.ceil(pkg.length / 1024),
+        acquisition: "file",
+        operation: "install",
+        capabilityPlanFingerprint: planFingerprint,
+        capabilityDisclosures,
+        permissions,
+        appExplanations,
+      }),
+    ]);
+
+    if (installId !== installSequence) {
+      throw new Error("Install request cancelled");
+    }
+
+    useAppsStore.getState().setOperation({
+      kind: "install",
+      appId: logicalAppId,
+      phase: "staging",
+    });
+
+    /*
+     * Compilation is complete and the owner has approved. Now perform the
+     * single deployment transaction for the entire physical pool.
+     */
+    const result = await deployPreparedPackages({
+      actor: neutron,
+      targetCanisterId: getRuntimeDeployment().canisterId,
+      packages: preparedPackages,
+      compiled,
+      existingApps: state.apps,
+      ...(startIndex === 0
+        ? {
+            stagedAssets: [
+              {
+                target: appPoolTemplatePath(logicalAppId),
+                content: pkg,
+                contentType: "application/octet-stream",
+              },
+            ],
+          }
+        : {}),
+      previousModulePaths: state.existingModules.map(
+        ({ path }) => path,
+      ),
+      expectedDeploymentId,
+      onStep(step) {
+        setDeployOperation(
+          "install",
+          logicalAppId,
+          step,
+        );
+        announceActivationStep(
+          step,
+          compiled.deploymentId,
+          false,
+        );
+      },
+    });
+
+    deploymentCommitted = true;
+
+    announceRuntimeAuthorityChange({
+      deploymentId: result.compiled.deploymentId,
+      phase: "committed",
+    });
+
+    await setCommittedAppsFromRuntime(
+      neutron,
+      result.apps,
+    );
+
+    /*
+     * Register logical metadata + every physical instance atomically after
+     * the new actor is live.
+     */
+    await neutron.kernel_app_pool_register({
+      app_id: logicalAppId,
+      name: appName,
+      description,
+      app_instance_ids: appInstanceIds,
+    });
+
+    await resetNeutronCanBinding();
+    await delay(500);
+    useAppsStore.getState().setInstalled();
+
+    return {
+      appId: logicalAppId,
+      appInstanceIds,
+      apps: result.apps,
+    };
+  } catch (error) {
+    if (!deploymentCommitted) {
+      const neutron = await getNeutronCan().catch(() => null);
+
+      if (neutron) {
+        await retainFrontendAuthorityAfterDeployFailure(
+          neutron,
+        );
+      } else if (
+        isAuthorityPendingState(
+          useAppsStore.getState(),
+        )
+      ) {
+        retainObservationFailureFence();
+      }
+    }
+
+    const installError = toInstallError(error);
+
+    useAppsStore.getState().setOperation(null);
+    useAppsStore.getState().setInstallError({
+      kind: "install",
+      message: deploymentCommitted
+        ? `App pool was installed but registry registration failed: ${installError.message}`
+        : installError.message,
+    });
+
+    throw installError;
+  } finally {
+    endOperation();
+  }
+}
+
+export type AppPoolCapacityInput = {
+  appId: string;
+  additionalCapacity: number;
+};
+
+function physicalAppInstanceOrdinal(
+  logicalAppId: string,
+  appInstanceId: string,
+): number {
+  const prefix = `${logicalAppId}_`;
+
+  if (!appInstanceId.startsWith(prefix)) {
+    throw new Error(
+      `Physical app instance ${appInstanceId} does not belong to expected app ${logicalAppId}`,
+    );
+  }
+
+  const suffix = appInstanceId.slice(prefix.length);
+
+  if (!/^[0-9]+$/.test(suffix)) {
+    throw new Error(
+      `Physical app instance ${appInstanceId} has an unsupported identity suffix`,
+    );
+  }
+
+  const ordinal = Number(suffix);
+
+  if (!Number.isSafeInteger(ordinal) || ordinal < 1) {
+    throw new Error(
+      `Physical app instance ${appInstanceId} has an invalid identity suffix`,
+    );
+  }
+
+  return ordinal;
+}
+
+export async function add_app_pool_capacity({
+  appId: logicalAppId,
+  additionalCapacity,
+}: AppPoolCapacityInput): Promise<AppPoolInstallResult> {
+  if (
+    !Number.isSafeInteger(additionalCapacity) ||
+    additionalCapacity < 1
+  ) {
+    throw new Error(
+      "Additional app capacity must be a positive integer",
+    );
+  }
+
+  if (!logicalAppId) {
+    throw new Error("Element id cannot be empty");
+  }
+
+  const pkg = await readRetainedAppPoolTemplate(logicalAppId);
+  const unpacked = unpackNeutronPackage(pkg);
+  const manifest = packageJson(unpacked, "neutron.json");
+
+  if (manifest.id !== logicalAppId) {
+    throw new Error(
+      `Retained package declares app ${String(manifest.id)}, expected ${logicalAppId}`,
+    );
+  }
+
+  const neutron = await getNeutronCan();
+
+  const [existingIds, metadata] = await Promise.all([
+    neutron.kernel_app_instances_for_app({
+      app_id: logicalAppId,
+    }),
+    neutron.kernel_app_catalog_get({
+      app_id: logicalAppId,
+    }),
+  ]);
+
+  if (existingIds.length === 0) {
+    throw new Error(
+      `Element ${logicalAppId} is not currently published`,
+    );
+  }
+
+  if (metadata.length === 0) {
+    throw new Error(
+      `Element ${logicalAppId} has no registered catalog metadata`,
+    );
+  }
+
+  const highestOrdinal = existingIds.reduce(
+    (highest, appInstanceId) =>
+      Math.max(
+        highest,
+        physicalAppInstanceOrdinal(
+          logicalAppId,
+          appInstanceId,
+        ),
+      ),
+    0,
+  );
+
+  return install_app_pool({
+    pkg,
+    capacity: additionalCapacity,
+    startIndex: highestOrdinal,
+    name: metadata[0] ?? logicalAppId,
+    description: metadata[1] ?? "",
+  });
+}
+export async function install_app_pool_from_file({
+  capacity,
+  name,
+  description,
+}: Omit<AppPoolInstallInput, "pkg">): Promise<AppPoolInstallResult> {
+  const pkg = new Uint8Array(
+    await readFile(await pickFile()),
+  );
+
+  return install_app_pool({
+    pkg,
+    capacity,
+    ...(name !== undefined ? { name } : {}),
+    ...(description !== undefined ? { description } : {}),
+  });
 }
 
 export async function install_app(

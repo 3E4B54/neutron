@@ -18,6 +18,9 @@ import {
 } from "neutron-compiler/src/install.js";
 import {
   install_app,
+  add_app_pool_capacity,
+  install_app_pool,
+  select_app_pool_package,
   isAuthorityPendingState,
   requestAppUninstall,
   uninstall_app,
@@ -27,7 +30,7 @@ import {
 import {
   allocateAppInstance,
   getAvailableApps,
-  logout,
+  getCatalogApps,
   useAuthStore,
 } from "../reducer/auth.ts";
 import { isAbortError } from "../tools/package_url.ts";
@@ -66,11 +69,23 @@ export function Launcher(props: LauncherProps) {
   const [allocateBusyAppId, setAllocateBusyAppId] = useState<string | null>(null);
   const [allocateError, setAllocateError] = useState<string | null>(null);
   const [installSource, setInstallSource] = useState<
-    "file" | "url" | "uninstall" | null
+    "file" | "url" | "pool" | "capacity" | "uninstall" | null
   >(null);
   const [installUrl, setInstallUrl] = useState("");
   const [installError, setInstallError] = useState<string | null>(null);
   const [urlInstallOpen, setUrlInstallOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishCapacity, setPublishCapacity] = useState("4");
+  const [publishDescription, setPublishDescription] = useState("");
+  const [publishPackage, setPublishPackage] = useState<
+    Awaited<ReturnType<typeof select_app_pool_package>> | null
+  >(null);
+  const [capacityOpen, setCapacityOpen] = useState(false);
+  const [additionalCapacity, setAdditionalCapacity] = useState("4");
+  const [catalogApps, setCatalogApps] = useState<
+    Awaited<ReturnType<typeof getCatalogApps>>
+  >([]);
+  const [capacityAppId, setCapacityAppId] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const installUrlInputRef = useRef<HTMLInputElement>(null);
   const installUrlButtonRef = useRef<HTMLButtonElement>(null);
@@ -84,6 +99,10 @@ export function Launcher(props: LauncherProps) {
   const operationBusy = useAppsStore((state) => state.operationBusy);
   const authorityPending = useAppsStore(isAuthorityPendingState);
   const appMutationBlocked = operationBusy || authorityPending;
+
+  // Raw Neutron File/URL installation remains available internally but is
+  // hidden from the normal Plasmon owner workflow.
+  const showLowLevelInstallControls = false;
   const openTile = useWorkspaceStore((state) => state.openTile);
   const resetCurrentWorkspace = useWorkspaceStore(
     (state) => state.resetCurrentWorkspace,
@@ -99,6 +118,14 @@ export function Launcher(props: LauncherProps) {
     setInstallError(null);
     setInstallUrl("");
     setUrlInstallOpen(false);
+    setPublishOpen(false);
+    setPublishCapacity("4");
+    setPublishDescription("");
+    setPublishPackage(null);
+    setCapacityOpen(false);
+    setAdditionalCapacity("4");
+    setCatalogApps([]);
+    setCapacityAppId("");
     if (placement === "modal") {
       openerRef.current =
         document.activeElement instanceof HTMLElement
@@ -129,6 +156,14 @@ export function Launcher(props: LauncherProps) {
       setInstallError(null);
       setInstallUrl("");
       setUrlInstallOpen(false);
+      setPublishOpen(false);
+      setPublishCapacity("4");
+      setPublishDescription("");
+      setPublishPackage(null);
+      setCapacityOpen(false);
+      setAdditionalCapacity("4");
+      setCatalogApps([]);
+      setCapacityAppId("");
     } else if (restoreFocus && opener?.isConnected) {
       requestAnimationFrame(() => opener.focus());
     }
@@ -170,11 +205,47 @@ export function Launcher(props: LauncherProps) {
     };
   }, [open, owner, appIds]);
 
+  useEffect(() => {
+    if (!open || !owner || !capacityOpen) return;
+
+    let cancelled = false;
+
+    void getCatalogApps()
+      .then((items) => {
+        if (cancelled) return;
+
+        setCatalogApps(items);
+        setCapacityAppId((current) =>
+          current &&
+          items.some((item) => item.appId === current)
+            ? current
+            : (items[0]?.appId ?? ""),
+        );
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setInstallError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load Element catalog.",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, owner, capacityOpen]);
   const entries = useMemo(
     () => launcherEntriesFromApps(visibleApps, query),
     [visibleApps, query],
   );
 
+  const selectedCapacityApp = useMemo(
+    () =>
+      catalogApps.find((item) => item.appId === capacityAppId) ?? null,
+    [catalogApps, capacityAppId],
+  );
   const dependencyPlan = useMemo(() => {
     if (!owner) return null;
     try {
@@ -236,6 +307,110 @@ export function Launcher(props: LauncherProps) {
     }
   };
 
+  const choosePublishPackage = async () => {
+    try {
+      const selected = await select_app_pool_package();
+      setPublishPackage(selected);
+      setPublishDescription(selected.description);
+      setInstallError(null);
+    } catch (error) {
+      if (!quietInstallCancellation(error)) {
+        setInstallError(installErrorMessage(error));
+      }
+    }
+  };
+
+  const publishElement = async () => {
+    if (!owner || !publishPackage) return;
+
+    const capacity = Number(publishCapacity);
+
+    if (
+      !Number.isSafeInteger(capacity) ||
+      capacity < 1 ||
+      capacity > 128
+    ) {
+      setInstallError("Capacity must be an integer from 1 through 128.");
+      return;
+    }
+
+    if (
+      installRunRef.current ||
+      useAppsStore.getState().operationBusy ||
+      isAuthorityPendingState(useAppsStore.getState())
+    ) {
+      return;
+    }
+
+    installRunRef.current = true;
+    setInstallSource("pool");
+    setInstallError(null);
+
+    try {
+      await install_app_pool({
+        pkg: publishPackage.pkg,
+        capacity,
+        description: publishDescription.trim(),
+      });
+
+      close(true);
+    } catch (error) {
+      if (!quietInstallCancellation(error)) {
+        const message = installErrorMessage(error);
+        setInstallError(message);
+        console.error(`Publish Element failed: ${message}`);
+      }
+    } finally {
+      installRunRef.current = false;
+      setInstallSource(null);
+    }
+  };
+  const addElementCapacity = async () => {
+    if (!owner || !capacityAppId) return;
+
+    const capacity = Number(additionalCapacity);
+
+    if (
+      !Number.isSafeInteger(capacity) ||
+      capacity < 1 ||
+      capacity > 128
+    ) {
+      setInstallError(
+        "Additional capacity must be an integer from 1 through 128.",
+      );
+      return;
+    }
+
+    if (
+      installRunRef.current ||
+      useAppsStore.getState().operationBusy ||
+      isAuthorityPendingState(useAppsStore.getState())
+    ) {
+      return;
+    }
+
+    installRunRef.current = true;
+    setInstallSource("capacity");
+    setInstallError(null);
+
+    try {
+      await add_app_pool_capacity({
+        appId: capacityAppId,
+        additionalCapacity: capacity,
+      });
+
+      close(true);
+    } catch (error) {
+      if (!quietInstallCancellation(error)) {
+        const message = installErrorMessage(error);
+        setInstallError(message);
+        console.error(`Add Element capacity failed: ${message}`);
+      }
+    } finally {
+      installRunRef.current = false;
+      setInstallSource(null);
+    }
+  };
   const installPackageFromUrl = () => {
     const abort = new AbortController();
     urlDownloadAbortRef.current?.abort();
@@ -347,6 +522,295 @@ export function Launcher(props: LauncherProps) {
             </button>
           </div>
         ) : null}
+        {owner ? (
+          <>
+            <button
+              type="button"
+              className="launcher-action"
+              data-tid={testId("launcher-publish-element")}
+              disabled={installSource !== null || appMutationBlocked}
+              onClick={() => {
+                setInstallError(null);
+                setUrlInstallOpen(false);
+                setCapacityOpen(false);
+                setPublishOpen((current) => !current);
+              }}
+            >
+              <IoAdd aria-hidden="true" />
+              <span>Publish Element</span>
+            </button>
+
+            {publishOpen ? (
+              <form
+                aria-busy={installSource === "pool"}
+                className="launcher-url-panel"
+                noValidate
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void publishElement();
+                }}
+              >
+                <label>Element package</label>
+
+                <div className="btn-actions">
+                  <button
+                    className="btn btn-sec"
+                    disabled={
+                      installSource !== null || appMutationBlocked
+                    }
+                    onClick={() => {
+                      void choosePublishPackage();
+                    }}
+                    type="button"
+                  >
+                    {publishPackage
+                      ? "Choose Different Package"
+                      : "Choose Package"}
+                  </button>
+                </div>
+
+                {publishPackage ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "0.25rem",
+                      width: "100%",
+                      fontSize: "0.8rem",
+                    }}
+                  >
+                    <strong>{publishPackage.fileName}</strong>
+                    <span>Element: {publishPackage.name}</span>
+                    <span>ID: {publishPackage.appId}</span>
+                    <span>Version: {publishPackage.version}</span>
+                  </div>
+                ) : null}
+
+                <label htmlFor={`${idPrefix}-publish-description`}>
+                  Description
+                </label>
+
+                <textarea
+                  id={`${idPrefix}-publish-description`}
+                  data-tid={testId("launcher-publish-description")}
+                  disabled={installSource !== null || appMutationBlocked}
+                  placeholder="Optional description"
+                  rows={3}
+                  style={{
+                    boxSizing: "border-box",
+                    display: "block",
+                    width: "100%",
+                    minWidth: 0,
+                    resize: "vertical",
+                  }}
+                  value={publishDescription}
+                  onChange={(event) => {
+                    setPublishDescription(event.target.value);
+                    setInstallError(null);
+                  }}
+                />
+
+                <label htmlFor={`${idPrefix}-publish-capacity`}>
+                  Initial Atom capacity
+                </label>
+
+                <div className="launcher-url-row">
+                  <div
+                    className="launcher-url-input"
+                    style={{
+                      width: "7rem",
+                      minWidth: "7rem",
+                      flex: "0 0 7rem",
+                    }}
+                  >
+                    <input
+                      id={`${idPrefix}-publish-capacity`}
+                      data-tid={testId("launcher-publish-capacity")}
+                      disabled={
+                        installSource !== null || appMutationBlocked
+                      }
+                      min="1"
+                      max="128"
+                      step="1"
+                      type="number"
+                      value={publishCapacity}
+                      onChange={(event) => {
+                        setPublishCapacity(event.target.value);
+                        setInstallError(null);
+                      }}
+                      style={{
+                        boxSizing: "border-box",
+                        width: "100%",
+                        minWidth: "100%",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="btn-actions">
+                  <button
+                    className="btn"
+                    data-tid={testId("launcher-publish-submit")}
+                    disabled={
+                      !publishPackage ||
+                      installSource !== null ||
+                      appMutationBlocked
+                    }
+                    type="submit"
+                  >
+                    {installSource === "pool"
+                      ? "Publishing..."
+                      : "Publish Element"}
+                  </button>
+
+                  <button
+                    className="btn btn-sec"
+                    disabled={installSource === "pool"}
+                    onClick={() => {
+                      setPublishOpen(false);
+                      setPublishPackage(null);
+                      setInstallError(null);
+                    }}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </>
+        ) : null}
+        {owner ? (
+          <>
+            <button
+              type="button"
+              className="launcher-action"
+              data-tid={testId("launcher-add-capacity")}
+              disabled={installSource !== null || appMutationBlocked}
+              onClick={() => {
+                setInstallError(null);
+                setUrlInstallOpen(false);
+                setPublishOpen(false);
+                setCapacityOpen((current) => !current);
+              }}
+            >
+              <IoAdd aria-hidden="true" />
+              <span>Add Capacity</span>
+            </button>
+
+            {capacityOpen ? (
+              <form
+                aria-busy={installSource === "capacity"}
+                className="launcher-url-panel"
+                noValidate
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void addElementCapacity();
+                }}
+              >
+                <label htmlFor={`${idPrefix}-capacity-element`}>
+                  Element
+                </label>
+
+                <select
+                  id={`${idPrefix}-capacity-element`}
+                  data-tid={testId("launcher-capacity-element")}
+                  disabled={
+                    installSource !== null ||
+                    appMutationBlocked ||
+                    catalogApps.length === 0
+                  }
+                  style={{
+                    boxSizing: "border-box",
+                    width: "100%",
+                    minWidth: 0,
+                  }}
+                  value={capacityAppId}
+                  onChange={(event) => {
+                    setCapacityAppId(event.target.value);
+                    setInstallError(null);
+                  }}
+                >
+                  {catalogApps.map((item) => (
+                    <option key={item.appId} value={item.appId}>
+                      {item.name} ({item.appId})
+                    </option>
+                  ))}
+                </select>
+
+                {selectedCapacityApp ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    Current capacity: {selectedCapacityApp.capacity} Atoms
+                  </div>
+                ) : null}
+
+                <label htmlFor={`${idPrefix}-additional-capacity`}>
+                  Additional Atom capacity
+                </label>
+
+                <div className="launcher-url-row">
+                  <div
+                    className="launcher-url-input"
+                    style={{
+                      width: "7rem",
+                      minWidth: "7rem",
+                      flex: "0 0 7rem",
+                    }}
+                  >
+                    <input
+                      id={`${idPrefix}-additional-capacity`}
+                      data-tid={testId("launcher-additional-capacity")}
+                      disabled={
+                        installSource !== null || appMutationBlocked
+                      }
+                      min="1"
+                      max="128"
+                      step="1"
+                      type="number"
+                      value={additionalCapacity}
+                      onChange={(event) => {
+                        setAdditionalCapacity(event.target.value);
+                        setInstallError(null);
+                      }}
+                      style={{
+                        boxSizing: "border-box",
+                        width: "100%",
+                        minWidth: "100%",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="btn-actions">
+                  <button
+                    className="btn"
+                    disabled={
+                      !capacityAppId ||
+                      installSource !== null ||
+                      appMutationBlocked
+                    }
+                    type="submit"
+                  >
+                    {installSource === "capacity"
+                      ? "Adding Capacity..."
+                      : "Add Capacity"}
+                  </button>
+
+                  <button
+                    className="btn btn-sec"
+                    disabled={installSource === "capacity"}
+                    onClick={() => {
+                      setCapacityOpen(false);
+                      setInstallError(null);
+                    }}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </>
+        ) : null}
         {urlInstallOpen ? (
           <form
             aria-busy={installSource === "url"}
@@ -434,7 +898,7 @@ export function Launcher(props: LauncherProps) {
           </div>
         ) : null}
         <div className="launcher-results">
-          {owner ? (
+          {showLowLevelInstallControls && owner ? (
           <div className="launcher-tile-row launcher-install-entry">
             <div className="launcher-install-tile">
               {owner ? (
@@ -485,19 +949,7 @@ export function Launcher(props: LauncherProps) {
             </div>
           </div>
           ) : null}
-          {!owner ? (
-            <div className="launcher-tile-row">
-              <button
-                type="button"
-                className="btn btn-sec"
-                onClick={() => {
-                  void logout();
-                }}
-              >
-                Logout
-              </button>
-            </div>
-          ) : null}
+
 
           {!owner ? (
             <>
@@ -509,6 +961,7 @@ export function Launcher(props: LauncherProps) {
                   <button
                     type="button"
                     className="launcher-tile"
+                    aria-label={`Create new ${app.name} Atom`}
                     disabled={allocateBusyAppId !== null}
                     onClick={() => {
                       if (allocateBusyAppId !== null) return;
@@ -536,15 +989,40 @@ export function Launcher(props: LauncherProps) {
                         });
                     }}
                   >
-                    <span className="launcher-tile-title">
-                      {allocateBusyAppId === app.appId
-                        ? `Creating ${app.name}...`
-                        : `New ${app.name}`}
+                    <span
+                      aria-hidden="true"
+                      className="launcher-install-icon"
+                    >
+                      <IoAdd />
                     </span>
 
-                    {app.description ? (
-                      <span>{app.description}</span>
-                    ) : null}
+                    <span
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.15rem",
+                        minWidth: 0,
+                        textAlign: "left",
+                      }}
+                    >
+                      <span className="launcher-tile-title">
+                        {allocateBusyAppId === app.appId
+                          ? `Creating ${app.name}...`
+                          : app.name}
+                      </span>
+
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          opacity: 0.72,
+                          whiteSpace: "normal",
+                          overflowWrap: "anywhere",
+                          lineHeight: 1.25,
+                        }}
+                      >
+                        {app.description || "Create a new Atom"}
+                      </span>
+                    </span>
                   </button>
                 </div>
               ))}

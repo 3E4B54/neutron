@@ -2259,6 +2259,81 @@ module {
             };
         };
 
+        // Owner-only atomic logical-app + physical-instance registration.
+        //
+        // The compiler-generated kernel wrapper enforces owner authorization.
+        // All physical instances are validated before any registry mutation.
+        public func /*update*/kernel_app_pool_register(
+            input : {
+                app_id : Text;
+                name : Text;
+                description : Text;
+                app_instance_ids : [Text];
+            },
+        ) : () {
+            assert(input.app_id != "");
+            assert(input.name != "");
+            assert(input.app_instance_ids.size() > 0);
+
+            var index : Nat = 0;
+            while (index < input.app_instance_ids.size()) {
+                let appInstanceId = input.app_instance_ids[index];
+
+                assert(appInstanceId != "kernel");
+                assert(
+                    InstallMemory.committedScope(
+                        mem.install,
+                        appInstanceId,
+                    ) != null
+                );
+                assert(not app_instance_retired(appInstanceId));
+
+                // Reject duplicate physical ids in the request itself.
+                var other : Nat = index + 1;
+                while (other < input.app_instance_ids.size()) {
+                    assert(
+                        appInstanceId != input.app_instance_ids[other]
+                    );
+                    other += 1;
+                };
+
+                // Idempotence is allowed only for the same logical app.
+                switch (
+                    Map.get(
+                        appInstancesMem.instances,
+                        Text.compare,
+                        appInstanceId,
+                    )
+                ) {
+                    case null {};
+                    case (?registeredAppId) {
+                        assert(registeredAppId == input.app_id);
+                    };
+                };
+
+                index += 1;
+            };
+
+            Map.add(
+                appCatalogMem.apps,
+                Text.compare,
+                input.app_id,
+                {
+                    name = input.name;
+                    description = input.description;
+                },
+            );
+
+            for (appInstanceId in input.app_instance_ids.vals()) {
+                Map.add(
+                    appInstancesMem.instances,
+                    Text.compare,
+                    appInstanceId,
+                    input.app_id,
+                );
+            };
+        };
+
         // Owner-only administrative query.
         public func /*query*/kernel_app_instances_for_app(
             input : { app_id : Text },
@@ -2272,6 +2347,20 @@ module {
                 if (registeredAppId == input.app_id) {
                     result := Array.concat(result, [appInstanceId]);
                 };
+            };
+
+            Array.sort(result, Text.compare);
+        };
+
+        // Owner-only logical app catalog listing.
+        //
+        // Unlike kernel_available_apps this includes exhausted apps so
+        // administration can add capacity to them.
+        public func /*query*/kernel_app_catalog_list(()) : [Text] {
+            var result : [Text] = [];
+
+            for ((appId, _) in Map.entries(appCatalogMem.apps)) {
+                result := Array.concat(result, [appId]);
             };
 
             Array.sort(result, Text.compare);
@@ -3973,8 +4062,19 @@ public type kernel_app_instance_register_Input = (input : {
             },);
 public type kernel_app_instance_register_Output = ();
 
+public type kernel_app_pool_register_Input = (input : {
+                app_id : Text;
+                name : Text;
+                description : Text;
+                app_instance_ids : [Text];
+            },);
+public type kernel_app_pool_register_Output = ();
+
 public type kernel_app_instances_for_app_Input = (input : { app_id : Text },);
 public type kernel_app_instances_for_app_Output = [Text];
+
+public type kernel_app_catalog_list_Input = (());
+public type kernel_app_catalog_list_Output = [Text];
 
 public type kernel_app_catalog_register_Input = (input : {
                 app_id : Text;

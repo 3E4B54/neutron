@@ -5,14 +5,14 @@
       "template": "apps/hello_001",
       "name": "Hello",
       "description": "Example Neutron application",
-      "capacity": 32
+      "capacity": 2
     },
     {
       "app_id": "demo",
       "template": "apps/demo_001",
       "name": "Demo",
       "description": "Second test application",
-      "capacity": 32
+      "capacity": 2
     }
   ]
 }

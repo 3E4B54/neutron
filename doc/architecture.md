@@ -1,749 +1,583 @@
 # Plasmon Architecture
 
-## 1. Overview
+## 1. Purpose
 
-Plasmon is a multi-user application platform built on Neutron and the Internet Computer.
+Plasmon is a multi-user personal application cloud built on the Neutron kernel/runtime.
 
-The core design goal is to provide Sandstorm-like isolated application instances while avoiding the cost of creating a separate Internet Computer canister for every free-tier application instance.
+Its core idea is similar to Sandstorm grains: a user does not merely receive access to a shared logical application. The user receives an isolated physical application instance with its own Neutron AppScope and persistent state.
 
-A free-tier Plasmon deployment therefore places many tenants and many isolated application instances inside a shared Neutron canister.
+Plasmon uses product terminology at the UX layer while preserving generic implementation terminology internally.
 
-A future paid tier may instead place a tenant in a dedicated canister.
+## 2. Terminology and naming convention
 
-## 2. Terminology
-
-### Product terminology
-
-**Plasmon**
-
-The personal application cloud/platform.
-
-**Element**
-
-An application available through Plasmon.
-
-Examples:
-
-```text
-Hello
-Notes
-Blog
-Chat
-```
-
-**Isotope**
-
-A particular variant or build of an Element.
-
-An Element may have multiple Isotopes, for example:
-
-```text
-Notes
-├── stable release
-├── beta release
-└── older compatible release
-```
-
-**Atom**
-
-One isolated application instance.
-
-A tenant may create multiple Atoms from the same Isotope. Different tenants may also run independent Atoms from the same Isotope.
-
-**Neutron**
-
-The kernel/runtime underlying Plasmon.
-
-### Implementation terminology
-
-The product vocabulary is intentionally kept out of ordinary Neutron kernel APIs and data structures.
-
-The implementation uses generic terminology:
-
-```text
-app
-app_id
-version / build / package
-app_instance
-app_instance_id
-tenant
-grant
-```
-
-For example:
-
-```text
-product Element:   Hello
-product Isotope:   a particular Hello build
-product Atom:      one tenant's isolated Hello instance
-
-logical app:       hello
-physical instance: hello_017
-tenant:            Principal
-grant:             tenant → hello_017
-```
-
-Element, Isotope, and Atom are product concepts rather than kernel type names.
-
-## 3. Core Design
-
-A shared Plasmon canister contains one Neutron kernel plus many physical application instances.
-
-```text
-                     Shared canister
-┌────────────────────────────────────────────────────┐
-│                    Neutron kernel                  │
-│                                                    │
-│  tenant membership                                │
-│  tenant grants                                    │
-│  app catalog                                      │
-│  app-instance registry                            │
-│  app-instance lifecycle                           │
-│  authorization                                    │
-│                                                    │
-├────────────────────────────────────────────────────┤
-│ hello_001 │ hello_002 │ hello_003 │ ...           │
-├────────────────────────────────────────────────────┤
-│ demo_001  │ demo_002  │ demo_003  │ ...           │
-└────────────────────────────────────────────────────┘
-```
-
-Every physical application ID receives an independent compiler-generated Neutron `AppScope`.
-
-The kernel maps physical instances to logical applications:
-
-```text
-hello_001 → hello
-hello_002 → hello
-hello_003 → hello
-
-demo_001 → demo
-demo_002 → demo
-```
-
-Tenant grants point to physical instances, not logical applications.
-
-```text
-Principal A
-├── hello_001
-└── demo_001
-
-Principal B
-├── hello_002
-└── demo_002
-```
-
-This is the fundamental Plasmon isolation boundary.
-
-## 4. Why Physical Instances Are Precompiled
-
-Neutron's compiler generates application-specific runtime data for each physical app ID.
-
-For every configured app, compilation produces an `AppScope` and corresponding ingress/capability wrappers.
-
-Conceptually:
-
-```text
-hello_001
-    ↓
-NeutronAppScope_hello_001
-    ↓
-compiler-generated wrappers
-
-hello_002
-    ↓
-NeutronAppScope_hello_002
-    ↓
-compiler-generated wrappers
-```
-
-An arbitrary physical app ID therefore cannot simply be created inside an already-built actor without modifying deeper Neutron assumptions.
-
-Plasmon avoids that complexity by compiling spare physical app slots ahead of time.
-
-This is an implementation detail rather than a product limitation.
-
-From the user's perspective:
-
-```text
-Create Hello
-```
-
-is the operation.
-
-The kernel chooses the physical instance.
-
-## 5. AppScope Isolation
-
-Initial experiments cloned a simple Hello application many times.
-
-Each clone used the same source code and the same logical memory names but a different physical application ID.
-
-The experiment verified that:
-
-```text
-hello_001 state ≠ hello_002 state
-```
-
-despite identical application code.
-
-This follows naturally from Neutron's `AppScope` model.
-
-The compiler-generated authorization wrapper for an ordinary app now checks authorization using the exact physical scope.
-
-Conceptually:
-
-```text
-is_app_authorized({
-    caller,
-    scope = NeutronAppScope_hello_017
-})
-```
-
-A grant for `hello_016` therefore does not authorize `hello_017`.
-
-## 6. Tenant Membership
-
-Plasmon maintains a persistent tenant map.
-
-Conceptually:
-
-```text
-Principal → [physical app instance IDs]
-```
-
-An entry with an empty list is significant:
-
-```text
-Principal → []
-```
-
-It means the principal is a valid Plasmon tenant but currently owns no applications.
-
-Tenant membership is therefore independent from application ownership.
-
-### Self-service join
-
-An authenticated non-anonymous principal can call the tenant join endpoint.
-
-The operation is idempotent.
-
-It creates:
-
-```text
-Principal → []
-```
-
-if the tenant does not already exist.
-
-The anonymous principal cannot join.
-
-## 7. Authorization
-
-There are three relevant authorization concepts.
-
-### Kernel owner authorization
-
-Administrative kernel operations continue to use Neutron owner authorization.
-
-Examples include:
-
-```text
-catalog registration
-manual tenant grant
-manual tenant revoke
-physical instance registration
-administrative diagnostics
-```
-
-### Session authorization
-
-A session is accepted when the caller is either:
-
-```text
-Neutron owner
-OR
-registered Plasmon tenant
-```
-
-A tenant does not need to own an application merely to enter the Plasmon shell.
-
-### App authorization
-
-An ordinary app call is permitted when:
-
-```text
-caller owns the exact physical app instance
-```
-
-This check occurs in backend/compiler-generated wrappers.
-
-The frontend launcher may hide unauthorized applications, but frontend filtering is not part of the security model.
-
-## 8. Logical App Catalog
-
-Plasmon separates logical application metadata from physical app instances.
-
-Example catalog entry:
-
-```text
-app_id:       hello
-name:         Hello
-description:  Example Neutron application
-```
-
-Physical instances are registered independently:
-
-```text
-hello_001 → hello
-hello_002 → hello
-hello_003 → hello
-```
-
-This prevents product UI from needing to understand or display physical implementation IDs.
-
-## 9. Allocation
-
-A tenant requests a logical application:
-
-```text
-hello
-```
-
-The tenant does not request:
-
-```text
-hello_017
-```
-
-The allocator scans registered physical instances for the requested logical app.
-
-An instance must be:
-
-```text
-registered
-installed
-not retired
-not already assigned
-```
-
-The current allocator chooses the lexicographically first eligible instance.
-
-Example:
-
-```text
-hello_001 assigned
-hello_002 assigned
-hello_003 free
-hello_004 free
-
-request hello
-    ↓
-allocate hello_003
-```
-
-The physical app ID is then added to that tenant's persistent grants.
-
-## 10. Multiple Instances Per Tenant
-
-There is intentionally no one-instance-per-logical-app restriction.
-
-A tenant can own:
-
-```text
-hello_001
-hello_003
-hello_005
-```
-
-while another tenant owns:
-
-```text
-hello_002
-hello_004
-```
-
-The platform therefore supports use cases analogous to multiple Sandstorm grains of the same app.
-
-## 11. Lifecycle
-
-A tenant may retire an app instance it owns.
-
-Retirement:
-
-1. verifies tenant ownership;
-2. marks the physical instance as retired;
-3. revokes it from the tenant.
-
-A retired physical instance is permanently excluded from allocation in the current MVP.
-
-This is deliberately conservative.
-
-Secure wipe-and-reuse can be implemented later, but it is not required for the first usable version.
-
-## 12. Browser Workspace Isolation
-
-Neutron's workspace UI persists open tiles and layouts in browser storage.
-
-The original implementation used one global storage key:
-
-```text
-neutron-kernel-workspaces-v2
-```
-
-That allowed multiple identities using the same browser profile to inherit each other's workspace layout.
-
-Plasmon scopes workspace persistence by authenticated identity and deployment context.
-
-Account switching was also tested together with Internet Identity logout/login behavior.
-
-The browser workspace is a convenience layer only. Backend grants remain authoritative.
-
-A stale frontend tile must never grant access to an application the tenant does not own.
-
-## 13. Internet Identity
-
-Plasmon currently uses Neutron's existing `icblast` Internet Identity integration.
-
-The authentication lifecycle was hardened after repeated account switching exposed a race around logout.
-
-The corrected lifecycle completes logout and recreates the mutable Internet Identity `AuthClient` before exposing the next login attempt.
-
-Repeated switching between two identities has been tested without the previous permanent `Loading...` state.
-
-## 14. Capacity Generation
-
-Physical spare instances should be cheap to produce.
-
-Building the same application source once for every physical ID would waste development time.
-
-Plasmon instead builds a logical app template once and generates physical packages from its built `dist/`.
-
-A `.neutron` application archive is a MessagePack mapping of gzip-compressed files from `dist/`.
-
-Physical identity appears in several generated metadata files.
-
-The capacity generator rewrites the instance-specific metadata and repacks the archive.
-
-Conceptually:
-
-```text
-Hello template
-     │
-     ├─ dist/neutron.json
-     ├─ dist/schema.json
-     └─ dist/neutron.lock.json
-             ↓
-       rewrite app identity
-             ↓
- ┌───────────┼────────────┐
-hello_001 hello_002 ... hello_032
-```
-
-The application code and memory schema hashes remain identical.
-
-## 15. Declarative Capacity
-
-Capacity is declared in:
-
-```text
-plasmon-app-pools.json
-```
-
-Example:
-
-```json
-{
-  "apps": [
-    {
-      "app_id": "hello",
-      "template": "apps/hello_001",
-      "name": "Hello",
-      "description": "Example Neutron application",
-      "capacity": 32
-    }
-  ]
-}
-```
-
-`plasmon-capacity.ts` expands the capacity into physical IDs:
-
-```text
-hello_001
-hello_002
-...
-hello_032
-```
-
-It also generates the deployment package list.
-
-Generated data lives under:
-
-```text
-.plasmon-generated/
-```
-
-and is disposable.
-
-## 16. Proven Shared-Canister Scale
-
-The current local proof includes:
-
-```text
-32 Hello instances
-32 Demo instances
-```
-
-for:
-
-```text
-64 physical app instances
-```
-
-in one shared Neutron canister.
-
-Multiple principals successfully created multiple instances of both logical apps without crossing tenant boundaries.
-
-The experiment proves the basic shared-canister model at a scale well beyond the original two-instance fixture.
-
-It is not intended to establish the maximum production capacity of a Neutron canister.
-
-## 17. Shared-Canister Fleet
-
-A single shared canister is finite.
-
-Plasmon therefore treats a shared canister as a shard.
-
-Conceptually:
+### 2.1 Product model
 
 ```text
 Plasmon
-│
-├── shared shard 1
-│   ├── tenant A
-│   ├── tenant B
-│   └── spare app instances
-│
-├── shared shard 2
-│   ├── tenant C
-│   ├── tenant D
-│   └── spare app instances
-│
-└── shared shard N
+└── Element
+    └── Isotope
+        └── Atom
 ```
 
-Neutron's existing PocketIC deployment format already supports multiple local nodes.
+- **Plasmon** — the platform/personal application cloud.
+- **Element** — a logical application exposed to users, such as Notes.
+- **Isotope** — a particular variant/version/build/runtime profile of an Element.
+- **Atom** — one isolated running/installed instance of an Element/Isotope for a tenant.
+- **Neutron** — the kernel/runtime substrate.
 
-Plasmon uses that facility rather than implementing a second canister provisioner.
+An Element may have multiple Isotopes, and each Isotope may have multiple Atoms.
 
-Current local configuration:
-
-```json
-{
-  "shared": [
-    "local",
-    "shared-002"
-  ]
-}
-```
-
-A two-node shared fleet has been successfully provisioned.
-
-Each node contains the complete generated 32-Hello / 32-Demo capacity.
-
-## 18. Shard Routing — Planned
-
-Cross-shard user routing is intentionally not implemented yet.
-
-It requires a stable Plasmon control-plane/frontend origin.
-
-The intended design is:
+Example:
 
 ```text
-                 Plasmon frontend
-                       │
-                 authenticate once
-                       │
-                 stable identity
-                       │
-               tenant shard directory
-                  /            \
-                 /              \
-          shared shard 1    shared shard 2
+Element: Notes
+├── Isotope: Notes stable
+│   ├── Atom: notes_001 → Alice
+│   └── Atom: notes_002 → Bob
+└── Isotope: Notes beta
+    └── Atom: notes_beta_001 → Carol
 ```
 
-A tenant should be assigned permanently to a shard unless an explicit migration occurs.
+Isotope is currently a **product architecture concept**. The implementation does not yet maintain a complete first-class Isotope registry. For now, package/version/build metadata is the implementation-level precursor.
 
-A simple directory can conceptually contain:
+### 2.2 Implementation terminology
+
+Internal code should normally use:
 
 ```text
-Principal → shard
+Element  → app / app_id
+Isotope  → version / build / package
+Atom     → app_instance / app_instance_id
+user     → tenant / principal
+access   → grant
+canister → shard / node
 ```
 
-New tenants would be placed on a shard with sufficient headroom.
+This keeps the Plasmon product vocabulary from leaking through every Neutron internal API.
 
-Existing tenants would always return to their assigned shard.
+### 2.3 Stable-memory naming exception
 
-### Why not simply redirect to shard URLs?
+Persistence identity takes precedence over cosmetic naming.
 
-Each shared Neutron canister currently serves its own kernel frontend.
-
-Using independent frontend origins for authentication creates identity and routing complications.
-
-The production design should instead authenticate from one stable Plasmon origin and use the resulting browser identity when calling the selected backend canister.
-
-This work is deferred because the current MVP does not need enough users to exhaust one shared shard.
-
-## 19. Dedicated Canisters — Planned
-
-The same routing layer can later support paid isolation.
-
-For example:
+The existing stable-memory module:
 
 ```text
-tenant A → shared-001
-tenant B → shared-001
-tenant C → dedicated canister C
-tenant D → shared-002
+apps/kernel/backend/memory/malstorm_tenants/v1.mo
 ```
 
-The tenant-facing application model does not need to change.
+and its corresponding import path are legacy persistence identities. They must not be mechanically renamed to `plasmon_*` merely for branding consistency.
 
-The routing layer decides whether a tenant's runtime target is:
+Any future rename requires a deliberate stable-memory migration.
+
+## 3. Deployment topology
+
+### 3.1 Default topology
+
+The default production model is one shared Neutron canister:
 
 ```text
-shared shard
-or
-dedicated canister
+Internet Computer
+└── Plasmon shared shard
+    └── Neutron combined actor
+        ├── kernel
+        ├── hello_001
+        ├── hello_002
+        ├── notes_001
+        ├── notes_002
+        └── ...
 ```
 
-## 20. Persistent Kernel Data
+The system should add shards only when the current shard approaches practical limits.
 
-Plasmon adds separate managed memories instead of modifying Neutron's existing persistent kernel schema.
+Empty logical capacity is not represented by separate canisters. Physical Atoms are AppScopes inside the same Neutron combined actor.
 
-Current Plasmon-specific persistent data includes:
-
-### `malstorm_tenants`
+### 3.2 Future topology
 
 ```text
-Principal → [physical app instance IDs]
+Plasmon
+├── shared shard A
+│   ├── many free/shared tenants
+│   └── many physical Atoms
+├── shared shard B
+│   └── overflow capacity
+└── dedicated shard
+    └── future paid/high-demand tenant
 ```
 
-### `app_instances`
+The product UX should eventually hide shard placement from normal tenants.
+
+## 4. Neutron execution model
+
+Neutron statically assembles the kernel and installed application modules into one Motoko actor.
+
+For each physical app identity, the compiler creates a distinct AppScope and generated wrapper surface.
+
+Conceptually:
 
 ```text
-physical app instance ID → logical app ID
+logical Element: notes
+
+physical Atoms:
+notes_001 → AppScope(notes_001)
+notes_002 → AppScope(notes_002)
+notes_003 → AppScope(notes_003)
 ```
 
-### `app_instance_lifecycle`
+Physical Atom identities therefore must exist when the combined actor is compiled.
+
+This is why adding new capacity currently requires:
+
+1. generating new physical identities;
+2. compiling a new combined actor containing them;
+3. self-upgrading the Neutron canister;
+4. registering the new physical instances in the Plasmon registry.
+
+Neutron's current installed-app bound around 256 is treated as a tested product-scale limit, not an Internet Computer protocol limit. Raising it requires scale validation.
+
+## 5. Logical registry
+
+Plasmon introduces a logical layer above physical Neutron app identities.
+
+### 5.1 Element catalog
+
+The Element catalog stores logical metadata:
 
 ```text
-physical app instance ID → retired flag
+app_id
+name
+description
 ```
 
-### `app_catalog`
-
-Logical application metadata.
-
-Keeping these memories separate minimizes changes to upstream Neutron persistence assumptions.
-
-## 21. Deployment Bootstrap
-
-Deployment and tenant onboarding are separate operations.
-
-After Neutron installs the generated physical app packages, Plasmon bootstrap:
-
-1. registers logical application metadata;
-2. registers physical-instance-to-logical-app mappings.
-
-It does not create tenant grants.
-
-Tenant membership is established later through self-service join.
-
-The Plasmon provisioning wrapper applies bootstrap to every shared fleet node.
-
-## 22. Security Invariants
-
-The following properties should remain true as Plasmon evolves.
-
-### Tenant isolation
-
-A physical app instance belongs to at most one tenant.
-
-### Exact-scope authorization
-
-Owning one app instance never authorizes another physical instance.
-
-### Owner separation
-
-Tenant membership does not imply Neutron kernel ownership.
-
-### No frontend trust
-
-Removing or manipulating launcher filtering cannot grant backend access.
-
-### Allocation integrity
-
-Only eligible registered, installed, non-retired and unassigned instances may be allocated.
-
-### Anonymous exclusion
-
-The anonymous Internet Computer principal cannot self-register as a tenant.
-
-### Lifecycle integrity
-
-Retired physical instances cannot silently re-enter the allocation pool.
-
-### App identity integrity
-
-Generated physical instances must preserve unique physical IDs even when their executable application code is identical.
-
-## 23. Current Limitations
-
-The current implementation deliberately leaves several problems for later:
-
-* retired instance wiping and reuse;
-* automatic spare-capacity replenishment within a live deployment;
-* production shard directory;
-* automatic production shard creation;
-* cross-shard migration;
-* dedicated-canister billing/provisioning;
-* app publishing/store workflow;
-* production monitoring;
-* user-facing storage and resource quotas.
-
-None of these are required to validate the core isolation model.
-
-## 24. MVP Boundary
-
-For the first usable Plasmon version, the intended scope is:
+Example:
 
 ```text
-one shared canister
-many tenants
-many isolated app instances
-self-service login
-self-service app creation
-clean user-facing launcher
-safe authorization
-reproducible deployment
+app_id: notes
+name: Notes
+description: Private personal notes
 ```
 
-The fleet work demonstrates that another shared canister can be provisioned when needed, but full automatic shard routing is not required before initial users exist.
+### 5.2 Atom registry
 
-## 25. Next Phase
+The physical registry maps a physical app instance to its logical Element:
 
-The next development phase is primarily cleanup and hardening rather than new architecture.
+```text
+notes_001 → notes
+notes_002 → notes
+notes_003 → notes
+```
 
-Priorities:
+The logical catalog is used for discovery and UX. The physical identity is used for actual Neutron authorization and execution.
 
-1. remove temporary test controls;
-2. hide physical app IDs from normal users;
-3. improve logical-app presentation;
-4. replace test-oriented allocation errors with product behavior;
-5. clean up Phase-specific file names;
-6. verify fresh deployment from a clean checkout;
-7. repeat multi-principal security regression testing;
-8. document known capacity and lifecycle limits.
+### 5.3 Atomic pool registration
 
-Once those are complete, Plasmon should have a coherent MVP foundation upon which the future control plane, app store, and paid dedicated-canister tier can be built.
+The owner-only `kernel_app_pool_register` operation registers:
+
+- logical `app_id`;
+- Element display name;
+- Element description;
+- one or more physical `app_instance_ids`.
+
+All physical instances are validated before registry mutation.
+
+The registration call is intentionally performed after a successful Neutron deployment because the registry must not point at physical scopes that were never installed.
+
+That creates a small split boundary: deployment may commit before registry registration. A future recovery/reconciliation path must handle this deterministically.
+
+## 6. Tenant model
+
+A tenant is identified by an Internet Computer principal.
+
+Tenant membership is independent from owning any Atom. A tenant may remain a valid Plasmon tenant with an empty Atom grant list.
+
+Conceptually:
+
+```text
+tenant principal
+    ↓
+persistent grant list
+    ↓
+physical Atom IDs
+```
+
+Example:
+
+```text
+Alice principal
+├── notes_001
+└── demo_002
+
+Bob principal
+└── notes_002
+```
+
+## 7. Authorization
+
+### 7.1 Owner authorization
+
+Neutron owners retain global kernel authority.
+
+Kernel/admin operations continue to use owner authorization.
+
+Examples include:
+
+- kernel install/update operations;
+- logical pool registration;
+- owner grant/revoke tooling;
+- future capacity administration.
+
+### 7.2 Tenant session authorization
+
+A tenant session is recognized when the caller is an owner or a registered Plasmon tenant.
+
+This allows a tenant with zero Atoms to enter Plasmon and allocate one.
+
+### 7.3 Physical Atom authorization
+
+For a non-kernel app method, the generated wrapper checks authorization against the exact physical AppScope.
+
+Conceptually:
+
+```text
+caller Alice
+scope notes_001
+→ allowed only if Alice owns notes_001
+
+caller Alice
+scope notes_002
+→ rejected if notes_002 belongs to Bob
+```
+
+The frontend is not the security boundary. Tenant launcher filtering improves UX, but the backend AppScope authorization remains authoritative.
+
+## 8. Atom allocation
+
+Tenant allocation operates on logical Elements.
+
+The caller requests:
+
+```text
+app_id = notes
+```
+
+The kernel selects an instance that is:
+
+- registered under `notes`;
+- installed in the current Neutron actor;
+- not retired;
+- not assigned to another tenant.
+
+The current allocator selects the lexicographically first qualifying physical instance.
+
+Example:
+
+```text
+free: notes_001, notes_002, notes_003
+
+Alice requests notes
+→ notes_001
+
+Bob requests notes
+→ notes_002
+```
+
+The physical Atom ID is then added to that tenant's persistent grant list.
+
+## 9. Atom retirement
+
+A retired physical Atom is permanently excluded from future allocation.
+
+This is intentional because the Atom can contain tenant-specific stable state.
+
+Safe default:
+
+```text
+tenant deletes/retires notes_001
+→ revoke tenant access
+→ mark notes_001 retired
+→ never assign notes_001 to a different tenant
+```
+
+Future storage migration or secure reset mechanisms may introduce more sophisticated lifecycle choices, but implicit reuse is prohibited.
+
+## 10. Runtime Publish Element
+
+### 10.1 Goal
+
+Production publishing should happen from Plasmon itself rather than by editing a host-side JSON file and reinstalling the deployment.
+
+Owner flow:
+
+```text
+Plasmon Admin
+└── Publish Element
+    ↓
+upload .neutron
+    ↓
+metadata + initial Atom capacity
+    ↓
+one owner approval
+    ↓
+one Neutron self-upgrade
+    ↓
+logical pool registration
+    ↓
+available to tenants
+```
+
+### 10.2 Package fan-out
+
+The uploaded `.neutron` package is decoded once.
+
+The browser creates physical variants in memory by rewriting package identity metadata while sharing immutable module/web byte arrays.
+
+For a logical package:
+
+```text
+id: notes
+```
+
+with capacity `4`:
+
+```text
+notes_001
+notes_002
+notes_003
+notes_004
+```
+
+The identity-bearing package metadata rewritten for each physical Atom includes:
+
+- `neutron.json`;
+- `schema.json` app identity metadata;
+- `neutron.lock.json` app identity.
+
+Large module and web payloads do not need to be copied byte-for-byte for each in-memory clone.
+
+### 10.3 Approval and compilation ordering
+
+Neutron's approval UI requires compilation metadata before approval can complete.
+
+Therefore runtime publishing starts:
+
+- batch compilation; and
+- the owner approval request
+
+concurrently.
+
+After both complete successfully, the prepared package batch is deployed.
+
+Sequentially waiting for approval before starting compilation creates a deadlock where the UI remains on `Compiling...`.
+
+### 10.4 One deployment
+
+All requested physical Atoms are compiled as one prepared package batch and installed through one Neutron self-upgrade.
+
+The intended cost model is:
+
+```text
+N new Atoms
+≠ N canister upgrades
+
+N new Atoms
+→ 1 combined actor compile
+→ 1 self-upgrade
+```
+
+### 10.5 Dependency restriction
+
+Initial runtime publishing rejects package dependencies.
+
+Reason: logical package dependencies do not yet define physical tenant-aware dependency routing.
+
+This must be designed before dependencies are allowed.
+
+## 11. Capacity strategy
+
+Capacity should be demand-driven.
+
+Large speculative pools are undesirable because every installed physical AppScope contributes to the combined actor inventory and therefore affects future compile/upgrade work.
+
+Current target:
+
+```text
+initial capacity: 4
+```
+
+Future Add Capacity flow:
+
+```text
+Element notes currently:
+notes_001 .. notes_004
+
+owner Add Capacity +4
+        ↓
+generate:
+notes_005 .. notes_008
+        ↓
+batch compile
+        ↓
+one self-upgrade
+        ↓
+register only the new physical IDs
+```
+
+Automatic capacity expansion may later use low-water thresholds, but it should expand in batches rather than triggering a canister upgrade for every tenant allocation.
+
+## 12. Isotopes
+
+Isotope represents a version/build/runtime profile of an Element.
+
+It is intentionally separate from Atom:
+
+```text
+Element = what application is this?
+Isotope = which version/variant?
+Atom = which isolated tenant instance?
+```
+
+A future registry may model:
+
+```text
+notes
+├── stable / version 1.4
+└── beta / version 2.0-beta
+```
+
+Questions still to resolve:
+
+- whether an Atom is pinned to one Isotope;
+- in-place Atom upgrades versus migration to a new Atom;
+- rollout channels;
+- rollback;
+- stable-memory compatibility;
+- whether tenants can opt into beta Isotopes.
+
+Until then, implementation code should use normal `version`, `build`, and `package` metadata.
+
+## 13. Development bootstrap
+
+Local development currently supports declarative bootstrap pools through:
+
+```text
+plasmon-app-pools.json
+plasmon-capacity.ts
+plasmon-bootstrap.ts
+plasmon-provision.ts
+```
+
+The capacity generator materializes physical package identities and creates a generated deployment configuration.
+
+This mechanism is useful for deterministic tests and initial local setup.
+
+It is **not** the desired production publishing architecture.
+
+Production should preserve runtime-published Elements and Atoms across subsequent Neutron/Plasmon upgrades.
+
+## 14. Build and browser-compiler performance
+
+The current developer and runtime publishing paths expose two related performance issues.
+
+### 14.1 Kernel development build cost
+
+Frontend, kernel, compiler, and packaging work are currently coupled tightly enough that frontend-only edits require an expensive full package/deploy cycle.
+
+Required direction:
+
+```text
+frontend-only edit
+→ local dev server
+→ HMR/watch
+→ no canister upgrade
+```
+
+The full package/deploy path should remain the final integration test, not the CSS editing loop.
+
+### 14.2 Runtime publishing module fetches
+
+The browser compiler retrieves many existing Motoko modules using content-addressed paths such as:
+
+```text
+/mo/<content-hash>.mo
+```
+
+These modules are natural immutable-cache candidates.
+
+Future publishing should reuse modules already cached by hash instead of redownloading unchanged content for every Element/capacity operation.
+
+### 14.3 Build cache
+
+The kernel build/package pipeline should gain explicit incremental cache boundaries.
+
+Potential cache units include:
+
+- frontend bundle;
+- individual Motoko source/module inputs;
+- generated assembly inputs;
+- compiler output where all relevant inputs are unchanged;
+- packaged static assets.
+
+Cache correctness and invalidation must be documented and tested.
+
+## 15. Sharding
+
+A single shared canister remains the default.
+
+Sharding becomes necessary only when practical constraints justify it, including:
+
+- installed physical app count;
+- compile time;
+- Wasm size;
+- canister memory;
+- cycles;
+- deployment latency;
+- workload isolation.
+
+Future Plasmon routing should map logical tenant operations to the correct shard without exposing that complexity in normal UX.
+
+## 16. Production ownership
+
+Local development currently uses deterministic test identities.
+
+That mechanism is only for PocketIC/E2E work.
+
+Production requires:
+
+- explicit first-owner bootstrap;
+- safe owner recovery;
+- add/revoke owner administration;
+- separation between normal Plasmon administration and low-level Neutron administration.
+
+## 17. Security invariants
+
+The following invariants are architectural requirements:
+
+1. Kernel owner authority cannot be acquired merely by becoming a tenant.
+2. Tenant membership does not imply access to every installed app.
+3. A tenant may call only explicitly granted physical Atom scopes.
+4. One physical Atom may belong to at most one tenant.
+5. Retired Atoms are not reassigned.
+6. Tenant A cannot access Tenant B's Atom.
+7. Logical Element metadata never substitutes for physical AppScope authorization.
+8. Publishing/capacity operations remain owner-only.
+9. Registry state must not claim a physical Atom exists unless its Neutron scope is committed.
+10. Frontend filtering must never be relied on as the authorization boundary.
+
+## 18. Architectural direction
+
+The intended long-term model is:
+
+```text
+Plasmon owner publishes an Element
+        ↓
+small initial Atom pool
+        ↓
+tenants self-allocate isolated Atoms
+        ↓
+capacity expands in batches as demand grows
+        ↓
+Element upgrades become Isotopes
+        ↓
+shared shards scale horizontally when necessary
+```
+
+Neutron remains the runtime substrate. Plasmon adds logical application identity, multi-tenant ownership, capacity management, and product UX above it.
