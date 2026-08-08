@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { preparePackageInstall } from "neutron-compiler/src/install.js";
+import { assembleKernelWrapper } from "./helpers/kernel_wrapper.ts";
 import { hashContent } from "neutron-tools/src/hash.js";
 import { prepare_files } from "../src/tools/install.ts";
 
@@ -10,71 +10,43 @@ function bytes(text: string): Uint8Array {
   return encoder.encode(text);
 }
 
-test("kernel generated artifacts keep V3 and add isolated activation V1", async () => {
-  const [
-    manifestText,
-    lockText,
-    wrapper,
-    packagedManifestText,
-    packagedLockText,
-    candid,
-    archive,
-  ] = await Promise.all([
+test("kernel source assembly keeps V3 and isolated activation V1", async () => {
+  const [manifestText, lockText, wrapper] = await Promise.all([
     readFile(new URL("../neutron.json", import.meta.url), "utf8"),
     readFile(new URL("../neutron.lock.json", import.meta.url), "utf8"),
-    readFile(new URL("../backend/_neutron.mo", import.meta.url), "utf8"),
-    readFile(new URL("../dist/neutron.json", import.meta.url), "utf8"),
-    readFile(new URL("../dist/neutron.lock.json", import.meta.url), "utf8"),
-    readFile(new URL("../dist/neutron.did", import.meta.url), "utf8"),
-    readFile(new URL("../kernel.v0.3.6.neutron", import.meta.url)),
+    assembleKernelWrapper(),
   ]);
+
   const manifest = JSON.parse(manifestText);
   const lock = JSON.parse(lockText);
-  const packagedManifest = JSON.parse(packagedManifestText);
-  const packagedLock = JSON.parse(packagedLockText);
-  const packagedArchive = preparePackageInstall(new Uint8Array(archive));
 
   expect(manifest.format).toBe(3);
   expect(manifest.version).toBe(306);
   expect(manifest.update_source).toBe("233tv-xiaaa-aaaay-aacta-cai");
+
   expect(manifest.memory.kernel.version).toBe(3);
   expect(Object.keys(manifest.memory.kernel.schemas)).toEqual(["3"]);
   expect(manifest.memory.kernel.migrations).toBeUndefined();
+
   expect(manifest.memory.kernel_activation.version).toBe(1);
   expect(Object.keys(manifest.memory.kernel_activation.schemas)).toEqual(["1"]);
   expect(manifest.memory.kernel_activation.migrations).toEqual([]);
+
   expect(Object.keys(lock.memory.kernel.schemas)).toEqual(["3"]);
   expect(lock.memory.kernel.migrations).toEqual({});
   expect(lock.memory.kernel.schemas["3"].hash).toMatch(/^[0-9a-f]{64}$/);
   expect(lock.memory.kernel.schemas["3"].entry).toMatch(/^[0-9a-f]{64}$/);
+
   expect(Object.keys(lock.memory.kernel_activation.schemas)).toEqual(["1"]);
   expect(lock.memory.kernel_activation.migrations).toEqual({});
   expect(lock.memory.kernel_activation.schemas["1"].hash).toMatch(
     /^[0-9a-f]{64}$/,
   );
+
   expect(lock.format).toBe(2);
   expect(lock.app).toBe("kernel");
-  expect(packagedManifest.format).toBe(3);
-  expect(packagedManifest.version).toBe(306);
-  expect(packagedManifest.update_source).toBe(
-    "233tv-xiaaa-aaaay-aacta-cai",
-  );
-  expect(packagedManifest.memory.kernel.version).toBe(3);
-  expect(Object.keys(packagedManifest.memory.kernel.schemas)).toEqual(["3"]);
-  expect(packagedManifest.memory.kernel.migrations).toBeUndefined();
-  expect(packagedManifest.memory.kernel_activation.version).toBe(1);
-  expect(packagedManifest.memory.kernel_activation.migrations).toEqual([]);
-  expect(packagedLock).toEqual(lock);
-  expect(packagedArchive.manifest.memory?.kernel?.version).toBe(3);
-  expect(
-    Object.keys(packagedArchive.manifest.memory?.kernel?.schemas ?? {}),
-  ).toEqual(["3"]);
-  expect(packagedArchive.manifest.memory?.kernel?.migrations).toBeUndefined();
-  expect(
-    packagedArchive.manifest.memory?.kernel_activation?.version,
-  ).toBe(1);
 
-  // `r6_kernel` encodes the six-character memory id, not schema version 6.
+  // r6_kernel encodes the six-character memory id, not schema version 6.
   expect(wrapper).toContain(
     'import NeutronMemorySchema_a6_kernel_r6_kernel_v3 "memory/kernel/v3"',
   );
@@ -91,7 +63,7 @@ test("kernel generated artifacts keep V3 and add isolated activation V1", async 
   expect(wrapper).toContain(
     '{ id = "kernel_activation"; owner = "kernel"; version = 1; schema = "memory/activation/v1" }',
   );
-  expect(candid).toContain("kernel_activation:");
+
   const activationWrapper = wrapper.slice(
     wrapper.indexOf("func kernel_activation"),
     wrapper.indexOf("func kernel_static"),
@@ -102,18 +74,6 @@ test("kernel generated artifacts keep V3 and add isolated activation V1", async 
   expect(activationWrapper).not.toContain(
     "assert(NeutronKernel.is_authorized",
   );
-  for (const method of [
-    "kernel_certified_assets_scope_info",
-    "kernel_certified_assets_usage",
-    "kernel_certified_assets_diagnostics",
-    "kernel_certified_assets_set_admission_ceilings",
-    "kernel_certified_assets_set_writes_frozen",
-    "kernel_certified_assets_maintenance_page",
-    "kernel_certified_assets_retire_scope",
-    "kernel_publication_entropy_initialize",
-  ]) {
-    expect(candid).toContain(`${method}:`);
-  }
 });
 
 test("certified-assets capability toggles rotate stable write authority", async () => {
@@ -342,7 +302,7 @@ test("checked install APIs are hard-cutover and fail closed", async () => {
     installTypes,
   ] = await Promise.all([
     readFile(new URL("../backend/main.mo", import.meta.url), "utf8"),
-    readFile(new URL("../backend/_neutron.mo", import.meta.url), "utf8"),
+    assembleKernelWrapper(),
     readFile(new URL("../neutron.json", import.meta.url), "utf8"),
     readFile(new URL("../backend/install/Service.mo", import.meta.url), "utf8"),
     readFile(new URL("../backend/install/Types.mo", import.meta.url), "utf8"),
@@ -637,7 +597,7 @@ test("kernel local async chains suspend only at external calls", async () => {
         ),
         "utf8",
       ),
-      readFile(new URL("../backend/_neutron.mo", import.meta.url), "utf8"),
+      assembleKernelWrapper(),
       readFile(new URL("../neutron.json", import.meta.url), "utf8"),
     ]);
   const manifest = JSON.parse(manifestText);
@@ -686,7 +646,7 @@ test("kernel settings snapshot is authenticated and reports bounded memory", asy
       ),
       readFile(new URL("../backend/aaa_interface.mo", import.meta.url), "utf8"),
       readFile(new URL("../backend/main.mo", import.meta.url), "utf8"),
-      readFile(new URL("../backend/_neutron.mo", import.meta.url), "utf8"),
+      assembleKernelWrapper(),
       readFile(new URL("../neutron.json", import.meta.url), "utf8"),
     ]);
   const manifest = JSON.parse(manifestText);
@@ -757,7 +717,7 @@ test("kernel access management preserves owner and self-controller recovery", as
     readFile(new URL("../backend/settings/Access.mo", import.meta.url), "utf8"),
     readFile(new URL("../backend/aaa_interface.mo", import.meta.url), "utf8"),
     readFile(new URL("../backend/main.mo", import.meta.url), "utf8"),
-    readFile(new URL("../backend/_neutron.mo", import.meta.url), "utf8"),
+    assembleKernelWrapper(),
     readFile(new URL("../neutron.json", import.meta.url), "utf8"),
   ]);
   const manifest = JSON.parse(manifestText);

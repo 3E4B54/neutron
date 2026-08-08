@@ -193,75 +193,50 @@ export async function getDependencies(
   hashfiles: HashFiles,
   dependencyCache: DependencyCache = {},
 ): Promise<DependencyNode> {
-  // WARNING!!! Changing even a comma here may break the whole security
-  const content = await fs.readFile(filePath, "utf-8");
-
-  const imports = parseImports(removeCommentsAndEmptyLines(content));
-  const fileHash = hashContent(content);
-  console.log("Processing", filePath);
-  if (dependencyCache[filePath]) {
-    const cached = requireDependencyNode(dependencyCache, filePath);
+  // The same source can be reached through both package-relative and absolute
+  // paths. Canonicalize the cache key so those spellings share one analysis.
+  const cacheKey = path.resolve(filePath);
+  if (dependencyCache[cacheKey]) {
+    const cached = requireDependencyNode(dependencyCache, cacheKey);
     return {
       ...cached,
       map: { ...cached.map, from },
     };
   }
 
-  dependencyCache[filePath] = { mods: {}, map: { from, to: fileHash } };
+  // WARNING!!! Changing even a comma here may break the whole security
+  const content = await fs.readFile(filePath, "utf-8");
+  const normalizedContent = removeCommentsAndEmptyLines(content);
+  const imports = parseImports(normalizedContent);
+  const fileHash = hashContent(content);
+  dependencyCache[cacheKey] = { mods: {}, map: { from, to: fileHash } };
 
   if (!hashfiles[fileHash]) {
     hashfiles[fileHash] = {
-      content: removeCommentsAndEmptyLines(content),
+      content: normalizedContent,
       path: filePath,
     };
   }
 
-  // Dangerous check is intentionally done after removing comments
-  let danger = checkForDangerousTextCode(hashfiles[fileHash].content);
-  // if (danger.length) {
-  //   console.log(
-  //     chalk.red("\u2717"),
-  //     chalk.yellow(`Text check ::`),
-  //     chalk.red(
-  //       `Prohibited code found in ${filePath} ${fileHash} used by ${path.relative(
-  //         process.cwd(),
-  //         from ? from[2] : ""
-  //       )}`
-  //     )
-  //   );
-  //   console.log(displayDangerousCode(danger));
-  // }
-
-  // Secondary AST level check
-  const mo = await loadMotoko();
-  let ast = await mo.parseMotoko(hashfiles[fileHash].content);
-  let dangerAST = checkForDangerousASTCode(ast, hashfiles[fileHash].content);
-  // Text inspection supplies readable source locations, while the full AST is
-  // the authority for member/object-pattern acquisition. Filter broad name
-  // candidates so harmless locals and record fields are not reserved words.
-  const astFindings = new Set<string>(dangerAST);
-  danger = danger.filter(({ code }) => astFindings.has(code));
-  // if (dangerAST.length) {
-  //   console.log(
-  //     chalk.red("\u2717"),
-  //     chalk.yellow("AST check :: "),
-  //     chalk.red(
-  //       "Prohibited AST node found in",
-  //       filePath,
-  //       "used by",
-  //       path.relative(process.cwd(), from ? from[2] : "")
-  //     )
-  //   );
-  //   console.log(
-  //     chalk.white("Disallowed: "),
-  //     chalk.bgRed.white(dangerAST.join(", "))
-  //   );
-  // }
-
+  // Danger analysis depends only on source content. `hashfiles` is shared
+  // across entrypoints, so identical source hashes can safely reuse it even
+  // though each entrypoint keeps its own parent-sensitive dependency graph.
   const currentFile = requireHashFile(hashfiles, fileHash);
-  currentFile.dangers = { text: danger, ast: dangerAST };
+  if (!currentFile.dangers) {
+    console.log("Processing", filePath);
+    let danger = checkForDangerousTextCode(currentFile.content);
+    const mo = await loadMotoko();
+    const ast = await mo.parseMotoko(currentFile.content);
+    const dangerAST = checkForDangerousASTCode(ast, currentFile.content);
 
-  const dependencyNode = requireDependencyNode(dependencyCache, filePath);
+    // Text inspection supplies readable source locations, while the full AST
+    // is authoritative for member/object-pattern acquisition.
+    const astFindings = new Set<string>(dangerAST);
+    danger = danger.filter(({ code }) => astFindings.has(code));
+
+    currentFile.dangers = { text: danger, ast: dangerAST };
+  }
+  const dependencyNode = requireDependencyNode(dependencyCache, cacheKey);
   dependencyNode.map = { from, to: fileHash };
 
   for (const importName in imports) {

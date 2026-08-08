@@ -11,11 +11,12 @@
     "certified-assets:qualify": "bun evidence/qualification/supervisor.ts",
     "mopack": "bun ../../packages/neutron-scripts/src/mopack.ts",
     "mogen": "bun ../../packages/neutron-scripts/src/mogen.ts",
-    "package": "npm run validate && npm run build && npm run mopack && bun ../../packages/neutron-scripts/src/pack.ts",
+    "package": "npm run validate && npm run build && npm run mopack && bun ../../packages/neutron-scripts/src/pack.ts && npm run test:package-artifacts",
     "validate": "bun ../../packages/neutron-scripts/src/validate.ts",
     "watch": "bun build.ts watch",
     "start": "npm run watch",
-    "test": "bun test && bun test/motoko/run.ts"
+    "test": "bun test && bun test/motoko/run.ts",
+    "test:package-artifacts": "bun test ./test/package_artifacts.ts"
   },
   "neutron": {
     "loadLevel": 0
