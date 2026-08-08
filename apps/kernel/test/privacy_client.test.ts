@@ -47,7 +47,7 @@ test("kernel package assets use the HTTP asset reader", async () => {
     /func http_request_streaming_callback[\s\S]*?NeutronKernel\.http_request_streaming_callback\(NeutronRequest \)/,
   );
   expect(wrapper).toMatch(
-    /func kernel_runtime_info[\s\S]*?assert\(NeutronKernel\.is_authorized\(NeutronCaller\)\)/,
+    /func kernel_runtime_info[\s\S]*?assert\(NeutronKernel\.is_session_authorized\(NeutronCaller\)\)/,
   );
 
   expect(manifest.func.kernel_static_read).toBeUndefined();

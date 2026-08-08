@@ -401,7 +401,7 @@ test("checked install APIs are hard-cutover and fail closed", async () => {
     /func kernel_install_begin_checked[\s\S]*?assert\(NeutronKernel\.is_authorized\(NeutronCaller\)\)/,
   );
   expect(wrapper).toMatch(
-    /transient let NeutronActiveAppInstanceInventory = \[[\s\S]*?NeutronModule_a6_kernel\.Init\(NeutronMemory_a6_kernel_r6_kernel,NeutronMemory_a6_kernel_r17_kernel_activation,"development",NeutronActiveAppInstanceInventory,NeutronPrim\.principalOfActor\(NeutronActor\)\)/,
+    /transient let NeutronActiveAppInstanceInventory = \[[\s\S]*?NeutronModule_a6_kernel\.Init\(NeutronMemory_a6_kernel_r6_kernel,NeutronMemory_a6_kernel_r17_kernel_activation,NeutronMemory_a6_kernel_r16_malstorm_tenants,NeutronMemory_a6_kernel_r13_app_instances,NeutronMemory_a6_kernel_r22_app_instance_lifecycle,NeutronMemory_a6_kernel_r11_app_catalog,"development",NeutronActiveAppInstanceInventory,NeutronPrim\.principalOfActor\(NeutronActor\)\)/,
   );
 
   expect(
