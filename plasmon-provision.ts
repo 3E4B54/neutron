@@ -3,13 +3,13 @@ import {
   runLocalReinstall,
   type LocalReinstallResult,
 } from "./packages/neutron-provision/src/local_deploy.ts";
-import { bootstrapAppPools } from "./phase3b-bootstrap.ts";
+import { bootstrapAppPools } from "./plasmon-bootstrap.ts";
 
 const [configPath, command] = Bun.argv.slice(2);
 
 if (!configPath || command !== "reinstall") {
   console.error(
-    "Usage: bun malstorm-provision.ts CONFIG.ndeploy.json reinstall",
+    "Usage: bun plasmon-provision.ts CONFIG.ndeploy.json reinstall",
   );
   process.exit(1);
 }
@@ -34,7 +34,7 @@ await main(
 
 if (!deploymentResult) {
   throw new Error(
-    "Malstorm bootstrap currently supports PocketIC reinstall only",
+    "Plasmon bootstrap currently supports PocketIC reinstall only",
   );
 }
 
@@ -42,12 +42,12 @@ const runtime = deploymentResult.session.runtime;
 
 if (runtime.kind !== "pocketic") {
   throw new Error(
-    "Malstorm local bootstrap expected a PocketIC runtime",
+    "Plasmon local bootstrap expected a PocketIC runtime",
   );
 }
 
 console.log("");
-console.log("Seeding Malstorm app catalog and pools...");
+console.log("Seeding Plasmon app catalog and pools...");
 
 for (const node of deploymentResult.nodes) {
   console.log("");
@@ -62,7 +62,7 @@ for (const node of deploymentResult.nodes) {
 }
 
 console.log("");
-console.log("Malstorm deployment ready.");
+console.log("Plasmon deployment ready.");
 
 for (const node of deploymentResult.nodes) {
   console.log(

@@ -1,12 +1,12 @@
-# Malstorm Architecture
+# Plasmon Architecture
 
 ## 1. Overview
 
-Malstorm is a multi-user application platform built on Neutron and the Internet Computer.
+Plasmon is a multi-user application platform built on Neutron and the Internet Computer.
 
 The core design goal is to provide Sandstorm-like isolated application instances while avoiding the cost of creating a separate Internet Computer canister for every free-tier application instance.
 
-A free-tier Malstorm deployment therefore places many tenants and many isolated application instances inside a shared Neutron canister.
+A free-tier Plasmon deployment therefore places many tenants and many isolated application instances inside a shared Neutron canister.
 
 A future paid tier may instead place a tenant in a dedicated canister.
 
@@ -14,9 +14,13 @@ A future paid tier may instead place a tenant in a dedicated canister.
 
 ### Product terminology
 
+**Plasmon**
+
+The personal application cloud/platform.
+
 **Element**
 
-A logical application available to a Malstorm user.
+An application available through Plasmon.
 
 Examples:
 
@@ -29,19 +33,37 @@ Chat
 
 **Isotope**
 
-One isolated instance of an Element.
+A particular variant or build of an Element.
 
-A user may create multiple Isotopes of the same Element.
+An Element may have multiple Isotopes, for example:
+
+```text
+Notes
+├── stable release
+├── beta release
+└── older compatible release
+```
+
+**Atom**
+
+One isolated application instance.
+
+A tenant may create multiple Atoms from the same Isotope. Different tenants may also run independent Atoms from the same Isotope.
+
+**Neutron**
+
+The kernel/runtime underlying Plasmon.
 
 ### Implementation terminology
 
-Product terminology is intentionally not used inside the Neutron fork.
+The product vocabulary is intentionally kept out of ordinary Neutron kernel APIs and data structures.
 
-The implementation uses:
+The implementation uses generic terminology:
 
 ```text
 app
 app_id
+version / build / package
 app_instance
 app_instance_id
 tenant
@@ -51,15 +73,21 @@ grant
 For example:
 
 ```text
+product Element:   Hello
+product Isotope:   a particular Hello build
+product Atom:      one tenant's isolated Hello instance
+
 logical app:       hello
 physical instance: hello_017
 tenant:            Principal
 grant:             tenant → hello_017
 ```
 
+Element, Isotope, and Atom are product concepts rather than kernel type names.
+
 ## 3. Core Design
 
-A shared Malstorm canister contains one Neutron kernel plus many physical application instances.
+A shared Plasmon canister contains one Neutron kernel plus many physical application instances.
 
 ```text
                      Shared canister
@@ -105,7 +133,7 @@ Principal B
 └── demo_002
 ```
 
-This is the fundamental Malstorm isolation boundary.
+This is the fundamental Plasmon isolation boundary.
 
 ## 4. Why Physical Instances Are Precompiled
 
@@ -131,7 +159,7 @@ compiler-generated wrappers
 
 An arbitrary physical app ID therefore cannot simply be created inside an already-built actor without modifying deeper Neutron assumptions.
 
-Malstorm avoids that complexity by compiling spare physical app slots ahead of time.
+Plasmon avoids that complexity by compiling spare physical app slots ahead of time.
 
 This is an implementation detail rather than a product limitation.
 
@@ -176,7 +204,7 @@ A grant for `hello_016` therefore does not authorize `hello_017`.
 
 ## 6. Tenant Membership
 
-Malstorm maintains a persistent tenant map.
+Plasmon maintains a persistent tenant map.
 
 Conceptually:
 
@@ -190,7 +218,7 @@ An entry with an empty list is significant:
 Principal → []
 ```
 
-It means the principal is a valid Malstorm tenant but currently owns no applications.
+It means the principal is a valid Plasmon tenant but currently owns no applications.
 
 Tenant membership is therefore independent from application ownership.
 
@@ -235,10 +263,10 @@ A session is accepted when the caller is either:
 ```text
 Neutron owner
 OR
-registered Malstorm tenant
+registered Plasmon tenant
 ```
 
-A tenant does not need to own an application merely to enter the Malstorm shell.
+A tenant does not need to own an application merely to enter the Plasmon shell.
 
 ### App authorization
 
@@ -254,7 +282,7 @@ The frontend launcher may hide unauthorized applications, but frontend filtering
 
 ## 8. Logical App Catalog
 
-Malstorm separates logical application metadata from physical app instances.
+Plasmon separates logical application metadata from physical app instances.
 
 Example catalog entry:
 
@@ -365,7 +393,7 @@ neutron-kernel-workspaces-v2
 
 That allowed multiple identities using the same browser profile to inherit each other's workspace layout.
 
-Malstorm scopes workspace persistence by authenticated identity and deployment context.
+Plasmon scopes workspace persistence by authenticated identity and deployment context.
 
 Account switching was also tested together with Internet Identity logout/login behavior.
 
@@ -375,7 +403,7 @@ A stale frontend tile must never grant access to an application the tenant does 
 
 ## 13. Internet Identity
 
-Malstorm currently uses Neutron's existing `icblast` Internet Identity integration.
+Plasmon currently uses Neutron's existing `icblast` Internet Identity integration.
 
 The authentication lifecycle was hardened after repeated account switching exposed a race around logout.
 
@@ -389,7 +417,7 @@ Physical spare instances should be cheap to produce.
 
 Building the same application source once for every physical ID would waste development time.
 
-Malstorm instead builds a logical app template once and generates physical packages from its built `dist/`.
+Plasmon instead builds a logical app template once and generates physical packages from its built `dist/`.
 
 A `.neutron` application archive is a MessagePack mapping of gzip-compressed files from `dist/`.
 
@@ -419,7 +447,7 @@ The application code and memory schema hashes remain identical.
 Capacity is declared in:
 
 ```text
-malstorm-app-pools.json
+plasmon-app-pools.json
 ```
 
 Example:
@@ -438,7 +466,7 @@ Example:
 }
 ```
 
-`malstorm-capacity.ts` expands the capacity into physical IDs:
+`plasmon-capacity.ts` expands the capacity into physical IDs:
 
 ```text
 hello_001
@@ -452,7 +480,7 @@ It also generates the deployment package list.
 Generated data lives under:
 
 ```text
-.malstorm-generated/
+.plasmon-generated/
 ```
 
 and is disposable.
@@ -484,12 +512,12 @@ It is not intended to establish the maximum production capacity of a Neutron can
 
 A single shared canister is finite.
 
-Malstorm therefore treats a shared canister as a shard.
+Plasmon therefore treats a shared canister as a shard.
 
 Conceptually:
 
 ```text
-Malstorm
+Plasmon
 │
 ├── shared shard 1
 │   ├── tenant A
@@ -506,7 +534,7 @@ Malstorm
 
 Neutron's existing PocketIC deployment format already supports multiple local nodes.
 
-Malstorm uses that facility rather than implementing a second canister provisioner.
+Plasmon uses that facility rather than implementing a second canister provisioner.
 
 Current local configuration:
 
@@ -527,12 +555,12 @@ Each node contains the complete generated 32-Hello / 32-Demo capacity.
 
 Cross-shard user routing is intentionally not implemented yet.
 
-It requires a stable Malstorm control-plane/frontend origin.
+It requires a stable Plasmon control-plane/frontend origin.
 
 The intended design is:
 
 ```text
-                 Malstorm frontend
+                 Plasmon frontend
                        │
                  authenticate once
                        │
@@ -562,7 +590,7 @@ Each shared Neutron canister currently serves its own kernel frontend.
 
 Using independent frontend origins for authentication creates identity and routing complications.
 
-The production design should instead authenticate from one stable Malstorm origin and use the resulting browser identity when calling the selected backend canister.
+The production design should instead authenticate from one stable Plasmon origin and use the resulting browser identity when calling the selected backend canister.
 
 This work is deferred because the current MVP does not need enough users to exhaust one shared shard.
 
@@ -591,9 +619,9 @@ dedicated canister
 
 ## 20. Persistent Kernel Data
 
-Malstorm adds separate managed memories instead of modifying Neutron's existing persistent kernel schema.
+Plasmon adds separate managed memories instead of modifying Neutron's existing persistent kernel schema.
 
-Current Malstorm-specific persistent data includes:
+Current Plasmon-specific persistent data includes:
 
 ### `malstorm_tenants`
 
@@ -623,7 +651,7 @@ Keeping these memories separate minimizes changes to upstream Neutron persistenc
 
 Deployment and tenant onboarding are separate operations.
 
-After Neutron installs the generated physical app packages, Malstorm bootstrap:
+After Neutron installs the generated physical app packages, Plasmon bootstrap:
 
 1. registers logical application metadata;
 2. registers physical-instance-to-logical-app mappings.
@@ -632,11 +660,11 @@ It does not create tenant grants.
 
 Tenant membership is established later through self-service join.
 
-The Malstorm provisioning wrapper applies bootstrap to every shared fleet node.
+The Plasmon provisioning wrapper applies bootstrap to every shared fleet node.
 
 ## 22. Security Invariants
 
-The following properties should remain true as Malstorm evolves.
+The following properties should remain true as Plasmon evolves.
 
 ### Tenant isolation
 
@@ -688,7 +716,7 @@ None of these are required to validate the core isolation model.
 
 ## 24. MVP Boundary
 
-For the first usable Malstorm version, the intended scope is:
+For the first usable Plasmon version, the intended scope is:
 
 ```text
 one shared canister
@@ -718,4 +746,4 @@ Priorities:
 7. repeat multi-principal security regression testing;
 8. document known capacity and lifecycle limits.
 
-Once those are complete, Malstorm should have a coherent MVP foundation upon which the future control plane, app store, and paid dedicated-canister tier can be built.
+Once those are complete, Plasmon should have a coherent MVP foundation upon which the future control plane, app store, and paid dedicated-canister tier can be built.

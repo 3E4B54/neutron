@@ -13,8 +13,8 @@ if (
 ) {
   console.error(
     "Usage:\n" +
-      "  bun phase3a-app-admin.ts register CANISTER APP_ID NAME DESCRIPTION\n" +
-      "  bun phase3a-app-admin.ts get      CANISTER APP_ID",
+      "  bun plasmon-app-admin.ts register CANISTER APP_ID NAME DESCRIPTION\n" +
+      "  bun plasmon-app-admin.ts get      CANISTER APP_ID",
   );
   process.exit(1);
 }

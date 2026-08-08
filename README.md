@@ -1,35 +1,41 @@
-# Malstorm
+# Plasmon
 
-Malstorm is a multi-user application platform built on top of [Neutron](https://github.com/infu/neutron) and the Internet Computer.
+Plasmon is a multi-user application platform built on top of [Neutron](https://github.com/infu/neutron) and the Internet Computer.
 
 It takes inspiration from Sandstorm's model of giving each user an isolated application instance, while using Neutron's app runtime and `AppScope` isolation inside an Internet Computer canister.
 
-Malstorm is currently an experimental/hobby project. The core single-canister multi-tenant architecture is working locally; automatic cross-canister tenant routing is designed but not yet implemented.
+Plasmon is currently an experimental/hobby project. The core single-canister multi-tenant architecture is working locally; automatic cross-canister tenant routing is designed but not yet implemented.
 
 ## Concepts
 
-Malstorm uses two user-facing terms:
+Plasmon uses three user-facing application concepts:
 
-* **Element** — an application or application type.
-* **Isotope** — one isolated instance of an Element.
+- **Element** — an application.
+- **Isotope** — a particular variant or build of an Element.
+- **Atom** — an isolated application instance.
 
-For example, two users can both create a Hello Element while receiving separate Hello Isotopes with independent state.
+For example, the Hello Element may have a stable Isotope and a beta Isotope. Multiple users can create independent Hello Atoms from the same Isotope.
 
-In source code, Malstorm intentionally uses generic implementation terminology instead:
+**Neutron** is the kernel/runtime underlying Plasmon.
 
-* `app`
-* `app_instance`
-* `tenant`
-* `grant`
+In source code, these product terms should generally remain outside the kernel and application APIs. The implementation instead uses generic terms such as:
 
-The product terminology should not leak into Neutron internals.
+- `app`
+- `app_id`
+- `version`, `build`, or `package`
+- `app_instance`
+- `app_instance_id`
+- `tenant`
+- `grant`
+
+This keeps the Neutron implementation generic and independent from Plasmon product branding.
 
 ## Architecture
 
-A shared Malstorm canister contains:
+A shared Plasmon canister contains:
 
 ```text
-Malstorm / Neutron kernel
+Plasmon / Neutron kernel
 │
 ├── tenant membership
 ├── tenant authorization
@@ -103,7 +109,7 @@ A two-node PocketIC fleet has also been successfully deployed with the full gene
 
 ### Planned
 
-* Stable Malstorm frontend/control-plane origin.
+* Stable Plasmon frontend/control-plane origin.
 * Persistent tenant-to-shard directory.
 * Automatic placement of new tenants on shared canisters with capacity.
 * Provisioning of additional shared canisters as capacity is consumed.
@@ -117,7 +123,7 @@ Neutron generates a physical `AppScope` and entry-point wrappers for each app ID
 
 That means an already-compiled shared canister cannot cheaply invent an arbitrary new physical app ID at runtime without deeper changes to Neutron.
 
-Malstorm therefore precompiles spare physical instances:
+Plasmon therefore precompiles spare physical instances:
 
 ```text
 hello_001
@@ -142,15 +148,15 @@ open app
 
 A production deployment can maintain enough spare capacity that users normally perceive creation as unlimited.
 
-When an entire shared canister approaches capacity, Malstorm can place new tenants on another shared canister.
+When an entire shared canister approaches capacity, Plasmon can place new tenants on another shared canister.
 
 ## Cheap Capacity Generation
 
-Malstorm does not rebuild the complete application for every physical instance.
+Plasmon does not rebuild the complete application for every physical instance.
 
 An application template is built once.
 
-For each generated physical instance, Malstorm copies the already-built package data and rewrites the physical application identity metadata before repacking the `.neutron` archive.
+For each generated physical instance, Plasmon copies the already-built package data and rewrites the physical application identity metadata before repacking the `.neutron` archive.
 
 Conceptually:
 
@@ -170,7 +176,7 @@ Hello template dist/
 Capacity is configured in:
 
 ```text
-malstorm-app-pools.json
+plasmon-app-pools.json
 ```
 
 Example:
@@ -192,13 +198,13 @@ Example:
 Generate deployment capacity with:
 
 ```bash
-bun malstorm-capacity.ts
+bun plasmon-capacity.ts
 ```
 
 Generated artifacts are stored under:
 
 ```text
-.malstorm-generated/
+.plasmon-generated/
 ```
 
 and are intentionally not committed.
@@ -208,7 +214,7 @@ and are intentionally not committed.
 Shared-canister configuration lives in:
 
 ```text
-malstorm-shards.json
+plasmon-shards.json
 ```
 
 For local testing:
@@ -227,14 +233,14 @@ The existing Neutron local provisioner creates and manages the fleet.
 Generate the deployment:
 
 ```bash
-bun malstorm-capacity.ts
+bun plasmon-capacity.ts
 ```
 
 With PocketIC already being served, deploy with:
 
 ```bash
-bun malstorm-provision.ts \
-  malstorm-phase6.ndeploy.json \
+bun plasmon-provision.ts \
+  plasmon.ndeploy.json \
   reinstall
 ```
 
@@ -242,11 +248,11 @@ Inspect the resulting fleet with:
 
 ```bash
 npm run provision -- \
-  malstorm-phase6.ndeploy.json \
+  plasmon.ndeploy.json \
   status
 ```
 
-The Malstorm provisioning wrapper bootstraps the app catalog and physical-instance registry on every node.
+The Plasmon provisioning wrapper bootstraps the app catalog and physical-instance registry on every node.
 
 ## Local Development Workflow
 
@@ -254,17 +260,17 @@ Terminal 1:
 
 ```bash
 npm run provision -- \
-  malstorm-phase6.ndeploy.json \
+  plasmon.ndeploy.json \
   serve
 ```
 
 Terminal 2:
 
 ```bash
-bun malstorm-capacity.ts
+bun plasmon-capacity.ts
 
-bun malstorm-provision.ts \
-  malstorm-phase6.ndeploy.json \
+bun plasmon-provision.ts \
+  plasmon.ndeploy.json \
   reinstall
 ```
 
@@ -272,7 +278,7 @@ Then obtain the authoritative current canister URLs with:
 
 ```bash
 npm run provision -- \
-  malstorm-phase6.ndeploy.json \
+  plasmon.ndeploy.json \
   status
 ```
 
@@ -294,18 +300,18 @@ Important invariants include:
 
 See the architecture document for additional details.
 
-## Repository-Specific Malstorm Files
+## Repository-Specific Plasmon Files
 
-Important Malstorm additions currently include:
+Important Plasmon additions currently include:
 
 ```text
-malstorm-app-pools.json
-malstorm-shards.json
-malstorm-capacity.ts
-malstorm-provision.ts
-phase3a-app-admin.ts
-phase3b-bootstrap.ts
-phase1b-tenant-admin.ts
+plasmon-app-pools.json
+plasmon-shards.json
+plasmon-capacity.ts
+plasmon-provision.ts
+plasmon-app-admin.ts
+plasmon-bootstrap.ts
+plasmon-tenant-admin.ts
 ```
 
 Kernel additions include persistent memory for:

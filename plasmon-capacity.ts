@@ -17,16 +17,16 @@ type PoolConfig = {
 type JsonObject = Record<string, any>;
 
 const poolConfigPath =
-  Bun.argv[2] ?? "malstorm-app-pools.json";
+  Bun.argv[2] ?? "plasmon-app-pools.json";
 
 const deployTemplatePath =
-  Bun.argv[3] ?? "malstorm-phase2d.ndeploy.json";
+  Bun.argv[3] ?? "plasmon-base.ndeploy.json";
 
 const outputDeployPath =
-  Bun.argv[4] ?? "malstorm-phase6.ndeploy.json";
+  Bun.argv[4] ?? "plasmon.ndeploy.json";
 
 const cwd = process.cwd();
-const generatedRoot = path.resolve(cwd, ".malstorm-generated");
+const generatedRoot = path.resolve(cwd, ".plasmon-generated");
 
 async function readJson<T>(file: string): Promise<T> {
   return JSON.parse(await fs.readFile(file, "utf8")) as T;
@@ -228,13 +228,13 @@ const deploy =
 
 const shardConfig = await readJson<{
   shared: string[];
-}>("malstorm-shards.json");
+}>("plasmon-shards.json");
 
 if (
   !Array.isArray(shardConfig.shared) ||
   shardConfig.shared.length === 0
 ) {
-  throw new Error("malstorm-shards.json must define shared shards");
+  throw new Error("plasmon-shards.json must define shared shards");
 }
 
 if (

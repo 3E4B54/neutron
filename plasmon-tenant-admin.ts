@@ -17,11 +17,11 @@ if (
 ) {
   console.error(
     "Usage:\n" +
-      "  bun phase1b-tenant-admin.ts grant     CANISTER PRINCIPAL APP_INSTANCE_ID\n" +
-      "  bun phase1b-tenant-admin.ts revoke    CANISTER PRINCIPAL APP_INSTANCE_ID\n" +
-      "  bun phase1b-tenant-admin.ts list      CANISTER PRINCIPAL\n" +
-      "  bun phase1b-tenant-admin.ts register  CANISTER APP_ID APP_INSTANCE_ID\n" +
-      "  bun phase1b-tenant-admin.ts instances CANISTER APP_ID",
+      "  bun plasmon-tenant-admin.ts grant     CANISTER PRINCIPAL APP_INSTANCE_ID\n" +
+      "  bun plasmon-tenant-admin.ts revoke    CANISTER PRINCIPAL APP_INSTANCE_ID\n" +
+      "  bun plasmon-tenant-admin.ts list      CANISTER PRINCIPAL\n" +
+      "  bun plasmon-tenant-admin.ts register  CANISTER APP_ID APP_INSTANCE_ID\n" +
+      "  bun plasmon-tenant-admin.ts instances CANISTER APP_ID",
   );
   process.exit(1);
 }

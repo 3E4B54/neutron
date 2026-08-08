@@ -156,7 +156,7 @@ function validateConfig(config: Config): void {
 
 export async function bootstrapAppPools({
   canisterId,
-  configPath = "malstorm-app-pools.json",
+  configPath = "plasmon-app-pools.json",
   host = "http://127.0.0.1:8000",
 }: BootstrapOptions): Promise<void> {
   const config = JSON.parse(
@@ -217,7 +217,7 @@ if (import.meta.main) {
 
   if (!canisterId) {
     console.error(
-      "Usage: bun phase3b-bootstrap.ts CANISTER [CONFIG]",
+      "Usage: bun plasmon-bootstrap.ts CANISTER [CONFIG]",
     );
     process.exit(1);
   }
