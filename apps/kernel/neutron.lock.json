@@ -37,6 +37,15 @@
         }
       },
       "migrations": {}
+    },
+    "app_catalog": {
+      "schemas": {
+        "1": {
+          "hash": "e7ed2d20d5c9e0d6835ac59f5881fdc1e095f021bf4fb0fa4e7dfe7bb4a03d25",
+          "entry": "60735f96a1dcad54b7421a097be9756b926954226b28b93bdaa865a8872e290e"
+        }
+      },
+      "migrations": {}
     }
   }
 }

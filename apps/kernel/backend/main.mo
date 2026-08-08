@@ -46,6 +46,7 @@ import KernelMemory "./memory/kernel/v3";
 import ActivationMemory "./memory/activation/v1";
 import MalstormTenantsMemory "./memory/malstorm_tenants/v1";
 import AppInstancesMemory "./memory/app_instances/v1";
+import AppCatalogMemory "./memory/app_catalog/v1";
 import ActivationService "./activation/Service";
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
@@ -573,6 +574,7 @@ module {
         activationMem : ActivationMemory.Mem,
         malstormTenantsMem : MalstormTenantsMemory.Mem,
         appInstancesMem : AppInstancesMemory.Mem,
+            appCatalogMem : AppCatalogMemory.Mem,
         runningDeploymentId : Text,
         activeAppInstanceInventory : [InstallTypes.RuntimeApp],
         canisterPrincipal : Principal,
@@ -2188,6 +2190,68 @@ module {
             Array.sort(result, Text.compare);
         };
 
+        func app_catalog_has(appId : Text) : Bool {
+            switch (
+                Map.get(
+                    appCatalogMem.apps,
+                    Text.compare,
+                    appId,
+                )
+            ) {
+                case null false;
+                case (?_) true;
+            };
+        };
+
+        // Owner-only catalog metadata registration/update.
+        public func /*update*/kernel_app_catalog_register(
+            input : {
+                app_id : Text;
+                name : Text;
+                description : Text;
+            },
+        ) : () {
+            assert(input.app_id != "");
+            assert(input.name != "");
+
+            Map.add(
+                appCatalogMem.apps,
+                Text.compare,
+                input.app_id,
+                {
+                    name = input.name;
+                    description = input.description;
+                },
+            );
+        };
+
+        // Session-readable metadata lookup.
+        //
+        // []                    = app is not registered
+        // [name, description]   = registered metadata
+        //
+        // This intentionally avoids exposing another generated record return.
+        public func /*query:unauthorized*/kernel_app_catalog_get(
+            input : { app_id : Text },
+            /*caller*/ caller : Principal,
+        ) : [Text] {
+            assert(is_session_authorized(caller));
+
+            switch (
+                Map.get(
+                    appCatalogMem.apps,
+                    Text.compare,
+                    input.app_id,
+                )
+            ) {
+                case null [];
+                case (?metadata) [
+                    metadata.name,
+                    metadata.description,
+                ];
+            };
+        };
+
         // Tenant-facing catalog.
         //
         // Returns each logical app that currently has at least one registered,
@@ -2205,6 +2269,7 @@ module {
                 in Map.entries(appInstancesMem.instances)
             ) {
                 if (
+                    app_catalog_has(appId) and
                     InstallMemory.committedScope(
                         mem.install,
                         appInstanceId,
@@ -3818,6 +3883,16 @@ public type kernel_app_instance_register_Output = ();
 
 public type kernel_app_instances_for_app_Input = (input : { app_id : Text },);
 public type kernel_app_instances_for_app_Output = [Text];
+
+public type kernel_app_catalog_register_Input = (input : {
+                app_id : Text;
+                name : Text;
+                description : Text;
+            },);
+public type kernel_app_catalog_register_Output = ();
+
+public type kernel_app_catalog_get_Input = (input : { app_id : Text });
+public type kernel_app_catalog_get_Output = [Text];
 
 public type kernel_available_apps_Input = (());
 public type kernel_available_apps_Output = [Text];

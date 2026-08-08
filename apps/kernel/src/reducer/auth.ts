@@ -57,6 +57,9 @@ export type KernelActor = CertifiedAssetsSettingsActor & {
     app_id: string;
   }): Promise<[] | [string]>;
   kernel_available_apps(req: null): Promise<string[]>;
+  kernel_app_catalog_get(req: {
+    app_id: string;
+  }): Promise<string[]>;
   kernel_install_code(req: {
     wasm: Uint8Array;
     candid: string;
@@ -376,9 +379,29 @@ export async function activateIdentity(
   });
 }
 
-export async function getAvailableApps(): Promise<string[]> {
+export type AvailableApp = {
+  appId: string;
+  name: string;
+  description: string;
+};
+
+export async function getAvailableApps(): Promise<AvailableApp[]> {
   const neutron = await getNeutronCan();
-  return neutron.kernel_available_apps(null);
+  const appIds = await neutron.kernel_available_apps(null);
+
+  return Promise.all(
+    appIds.map(async (appId) => {
+      const metadata = await neutron.kernel_app_catalog_get({
+        app_id: appId,
+      });
+
+      return {
+        appId,
+        name: metadata[0] ?? appId,
+        description: metadata[1] ?? "",
+      };
+    }),
+  );
 }
 
 export async function allocateAppInstance(
@@ -1003,6 +1026,15 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
     ),
     kernel_available_apps: IDL.Func(
       [IDL.Null],
+      [IDL.Vec(IDL.Text)],
+      ["query"],
+    ),
+    kernel_app_catalog_get: IDL.Func(
+      [
+        IDL.Record({
+          app_id: IDL.Text,
+        }),
+      ],
       [IDL.Vec(IDL.Text)],
       ["query"],
     ),

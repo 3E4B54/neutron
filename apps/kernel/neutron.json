@@ -10,6 +10,7 @@
     "memory_kernel_activation",
     "memory_malstorm_tenants",
     "memory_app_instances",
+    "memory_app_catalog",
     "deployment_id",
     "active_app_instance_inventory",
     "canister_principal"
@@ -69,6 +70,18 @@
     "kernel_app_instances_for_app": {
       "type": "query",
       "async": false
+    },
+    "kernel_app_catalog_register": {
+      "type": "update",
+      "async": false
+    },
+    "kernel_app_catalog_get": {
+      "type": "query",
+      "async": false,
+      "arg": [
+        "caller"
+      ],
+      "allow": "unauthorized"
     },
     "kernel_available_apps": {
       "type": "query",
@@ -471,6 +484,15 @@
       "schemas": {
         "1": {
           "src": "memory/app_instances/v1.mo"
+        }
+      },
+      "migrations": []
+    },
+    "app_catalog": {
+      "version": 1,
+      "schemas": {
+        "1": {
+          "src": "memory/app_catalog/v1.mo"
         }
       },
       "migrations": []

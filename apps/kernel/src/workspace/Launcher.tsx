@@ -57,7 +57,7 @@ export function Launcher(props: LauncherProps) {
   const testId = (id: string) =>
     placement === "modal" ? id : `workspace-${id}`;
   const [query, setQuery] = useState("");
-  const [availableApps, setAvailableApps] = useState<string[]>([]);
+  const [availableApps, setAvailableApps] = useState<Awaited<ReturnType<typeof getAvailableApps>>>([]);
   const [allocateBusyAppId, setAllocateBusyAppId] = useState<string | null>(null);
   const [allocateError, setAllocateError] = useState<string | null>(null);
   const [installSource, setInstallSource] = useState<
@@ -482,10 +482,10 @@ export function Launcher(props: LauncherProps) {
           ) : null}
           {!owner ? (
             <>
-              {availableApps.map((appId) => (
+              {availableApps.map((app) => (
                 <div
                   className="launcher-tile-row"
-                  key={`available-${appId}`}
+                  key={`available-${app.appId}`}
                 >
                   <button
                     type="button"
@@ -494,14 +494,14 @@ export function Launcher(props: LauncherProps) {
                     onClick={() => {
                       if (allocateBusyAppId !== null) return;
 
-                      setAllocateBusyAppId(appId);
+                      setAllocateBusyAppId(app.appId);
                       setAllocateError(null);
 
-                      void allocateAppInstance(appId)
+                      void allocateAppInstance(app.appId)
                         .then((appInstanceId) => {
                           if (appInstanceId === null) {
                             setAllocateError(
-                              `No ${appId} app instances are available.`,
+                              `No ${app.name} app instances are available.`,
                             );
                           }
                         })
@@ -509,7 +509,7 @@ export function Launcher(props: LauncherProps) {
                           setAllocateError(
                             error instanceof Error
                               ? error.message
-                              : `Unable to allocate ${appId}.`,
+                              : `Unable to allocate ${app.name}.`,
                           );
                         })
                         .finally(() => {
@@ -518,10 +518,14 @@ export function Launcher(props: LauncherProps) {
                     }}
                   >
                     <span className="launcher-tile-title">
-                      {allocateBusyAppId === appId
-                        ? `Creating ${appId}...`
-                        : `New ${appId}`}
+                      {allocateBusyAppId === app.appId
+                        ? `Creating ${app.name}...`
+                        : `New ${app.name}`}
                     </span>
+
+                    {app.description ? (
+                      <span>{app.description}</span>
+                    ) : null}
                   </button>
                 </div>
               ))}
