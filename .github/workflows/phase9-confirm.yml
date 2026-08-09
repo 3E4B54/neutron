@@ -1,0 +1,142 @@
+name: Phase 9 confirmation
+
+on:
+  push:
+    branches:
+      - phase9-work
+
+permissions:
+  contents: write
+
+env:
+  PHASE9_STAGE_COMMIT: 354a83097036ca4128158bb79348d74671d440b6
+
+jobs:
+  confirm:
+    if: startsWith(github.event.head_commit.message, 'chore: confirm reviewed phase9 patch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply reviewed patch
+        id: apply
+        if: steps.checkout.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          python3 .phase9-apply.py
+          git diff --check
+
+      - name: Install Nix
+        id: nix
+        if: steps.apply.outcome == 'success'
+        continue-on-error: true
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Phase 9 gate
+        id: gate
+        if: steps.nix.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix develop --command bash -lc '
+            set -euxo pipefail
+            npm ci
+            (cd apps/kernel && mops install)
+            npm --workspace neutron-kernel run certified-assets:candidate-binding:write
+            npm --workspace neutron-kernel run package
+            npm --workspace neutron-kernel test
+            npm run plasmon:deploy
+            npm run plasmon:test
+          ' 2>&1 | tee /tmp/phase9-confirm.log
+
+      - name: Publish code-only work branch
+        id: publish
+        if: >-
+          steps.apply.outcome == 'success' &&
+          steps.nix.outcome == 'success' &&
+          steps.gate.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+
+          rm -f .phase9-apply.py .github/workflows/phase9-confirm.yml
+          find . -type f -name '_neutron.mo' -delete
+
+          python3 <<'PY'
+          import subprocess
+
+          allowed = {
+              'apps/kernel/backend/app_instances/Allocation.mo',
+              'apps/kernel/backend/main.mo',
+              'apps/kernel/backend/memory/malstorm_tenants/v1.mo',
+              'apps/kernel/certified-assets-candidate-binding.json',
+              'apps/kernel/neutron.json',
+              'apps/kernel/neutron.lock.json',
+              'apps/kernel/src/reducer/auth.ts',
+              'apps/kernel/src/workspace/Launcher.tsx',
+              'apps/kernel/test/motoko/app_instance_allocation_test.mo',
+              'apps/kernel/test/motoko/run.ts',
+              'test/e2e/local-kernel.spec.ts',
+          }
+
+          status = subprocess.check_output(
+              ['git', 'status', '--porcelain'], text=True
+          ).splitlines()
+          unexpected = []
+          for line in status:
+              path = line[3:]
+              if ' -> ' in path:
+                  path = path.split(' -> ', 1)[1]
+              if path in {'.phase9-apply.py', '.github/workflows/phase9-confirm.yml'}:
+                  continue
+              if path not in allowed:
+                  unexpected.append(path)
+
+          if unexpected:
+              raise SystemExit(
+                  'Refusing Phase 9 commit; unexpected changed paths: ' +
+                  ', '.join(sorted(unexpected))
+              )
+          PY
+
+          git config user.name "chatgpt-phase9"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "phase9: add idempotent Element installation"
+          git push origin HEAD:phase9-work
+
+      - name: Record confirmation result
+        if: always()
+        run: |
+          {
+            echo "checkout=${{ steps.checkout.outcome }}"
+            echo "apply=${{ steps.apply.outcome }}"
+            echo "nix=${{ steps.nix.outcome }}"
+            echo "gate=${{ steps.gate.outcome }}"
+            echo "publish=${{ steps.publish.outcome }}"
+            if [ -f /tmp/phase9-confirm.log ]; then
+              echo
+              tail -n 400 /tmp/phase9-confirm.log
+            fi
+          } > /tmp/phase9-result.txt
+          cat /tmp/phase9-result.txt
+          exit 0
+
+      - name: Upload confirmation result
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase9-confirmation-result
+          path: /tmp/phase9-result.txt
