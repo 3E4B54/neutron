@@ -400,7 +400,7 @@ export async function activateIdentity(
       logged: true,
       authorized: false,
       principal,
-      authError: "Unable to enroll this principal as a Plasmon tenant.",
+      authError: "Unable to enroll this principal as a tenant.",
     });
     return;
   }
@@ -435,10 +435,9 @@ export type AvailableApp = {
 };
 
 /**
- * Tenant-facing logical Element rows. The self-scoped kernel query reports
- * whether this caller already has the Element installed. For Phase 9 the
- * returned physical app-instance id is also the POC Atom identity; Phase 10
- * can add porter-defined Atoms without changing this installation lookup.
+ * Tenant-facing logical app rows. The self-scoped kernel query reports
+ * whether this caller already has the app installed and returns its physical
+ * app-instance id when present.
  */
 export async function getAvailableApps(): Promise<AvailableApp[]> {
   const neutron = await getNeutronCan();
