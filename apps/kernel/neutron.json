@@ -96,6 +96,14 @@
       "type": "query",
       "async": false
     },
+    "kernel_my_app_instance_for_app": {
+      "type": "query",
+      "async": false,
+      "arg": [
+        "caller"
+      ],
+      "allow": "unauthorized"
+    },
     "kernel_app_catalog_list": {
       "type": "query",
       "async": false

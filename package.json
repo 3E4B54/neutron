@@ -34,7 +34,7 @@
     "plasmon:serve": "npm run plasmon:generate && npm run provision -- plasmon.ndeploy.json serve",
     "plasmon:deploy": "npm run plasmon:generate && bun plasmon-provision.ts plasmon.ndeploy.json reinstall",
     "plasmon:status": "npm run provision -- plasmon.ndeploy.json status",
-    "plasmon:test": "NEUTRON_NDEPLOY_CONFIG=plasmon.ndeploy.json playwright test test/e2e/local-kernel.spec.ts --grep \"Plasmon tenants cannot cross owner or allocation boundaries\""
+    "plasmon:test": "NEUTRON_NDEPLOY_CONFIG=plasmon.ndeploy.json playwright test test/e2e/local-kernel.spec.ts --grep \"Plasmon (tenants cannot cross owner or allocation boundaries|tenant launcher installs once and reopens the same Element)\""
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

@@ -1721,6 +1721,11 @@ test("Plasmon tenants cannot cross owner or allocation boundaries", async () => 
         [IDL.Opt(IDL.Text)],
         [],
       ),
+      kernel_my_app_instance_for_app: IDL.Func(
+        [IDL.Record({ app_id: IDL.Text })],
+        [IDL.Opt(IDL.Text)],
+        ["query"],
+      ),
       kernel_tenant_revoke: IDL.Func(
         [
           IDL.Record({
@@ -1744,6 +1749,9 @@ test("Plasmon tenants cannot cross owner or allocation boundaries", async () => 
     kernel_my_is_owner(req: null): Promise<boolean>;
     kernel_my_tenant_apps(req: null): Promise<string[]>;
     kernel_app_instance_allocate(req: {
+      app_id: string;
+    }): Promise<[] | [string]>;
+    kernel_my_app_instance_for_app(req: {
       app_id: string;
     }): Promise<[] | [string]>;
     kernel_tenant_revoke(req: {
@@ -1873,87 +1881,82 @@ test("Plasmon tenants cannot cross owner or allocation boundaries", async () => 
     expect(result).toHaveLength(1);
 
     const appId = result[0]!;
-    allocations.push({ principal, appId });
+    if (
+      !allocations.some(
+        (allocation) =>
+          allocation.principal.toText() === principal.toText() &&
+          allocation.appId === appId,
+      )
+    ) {
+      allocations.push({ principal, appId });
+    }
     return appId;
   };
 
   try {
-    await allocate(tenantA, tenantAPrincipal, "hello");
-    await allocate(tenantA, tenantAPrincipal, "hello");
-    await allocate(tenantA, tenantAPrincipal, "demo");
-    await allocate(tenantA, tenantAPrincipal, "demo");
+    const aHello = await allocate(tenantA, tenantAPrincipal, "hello");
+    expect(await allocate(tenantA, tenantAPrincipal, "hello")).toBe(aHello);
+    const aDemo = await allocate(tenantA, tenantAPrincipal, "demo");
+    expect(await allocate(tenantA, tenantAPrincipal, "demo")).toBe(aDemo);
 
-    await allocate(tenantB, tenantBPrincipal, "hello");
-    await allocate(tenantB, tenantBPrincipal, "hello");
-    await allocate(tenantB, tenantBPrincipal, "demo");
-    await allocate(tenantB, tenantBPrincipal, "demo");
+    const bHello = await allocate(tenantB, tenantBPrincipal, "hello");
+    expect(await allocate(tenantB, tenantBPrincipal, "hello")).toBe(bHello);
+    const bDemo = await allocate(tenantB, tenantBPrincipal, "demo");
+    expect(await allocate(tenantB, tenantBPrincipal, "demo")).toBe(bDemo);
 
     const aGrants = [...await tenantA.kernel_my_tenant_apps(null)].sort();
     const bGrants = [...await tenantB.kernel_my_tenant_apps(null)].sort();
 
-    expect(aGrants).toHaveLength(4);
-    expect(bGrants).toHaveLength(4);
+    expect(aGrants).toEqual([aHello, aDemo].sort());
+    expect(bGrants).toEqual([bHello, bDemo].sort());
+    expect(aGrants).toHaveLength(2);
+    expect(bGrants).toHaveLength(2);
 
-    const overlap = aGrants.filter((appId) =>
-      bGrants.includes(appId),
-    );
+    expect(
+      await tenantA.kernel_my_app_instance_for_app({ app_id: "hello" }),
+    ).toEqual([aHello]);
+    expect(
+      await tenantA.kernel_my_app_instance_for_app({ app_id: "demo" }),
+    ).toEqual([aDemo]);
+    expect(
+      await tenantB.kernel_my_app_instance_for_app({ app_id: "hello" }),
+    ).toEqual([bHello]);
+    expect(
+      await tenantB.kernel_my_app_instance_for_app({ app_id: "demo" }),
+    ).toEqual([bDemo]);
 
-    expect(overlap).toEqual([]);
+    const tenantAReloaded = await createActorForSeed(tenantASeed);
+    expect(
+      await tenantAReloaded.kernel_my_app_instance_for_app({
+        app_id: "hello",
+      }),
+    ).toEqual([aHello]);
+    expect(
+      await tenantAReloaded.kernel_app_instance_allocate({
+        app_id: "hello",
+      }),
+    ).toEqual([aHello]);
+    expect(
+      [...await tenantAReloaded.kernel_my_tenant_apps(null)].sort(),
+    ).toEqual([aHello, aDemo].sort());
 
-    for (const appId of aGrants) {
-      expect(bGrants).not.toContain(appId);
-    }
+    expect(aHello).not.toBe(bHello);
+    expect(aDemo).not.toBe(bDemo);
+    expect(aGrants.filter((appId) => bGrants.includes(appId))).toEqual([]);
 
-    for (const appId of bGrants) {
-      expect(aGrants).not.toContain(appId);
-    }
-
-    /*
-     * Prove AppScope enforcement using the physical actor methods.
-     * This deliberately bypasses the launcher and directly invokes the
-     * generated app_<physical-id>__hello_world methods.
-     */
-    const aHello = aGrants.find((appId) =>
-      appId.startsWith("hello_"),
-    );
-    const bHello = bGrants.find((appId) =>
-      appId.startsWith("hello_"),
-    );
-
-    if (!aHello || !bHello) {
-      throw new Error("Expected each tenant to have a Hello app instance");
-    }
-
+    // AppScope remains the real security boundary. Direct physical method calls
+    // succeed only for the tenant that owns the allocated instance.
     await expect(
-      callPhysicalHelloWorld(
-        tenantASeed,
-        aHello,
-        "tenant-a-own-atom",
-      ),
+      callPhysicalHelloWorld(tenantASeed, aHello, "tenant-a-own-atom"),
     ).resolves.toEqual(expect.any(String));
-
     await expect(
-      callPhysicalHelloWorld(
-        tenantBSeed,
-        bHello,
-        "tenant-b-own-atom",
-      ),
+      callPhysicalHelloWorld(tenantBSeed, bHello, "tenant-b-own-atom"),
     ).resolves.toEqual(expect.any(String));
-
     await expect(
-      callPhysicalHelloWorld(
-        tenantASeed,
-        bHello,
-        "tenant-a-attacking-b",
-      ),
+      callPhysicalHelloWorld(tenantASeed, bHello, "tenant-a-attacking-b"),
     ).rejects.toThrow();
-
     await expect(
-      callPhysicalHelloWorld(
-        tenantBSeed,
-        aHello,
-        "tenant-b-attacking-a",
-      ),
+      callPhysicalHelloWorld(tenantBSeed, aHello, "tenant-b-attacking-a"),
     ).rejects.toThrow();
   } finally {
     /*
@@ -1965,6 +1968,130 @@ test("Plasmon tenants cannot cross owner or allocation boundaries", async () => 
         principal: allocation.principal,
         app_id: allocation.appId,
       });
+    }
+  }
+});
+
+test("Plasmon tenant launcher installs once and reopens the same Element", async ({
+  page,
+}) => {
+  const runtime = resolveLocalNeutronRuntime();
+  const tenantSeed = (runtime.developerIdentitySeed + 1) % 256;
+
+  const loginAsTenant = async (): Promise<string> => {
+    await page.waitForFunction(() =>
+      typeof (window as Window & {
+        __NEUTRON_PLAYWRIGHT_LOGIN_AS__?: unknown;
+      }).__NEUTRON_PLAYWRIGHT_LOGIN_AS__ === "function"
+    );
+
+    return await page.evaluate(async (seed) => {
+      const login = (window as Window & {
+        __NEUTRON_PLAYWRIGHT_LOGIN_AS__?: (seed: number) => Promise<string>;
+      }).__NEUTRON_PLAYWRIGHT_LOGIN_AS__;
+      if (!login) throw new Error("Local Playwright identity hook is unavailable");
+      return await login(seed);
+    }, tenantSeed);
+  };
+
+  const revokeTenantGrant = async (
+    principalText: string,
+    appId: string,
+  ): Promise<void> => {
+    type RevokeActor = {
+      kernel_tenant_revoke: ActorMethod<[
+        { principal: Principal; app_id: string },
+      ], undefined>;
+    };
+
+    const agent = await HttpAgent.create({
+      host: localGatewayUrl(),
+      identity: localDeveloperIdentity(),
+      verifyQuerySignatures: false,
+    });
+    await agent.fetchRootKey();
+
+    const actor = Actor.createActor<RevokeActor>(
+      ({ IDL }) =>
+        IDL.Service({
+          kernel_tenant_revoke: IDL.Func(
+            [
+              IDL.Record({
+                principal: IDL.Principal,
+                app_id: IDL.Text,
+              }),
+            ],
+            [],
+            [],
+          ),
+        }),
+      { agent, canisterId: resolveCanisterId() },
+    );
+
+    await actor.kernel_tenant_revoke({
+      principal: Principal.fromText(principalText),
+      app_id: appId,
+    });
+  };
+
+  await page.goto(localKernelUrl());
+  const principal = await loginAsTenant();
+  let physicalAppId: string | null = null;
+
+  try {
+    await openLauncher(page);
+    const element = page.locator('[data-tid="launcher-element-hello"]');
+    await expect(element).toHaveAttribute("data-state", "install");
+    await expect(element).toHaveAccessibleName("Install Hello");
+    await element.click();
+
+    const firstFrame = page.locator(
+      'iframe.tile-iframe[data-app-id^="hello_"]',
+    ).first();
+    await expect(firstFrame).toBeVisible();
+    physicalAppId = await firstFrame.getAttribute("data-app-id");
+    expect(physicalAppId).toBeTruthy();
+
+    await openLauncher(page);
+    const installedElement = page.locator(
+      '[data-tid="launcher-element-hello"]',
+    );
+    await expect(installedElement).toHaveAttribute("data-state", "open");
+    await expect(installedElement).toHaveAccessibleName("Open Hello");
+    await installedElement.click();
+
+    const sameAtomFrames = page.locator(
+      `iframe.tile-iframe[data-app-id="${physicalAppId}"]`,
+    );
+    await expect(sameAtomFrames).toHaveCount(2);
+    const beforeReloadIds = await page
+      .locator('iframe.tile-iframe[data-app-id^="hello_"]')
+      .evaluateAll((frames) =>
+        frames.map((frame) => (frame as HTMLIFrameElement).dataset.appId ?? ""),
+      );
+    expect(new Set(beforeReloadIds)).toEqual(new Set([physicalAppId]));
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const reloadedPrincipal = await loginAsTenant();
+    expect(reloadedPrincipal).toBe(principal);
+
+    await openLauncher(page);
+    const reloadedElement = page.locator(
+      '[data-tid="launcher-element-hello"]',
+    );
+    await expect(reloadedElement).toHaveAttribute("data-state", "open");
+    await reloadedElement.click();
+
+    const afterReloadIds = await page
+      .locator('iframe.tile-iframe[data-app-id^="hello_"]')
+      .evaluateAll((frames) =>
+        frames.map((frame) => (frame as HTMLIFrameElement).dataset.appId ?? ""),
+      );
+    expect(afterReloadIds.length).toBeGreaterThan(0);
+    expect(new Set(afterReloadIds)).toEqual(new Set([physicalAppId]));
+  } finally {
+    if (physicalAppId !== null) {
+      await revokeTenantGrant(principal, physicalAppId);
     }
   }
 });

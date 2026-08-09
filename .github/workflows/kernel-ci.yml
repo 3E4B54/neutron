@@ -5,12 +5,8 @@ on:
     branches:
       - main
       - malstorm-phase1
-      - phase9-work
   pull_request:
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   kernel:
@@ -20,36 +16,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Materialize Phase 9 implementation
-        if: github.ref_name == 'phase9-work'
-        run: |
-          set -euxo pipefail
-          python3 .phase9-apply.py
-          python3 .phase9-acceptance.py
-          git diff --check
-
-          rm -f \
-            .phase9-apply.py \
-            .phase9-acceptance.py \
-            .phase9-result.txt \
-            .phase9-materialize-trigger \
-            .github/workflows/phase9-confirm.yml
-          find . -type f -name '_neutron.mo' -delete
-
-          # The transport workflow is temporary. Restore the normal Kernel CI
-          # definition so the resulting Phase 9 commit contains product code only.
-          git show 33585feee066dbf0f0ad01e33bc86c72eccfdae6:.github/workflows/kernel-ci.yml \
-            > .github/workflows/kernel-ci.yml
-
-          git config user.name "chatgpt-phase9"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "phase9: implement Sandstorm-style Element installation [skip ci]"
-          git push origin HEAD:phase9-work
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
@@ -71,12 +37,11 @@ jobs:
           nix develop --command bash -lc '
             set -euxo pipefail
             npm ci
-            (cd apps/kernel && mops install)
-            npm --workspace neutron-kernel run certified-assets:candidate-binding:write
           '
 
       # Package first because the kernel test suite validates generated
-      # artifacts produced by the normal packaging pipeline.
+      # artifacts produced by the normal packaging pipeline. Do not run a
+      # separate build here: package already performs the build.
       - name: Kernel package
         run: |
           nix develop --command bash -lc '
@@ -89,13 +54,4 @@ jobs:
           nix develop --command bash -lc '
             set -euxo pipefail
             npm --workspace neutron-kernel test
-          '
-
-      - name: Plasmon Phase 9 acceptance
-        if: github.ref_name == 'phase9-work'
-        run: |
-          nix develop --command bash -lc '
-            set -euxo pipefail
-            npm run plasmon:deploy
-            npm run plasmon:test
           '

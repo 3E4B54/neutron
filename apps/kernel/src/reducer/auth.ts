@@ -55,6 +55,9 @@ export type KernelActor = CertifiedAssetsSettingsActor & {
   kernel_tenant_join(req: null): Promise<void>;
   kernel_my_is_owner(req: null): Promise<boolean>;
   kernel_my_tenant_apps(req: null): Promise<string[]>;
+  kernel_my_app_instance_for_app(req: {
+    app_id: string;
+  }): Promise<[] | [string]>;
   kernel_app_instance_allocate(req: {
     app_id: string;
   }): Promise<[] | [string]>;
@@ -428,28 +431,37 @@ export type AvailableApp = {
   appId: string;
   name: string;
   description: string;
+  appInstanceId: string | null;
 };
 
+/**
+ * Tenant-facing logical Element rows. The self-scoped kernel query reports
+ * whether this caller already has the Element installed. For Phase 9 the
+ * returned physical app-instance id is also the POC Atom identity; Phase 10
+ * can add porter-defined Atoms without changing this installation lookup.
+ */
 export async function getAvailableApps(): Promise<AvailableApp[]> {
   const neutron = await getNeutronCan();
   const appIds = await neutron.kernel_available_apps(null);
 
   return Promise.all(
     appIds.map(async (appId) => {
-      const metadata = await neutron.kernel_app_catalog_get({
-        app_id: appId,
-      });
+      const [metadata, installation] = await Promise.all([
+        neutron.kernel_app_catalog_get({ app_id: appId }),
+        neutron.kernel_my_app_instance_for_app({ app_id: appId }),
+      ]);
 
       return {
         appId,
         name: metadata[0] ?? appId,
         description: metadata[1] ?? "",
+        appInstanceId: installation[0] ?? null,
       };
     }),
   );
 }
 
-export type CatalogApp = AvailableApp & {
+export type CatalogApp = Omit<AvailableApp, "appInstanceId"> & {
   capacity: number;
 };
 
@@ -460,12 +472,8 @@ export async function getCatalogApps(): Promise<CatalogApp[]> {
   return Promise.all(
     appIds.map(async (appId) => {
       const [metadata, instances] = await Promise.all([
-        neutron.kernel_app_catalog_get({
-          app_id: appId,
-        }),
-        neutron.kernel_app_instances_for_app({
-          app_id: appId,
-        }),
+        neutron.kernel_app_catalog_get({ app_id: appId }),
+        neutron.kernel_app_instances_for_app({ app_id: appId }),
       ]);
 
       return {
@@ -1107,6 +1115,11 @@ const kernelIdl: Parameters<typeof Actor.createActor>[0] = ({ IDL }) => {
     kernel_my_tenant_apps: IDL.Func(
       [IDL.Null],
       [IDL.Vec(IDL.Text)],
+      ["query"],
+    ),
+    kernel_my_app_instance_for_app: IDL.Func(
+      [IDL.Record({ app_id: IDL.Text })],
+      [IDL.Opt(IDL.Text)],
       ["query"],
     ),
     kernel_app_instance_allocate: IDL.Func(
