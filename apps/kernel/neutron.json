@@ -8,7 +8,7 @@
   "init_arg": [
     "memory_kernel",
     "memory_kernel_activation",
-    "memory_malstorm_tenants",
+    "memory_tenants",
     "memory_app_instances",
     "memory_app_instance_lifecycle",
     "memory_app_catalog",
@@ -507,11 +507,11 @@
       },
       "migrations": []
     },
-    "malstorm_tenants": {
+    "tenants": {
       "version": 1,
       "schemas": {
         "1": {
-          "src": "memory/malstorm_tenants/v1.mo"
+          "src": "memory/tenants/v1.mo"
         }
       },
       "migrations": []
