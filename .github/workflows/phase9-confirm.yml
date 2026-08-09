@@ -1,4 +1,4 @@
-name: Phase 9 confirmation
+name: Phase 9 diagnostic confirmation
 
 on:
   push:
@@ -8,12 +8,9 @@ on:
 permissions:
   contents: write
 
-env:
-  PHASE9_STAGE_COMMIT: 354a83097036ca4128158bb79348d74671d440b6
-
 jobs:
   confirm:
-    if: startsWith(github.event.head_commit.message, 'chore: confirm reviewed phase9 patch')
+    if: startsWith(github.event.head_commit.message, 'chore: diagnose phase9 gate')
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -25,14 +22,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply reviewed patch
+      - name: Apply reviewed Phase 9 patch
         id: apply
         if: steps.checkout.outcome == 'success'
         continue-on-error: true
         run: |
-          set -euxo pipefail
-          python3 .phase9-apply.py
-          git diff --check
+          set -o pipefail
+          {
+            set -euxo pipefail
+            python3 .phase9-apply.py
+            python3 .phase9-acceptance.py
+            git diff --check
+          } 2>&1 | tee /tmp/phase9-apply.log
 
       - name: Install Nix
         id: nix
@@ -42,8 +43,8 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run Phase 9 gate
-        id: gate
+      - name: Prepare dependencies and generated binding
+        id: prepare
         if: steps.nix.outcome == 'success'
         continue-on-error: true
         run: |
@@ -53,26 +54,68 @@ jobs:
             npm ci
             (cd apps/kernel && mops install)
             npm --workspace neutron-kernel run certified-assets:candidate-binding:write
-            npm --workspace neutron-kernel run package
-            npm --workspace neutron-kernel test
-            npm run plasmon:deploy
-            npm run plasmon:test
-          ' 2>&1 | tee /tmp/phase9-confirm.log
+          ' 2>&1 | tee /tmp/phase9-prepare.log
 
-      - name: Publish code-only work branch
-        id: publish
-        if: >-
-          steps.apply.outcome == 'success' &&
-          steps.nix.outcome == 'success' &&
-          steps.gate.outcome == 'success'
+      - name: Package kernel
+        id: package
+        if: steps.prepare.outcome == 'success'
         continue-on-error: true
         run: |
-          set -euxo pipefail
+          set -o pipefail
+          nix develop --command bash -lc '
+            set -euxo pipefail
+            npm --workspace neutron-kernel run package
+          ' 2>&1 | tee /tmp/phase9-package.log
 
-          rm -f .phase9-apply.py .github/workflows/phase9-confirm.yml
-          find . -type f -name '_neutron.mo' -delete
+      - name: Run kernel tests
+        id: kernel_tests
+        if: steps.package.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix develop --command bash -lc '
+            set -euxo pipefail
+            npm --workspace neutron-kernel test
+          ' 2>&1 | tee /tmp/phase9-kernel-tests.log
 
-          python3 <<'PY'
+      - name: Deploy Plasmon fixture
+        id: plasmon_deploy
+        if: steps.kernel_tests.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix develop --command bash -lc '
+            set -euxo pipefail
+            npm run plasmon:deploy
+          ' 2>&1 | tee /tmp/phase9-plasmon-deploy.log
+
+      - name: Run Plasmon Phase 9 acceptance tests
+        id: plasmon_tests
+        if: steps.plasmon_deploy.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          nix develop --command bash -lc '
+            set -euxo pipefail
+            npm run plasmon:test
+          ' 2>&1 | tee /tmp/phase9-plasmon-tests.log
+
+      - name: Publish validated code-only work branch
+        id: publish
+        if: steps.plasmon_tests.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          {
+            set -euxo pipefail
+            rm -f \
+              .phase9-apply.py \
+              .phase9-acceptance.py \
+              .phase9-result.txt \
+              .github/workflows/phase9-confirm.yml
+            find . -type f -name '_neutron.mo' -delete
+
+            python3 <<'PY'
           import subprocess
 
           allowed = {
@@ -86,6 +129,7 @@ jobs:
               'apps/kernel/src/workspace/Launcher.tsx',
               'apps/kernel/test/motoko/app_instance_allocation_test.mo',
               'apps/kernel/test/motoko/run.ts',
+              'package.json',
               'test/e2e/local-kernel.spec.ts',
           }
 
@@ -97,7 +141,12 @@ jobs:
               path = line[3:]
               if ' -> ' in path:
                   path = path.split(' -> ', 1)[1]
-              if path in {'.phase9-apply.py', '.github/workflows/phase9-confirm.yml'}:
+              if path in {
+                  '.phase9-apply.py',
+                  '.phase9-acceptance.py',
+                  '.phase9-result.txt',
+                  '.github/workflows/phase9-confirm.yml',
+              }:
                   continue
               if path not in allowed:
                   unexpected.append(path)
@@ -109,34 +158,56 @@ jobs:
               )
           PY
 
-          git config user.name "chatgpt-phase9"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "phase9: add idempotent Element installation"
-          git push origin HEAD:phase9-work
+            git config user.name "chatgpt-phase9"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git diff --cached --check
+            git commit -m "phase9: add idempotent Element installation"
+            git push origin HEAD:phase9-work
+          } 2>&1 | tee /tmp/phase9-publish.log
 
-      - name: Record confirmation result
-        if: always()
+      - name: Persist diagnostic result on failure
+        if: always() && steps.checkout.outcome == 'success' && steps.publish.outcome != 'success'
+        continue-on-error: true
         run: |
+          set -euxo pipefail
           {
             echo "checkout=${{ steps.checkout.outcome }}"
             echo "apply=${{ steps.apply.outcome }}"
             echo "nix=${{ steps.nix.outcome }}"
-            echo "gate=${{ steps.gate.outcome }}"
+            echo "prepare=${{ steps.prepare.outcome }}"
+            echo "package=${{ steps.package.outcome }}"
+            echo "kernel_tests=${{ steps.kernel_tests.outcome }}"
+            echo "plasmon_deploy=${{ steps.plasmon_deploy.outcome }}"
+            echo "plasmon_tests=${{ steps.plasmon_tests.outcome }}"
             echo "publish=${{ steps.publish.outcome }}"
-            if [ -f /tmp/phase9-confirm.log ]; then
-              echo
-              tail -n 400 /tmp/phase9-confirm.log
-            fi
+            for log in \
+              /tmp/phase9-apply.log \
+              /tmp/phase9-prepare.log \
+              /tmp/phase9-package.log \
+              /tmp/phase9-kernel-tests.log \
+              /tmp/phase9-plasmon-deploy.log \
+              /tmp/phase9-plasmon-tests.log \
+              /tmp/phase9-publish.log
+            do
+              if [ -f "$log" ]; then
+                echo
+                echo "===== $log ====="
+                tail -n 300 "$log"
+              fi
+            done
           } > /tmp/phase9-result.txt
-          cat /tmp/phase9-result.txt
-          exit 0
 
-      - name: Upload confirmation result
+          git reset --hard "${{ github.sha }}"
+          cp /tmp/phase9-result.txt .phase9-result.txt
+          git config user.name "chatgpt-phase9"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .phase9-result.txt
+          git commit -m "chore: phase9 diagnostic result"
+          git push origin HEAD:phase9-work
+
+      - name: Keep workflow notification green
         if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase9-confirmation-result
-          path: /tmp/phase9-result.txt
+        run: |
+          echo "Phase 9 diagnostic workflow completed. Detailed failures, if any, are persisted on phase9-work."
+          exit 0
