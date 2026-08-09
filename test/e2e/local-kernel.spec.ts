@@ -492,6 +492,14 @@ test("Files tile follows resident patches without losing a local draft", async (
   );
 
   await context.credentials.install();
+  page.on("close", () => console.log("PAGE EVENT: close"));
+  page.on("crash", () => console.log("PAGE EVENT: crash"));
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) {
+      console.log("PAGE EVENT: navigated", frame.url());
+    }
+  });
+
   await page.goto(localKernelUrl());
   await signInWithLocalInternetIdentity({
     page,
@@ -1975,8 +1983,10 @@ test("Plasmon tenants cannot cross owner or allocation boundaries", async () => 
 test("Plasmon tenant launcher installs once and reopens the same Element", async ({
   page,
 }) => {
+
+
   const runtime = resolveLocalNeutronRuntime();
-  const tenantSeed = (runtime.developerIdentitySeed + 1) % 256;
+  const tenantSeed = (runtime.developerIdentitySeed + 103) % 256;
 
   const loginAsTenant = async (): Promise<string> => {
     await page.waitForFunction(() =>
@@ -1994,14 +2004,43 @@ test("Plasmon tenant launcher installs once and reopens the same Element", async
     }, tenantSeed);
   };
 
-  const revokeTenantGrant = async (
+  const revealTenantHelloAction = async (
+    name: "Install Hello" | "Open Hello",
+  ) => {
+    if (name === "Install Hello") {
+      // A fresh tenant starts on an empty workspace whose embedded launcher
+      // loads the logical app catalog asynchronously after authentication.
+      const action = page.locator(
+        '[data-tid="workspace-launcher-element-hello"]',
+      );
+      await expect(action).toBeVisible({ timeout: 20_000 });
+      await expect(action).toHaveAccessibleName(name);
+      return action;
+    }
+
+    // Once an app tile occupies the workspace, use the normal launcher button.
+    const launcherButton = page.locator('[data-tid="launcher-open"]');
+    await expect(launcherButton).toBeVisible({ timeout: 20_000 });
+    await launcherButton.click();
+
+    const action = page.locator('[data-tid="launcher-element-hello"]');
+    await expect(action).toBeVisible({ timeout: 20_000 });
+    await expect(action).toHaveAccessibleName(name);
+    return action;
+  };
+
+  const clearTenantGrants = async (
     principalText: string,
-    appId: string,
   ): Promise<void> => {
-    type RevokeActor = {
-      kernel_tenant_revoke: ActorMethod<[
-        { principal: Principal; app_id: string },
-      ], undefined>;
+    type TenantAdminActor = {
+      kernel_tenant_apps: ActorMethod<
+        [{ principal: Principal }],
+        string[]
+      >;
+      kernel_tenant_revoke: ActorMethod<
+        [{ principal: Principal; app_id: string }],
+        undefined
+      >;
     };
 
     const agent = await HttpAgent.create({
@@ -2011,9 +2050,14 @@ test("Plasmon tenant launcher installs once and reopens the same Element", async
     });
     await agent.fetchRootKey();
 
-    const actor = Actor.createActor<RevokeActor>(
+    const actor = Actor.createActor<TenantAdminActor>(
       ({ IDL }) =>
         IDL.Service({
+          kernel_tenant_apps: IDL.Func(
+            [IDL.Record({ principal: IDL.Principal })],
+            [IDL.Vec(IDL.Text)],
+            ["query"],
+          ),
           kernel_tenant_revoke: IDL.Func(
             [
               IDL.Record({
@@ -2028,22 +2072,32 @@ test("Plasmon tenant launcher installs once and reopens the same Element", async
       { agent, canisterId: resolveCanisterId() },
     );
 
-    await actor.kernel_tenant_revoke({
-      principal: Principal.fromText(principalText),
-      app_id: appId,
-    });
+    const principal = Principal.fromText(principalText);
+    const grants = await actor.kernel_tenant_apps({ principal });
+
+    for (const appId of grants) {
+      await actor.kernel_tenant_revoke({
+        principal,
+        app_id: appId,
+      });
+    }
   };
+
+  const expectedTenantPrincipal =
+    localIdentityFromSeed(tenantSeed).getPrincipal().toText();
+
+  // Make reruns deterministic even if a previous run was interrupted.
+  await clearTenantGrants(expectedTenantPrincipal);
 
   await page.goto(localKernelUrl());
   const principal = await loginAsTenant();
+
+
   let physicalAppId: string | null = null;
 
   try {
-    await openLauncher(page);
-    const element = page.locator('[data-tid="launcher-element-hello"]');
-    await expect(element).toHaveAttribute("data-state", "install");
-    await expect(element).toHaveAccessibleName("Install Hello");
-    await element.click();
+    const installHello = await revealTenantHelloAction("Install Hello");
+    await installHello.click();
 
     const firstFrame = page.locator(
       'iframe.tile-iframe[data-app-id^="hello_"]',
@@ -2052,13 +2106,8 @@ test("Plasmon tenant launcher installs once and reopens the same Element", async
     physicalAppId = await firstFrame.getAttribute("data-app-id");
     expect(physicalAppId).toBeTruthy();
 
-    await openLauncher(page);
-    const installedElement = page.locator(
-      '[data-tid="launcher-element-hello"]',
-    );
-    await expect(installedElement).toHaveAttribute("data-state", "open");
-    await expect(installedElement).toHaveAccessibleName("Open Hello");
-    await installedElement.click();
+    const openHello = await revealTenantHelloAction("Open Hello");
+    await openHello.click();
 
     const sameAtomFrames = page.locator(
       `iframe.tile-iframe[data-app-id="${physicalAppId}"]`,
@@ -2075,12 +2124,8 @@ test("Plasmon tenant launcher installs once and reopens the same Element", async
     const reloadedPrincipal = await loginAsTenant();
     expect(reloadedPrincipal).toBe(principal);
 
-    await openLauncher(page);
-    const reloadedElement = page.locator(
-      '[data-tid="launcher-element-hello"]',
-    );
-    await expect(reloadedElement).toHaveAttribute("data-state", "open");
-    await reloadedElement.click();
+    const reloadedHello = await revealTenantHelloAction("Open Hello");
+    await reloadedHello.click();
 
     const afterReloadIds = await page
       .locator('iframe.tile-iframe[data-app-id^="hello_"]')
@@ -2090,9 +2135,7 @@ test("Plasmon tenant launcher installs once and reopens the same Element", async
     expect(afterReloadIds.length).toBeGreaterThan(0);
     expect(new Set(afterReloadIds)).toEqual(new Set([physicalAppId]));
   } finally {
-    if (physicalAppId !== null) {
-      await revokeTenantGrant(principal, physicalAppId);
-    }
+    await clearTenantGrants(principal);
   }
 });
 

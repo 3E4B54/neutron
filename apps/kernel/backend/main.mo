@@ -4148,6 +4148,9 @@ public type kernel_app_pool_register_Output = ();
 public type kernel_app_instances_for_app_Input = (input : { app_id : Text },);
 public type kernel_app_instances_for_app_Output = [Text];
 
+public type kernel_my_app_instance_for_app_Input = (input : { app_id : Text });
+public type kernel_my_app_instance_for_app_Output = ?Text;
+
 public type kernel_app_catalog_list_Input = (());
 public type kernel_app_catalog_list_Output = [Text];
 

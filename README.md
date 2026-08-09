@@ -19,17 +19,26 @@ The project turns Neutron's isolated application scopes into a multi-user hostin
 
 Product terminology belongs in user-facing Plasmon UX and documentation. Internal implementation code should normally use generic names such as `app`, `app_instance`, `tenant`, `grant`, and `shard`.
 
-### Persistence naming exception
+### Neutron implementation naming
 
-Do **not** mechanically rename persistence-sensitive legacy paths just to match product terminology.
+Neutron production code remains product-agnostic. Product terminology such as **Plasmon**, **Element**, **Atom**, and **Isotope** belongs in Plasmon UX, documentation, and explicitly Plasmon-specific integration tooling.
 
-In particular:
+Generic Neutron implementation code should use names such as:
 
 ```text
-apps/kernel/backend/memory/malstorm_tenants/v1.mo
+app
+app_id
+app_instance
+app_instance_id
+tenant
+grant
+allocation
+runtime
 ```
 
-and its corresponding import identity are part of the existing stable-memory schema history. Renaming them requires an explicit persistence migration plan.
+The Phase 9 work originally introduced a tenant memory path named `memory/malstorm_tenants/v1.mo`. Because that memory has not shipped in the target branch, it is pending rename to a generic Neutron tenant-memory identity before Phase 9 is merged.
+
+Once a stable-memory identity has shipped, future identity changes require an explicit compatibility/migration plan.
 
 ## Current architecture
 
@@ -68,6 +77,21 @@ The current implementation provides:
 - local development bootstrap generation.
 
 See [`doc/architecture.md`](doc/architecture.md) for the detailed model.
+
+### Phase 9 status
+
+Phase 9 implements the first tenant logical-app installation/allocation path. The focused browser regression now validates:
+
+- a tenant sees a logical app as installable before allocation;
+- Install allocates one physical app instance;
+- the launcher changes from Install to Open;
+- opening the app repeatedly reuses that physical instance;
+- multiple workspace Tiles can reference the same instance;
+- browser reload preserves the installation;
+- exact physical AppScope authorization prevents cross-tenant access.
+
+The remaining Phase 9 work is cleanup and final validation rather than a change to this allocation model. See the Phase 9 closeout section in [`TODO.md`](TODO.md).
+
 
 ## Runtime publishing
 
@@ -134,6 +158,15 @@ Tenant B requests "notes"
 
 A tenant's app call is authorized only when the caller owns the exact physical AppScope. Cross-tenant Atom calls are rejected even when both Atoms belong to the same logical Element.
 
+Phase 9 additionally enforces an idempotent installation invariant:
+
+```text
+(principal, logical app) -> zero or one physical app instance
+```
+
+Repeated Install requests return the existing physical instance rather than allocating another one. Opening an installed app is a workspace operation only: it can create multiple Tiles, but those Tiles continue to reference the same physical app instance.
+
+
 ## Retirement
 
 Physical Atoms are intentionally not recycled after retirement.
@@ -183,7 +216,7 @@ npm run plasmon:test
 
 The local PocketIC deployment uses deterministic test identities.
 
-Current development convention:
+Current manual-development convention:
 
 ```text
 seed 2 → owner
@@ -191,11 +224,13 @@ seed 3 → tenant A
 seed 4 → tenant B
 ```
 
-The local-only browser test hook can switch identity:
+The local-only browser test hook can switch identity. For example, the normal manual tenant view is:
 
 ```js
-await window.__NEUTRON_PLAYWRIGHT_LOGIN_AS__(2)
+await window.__NEUTRON_PLAYWRIGHT_LOGIN_AS__(3)
 ```
+
+Automated tests that mutate tenant grants should use dedicated test identities rather than assuming a manual-development tenant is pristine, and they should clean their grants on both success and failure.
 
 Production ownership must not depend on these numeric development seeds.
 

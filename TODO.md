@@ -40,6 +40,81 @@ This file tracks Plasmon-specific work on top of Neutron.
   - One Neutron self-upgrade installs the batch.
   - Logical app metadata and physical instances are registered atomically afterward.
 
+## Phase 9 — First tenant app allocation closeout
+
+Phase 9 establishes the first persistent logical-app installation path for tenants. The physical Neutron app instance remains the isolation/authentication unit; Phase 9 does not introduce a separate logical Atom record.
+
+### Validated
+
+- [x] **One physical instance per tenant + logical app**
+  - Allocation implements `(principal, app_id) -> app_instance_id`.
+  - Repeated allocation of the same logical app returns the same physical instance.
+  - Different apps allocate independently.
+  - Different tenants cannot receive the same physical instance.
+- [x] **Persistent installation mapping**
+  - Installation is derived from persistent tenant grants plus the physical app registry.
+  - Reloading/recreating the actor client returns the same physical instance.
+- [x] **Exact AppScope authorization**
+  - A tenant can call its own allocated physical app.
+  - Cross-tenant physical app calls are rejected.
+- [x] **Tenant Install → Open launcher flow**
+  - A new tenant sees an installable logical Hello entry.
+  - Clicking Install allocates a physical Hello instance.
+  - The launcher transitions from Install Hello to Open Hello.
+- [x] **Multiple workspace Tiles reuse one physical instance**
+  - Opening an installed logical app again creates another Tile.
+  - Tile creation does not allocate another physical app instance.
+  - Multiple Tiles can point to the same physical app instance.
+- [x] **Reload preserves installation**
+  - After browser reload and tenant login, Hello remains Open rather than returning to Install.
+- [x] **Focused browser E2E passes**
+  - The Phase 9 tenant launcher Playwright test passed on August 9, 2026.
+  - Earlier failures were test issues: Chromium font configuration, an obsolete launcher selector/non-waiting visibility check, and stale grants left by interrupted test runs.
+- [x] **Nix/WSL Chromium runtime fixed**
+  - The development shell supplies Fontconfig + DejaVu fonts.
+  - Chromium no longer aborts in Skia/Fontconfig during Playwright login.
+- [x] **Temporary Phase 9 browser diagnostics removed**
+
+### Remaining before Phase 9 is complete
+
+- [ ] **Harden browser-test isolation**
+  - Give the automated browser test a dedicated tenant seed rather than sharing manual tenant seed 3.
+  - Clear that test principal's existing grants before the test.
+  - Clear all grants created by that principal in `finally`, even when failure occurs before the iframe/app-instance ID is captured.
+  - Run the focused browser test twice consecutively without reinstall or manual cleanup.
+- [ ] **Remove Plasmon/Malstorm product vocabulary from Neutron production code**
+  - Neutron production implementation should use generic terms such as app, app instance, tenant, grant, allocation, and runtime.
+  - Product terms Element, Atom, Isotope, Plasmon, and Malstorm belong in Plasmon UX/docs/integration tooling, not generic Neutron production code.
+- [ ] **Rename the Phase 9 tenant memory before merge**
+  - Rename `apps/kernel/backend/memory/malstorm_tenants/v1.mo` to a generic tenant memory path such as `memory/tenants/v1.mo`.
+  - Update `main.mo`, `neutron.json`, generated bindings, and references.
+  - This memory identity was introduced on the unmerged Phase 9 work and should be corrected before it becomes a shipped compatibility constraint.
+- [ ] **Genericize Phase 9 test terminology**
+  - Rename Plasmon/Element/Atom-specific test names and local variable names where they are testing generic Neutron behavior.
+  - Keep explicitly Plasmon-specific bootstrap/integration tooling named Plasmon.
+- [ ] **Regenerate and audit generated artifacts**
+  - Regenerate the certified-assets candidate binding.
+  - Inspect `neutron.lock.json` and other generated changes rather than committing accidental build output.
+  - Do not commit `apps/kernel/backend/_neutron.mo` unless repository policy requires it.
+- [ ] **Run final terminology audit**
+  - Review every hit rather than performing a blind replacement:
+    ```bash
+    git diff 33585fe..HEAD | grep -Ein 'plasmon|malstorm|element|atom|isotope'
+    grep -RIn 'malstorm_tenants' apps/kernel --exclude-dir=node_modules
+    ```
+- [ ] **Run final Phase 9 validation**
+  - Kernel package.
+  - Kernel JS/TS + Motoko tests.
+  - Clean local deployment/bootstrap.
+  - Focused tenant browser E2E twice consecutively.
+  - Full Plasmon E2E suite.
+  - Verify generated candidate binding matches source.
+- [ ] **Produce clean Phase 9 history**
+  - Base commit: `33585feee066dbf0f0ad01e33bc86c72eccfdae6`.
+  - Create a clean/squashed Phase 9 commit based on that base.
+  - Move `malstorm-phase1` only after the clean squash passes validation.
+  - Do not modify `main`.
+
 ## P0 — Developer experience
 
 - [ ] **Add a frontend development server with watch/HMR**
@@ -170,9 +245,9 @@ This file tracks Plasmon-specific work on top of Neutron.
   - Eventually allow an empty Plasmon deployment plus runtime publishing.
 
 - [ ] **Document stable-memory migration rules**
-  - Product terminology changes must not silently rename stable-memory identities.
-  - The existing path `apps/kernel/backend/memory/malstorm_tenants/v1.mo` and import identity are persistence-sensitive legacy names.
-  - Rename only through an explicit migration plan.
+  - Stable-memory identities become compatibility constraints once shipped.
+  - Phase 9's unmerged tenant memory should use a generic Neutron identity before merge.
+  - After an identity ships, future renames require an explicit migration/compatibility plan.
 
 ## P1 — Owner/admin model
 
