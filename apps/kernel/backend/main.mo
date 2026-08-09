@@ -44,7 +44,7 @@ import GatewayAuthority "./http_routes/GatewayAuthority";
 import RouteNamespace "./http_routes/Namespace";
 import KernelMemory "./memory/kernel/v3";
 import ActivationMemory "./memory/activation/v1";
-import TenantsMemory "./memory/malstorm_tenants/v1";
+import TenantsMemory "./memory/tenants/v1";
 import AppInstancesMemory "./memory/app_instances/v1";
 import AppInstanceLifecycleMemory "./memory/app_instance_lifecycle/v1";
 import AppCatalogMemory "./memory/app_catalog/v1";
@@ -2225,11 +2225,8 @@ module {
 
         // Resolve one tenant's existing physical instance for a logical app.
         //
-        // Phase 9 models Element installation by deriving
-        // (principal, logical app) -> physical app instance from the existing
-        // grant + app-instance registries. It intentionally does not introduce
-        // a logical Atom record; Phase 10 can add porter-defined Atoms without
-        // changing this persistence-sensitive v1 tenant schema.
+        // Installation is derived from the existing grant and app-instance
+        // registries, keeping persisted grants keyed by physical instance.
         func tenant_app_instance_for_app(
             id : Principal,
             appId : Text,
@@ -2382,10 +2379,9 @@ module {
 
         // Self-scoped tenant installation lookup.
         //
-        // Keep the owner pool-inspection method above unchanged. This separate
-        // query exposes only the caller's own 0-or-1 physical allocation and
-        // therefore adds the Phase 9 product need without broadening an existing
-        // generic Neutron administrative contract.
+        // Keep the owner pool-inspection method above unchanged. This query
+        // exposes only the caller's own 0-or-1 physical allocation without
+        // broadening the generic administrative contract.
         public func /*query:unauthorized*/kernel_my_app_instance_for_app(
             input : { app_id : Text },
             /*caller*/ caller : Principal,
@@ -2474,8 +2470,8 @@ module {
         //
         // An installed logical app remains visible even when the physical pool
         // is otherwise exhausted, allowing the shell to render Open instead of
-        // losing the Element after installation. Uninstalled Elements are shown
-        // only while at least one usable free physical slot exists.
+        // losing the app after installation. Uninstalled apps are shown only
+        // while at least one usable free physical slot exists.
         public func /*query:unauthorized*/kernel_available_apps(
             (),
             /*caller*/ caller : Principal,
@@ -2517,11 +2513,10 @@ module {
 
         // Tenant-facing allocator.
         //
-        // Phase 9 establishes Element installation semantics: one principal may
-        // have at most one physical instance for a given logical app. Repeating
-        // Install therefore returns the existing allocation instead of consuming
-        // another pool slot. This update contains no await, so lookup + mutation
-        // execute atomically within one canister message.
+        // One principal may have at most one physical instance for a given
+        // logical app. Repeating allocation therefore returns the existing
+        // instance instead of consuming another pool slot. This update contains
+        // no await, so lookup + mutation execute atomically within one message.
         public func /*update:unauthorized*/kernel_app_instance_allocate(
             input : { app_id : Text },
             /*caller*/ caller : Principal,

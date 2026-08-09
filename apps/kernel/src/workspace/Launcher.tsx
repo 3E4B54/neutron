@@ -313,8 +313,8 @@ export function Launcher(props: LauncherProps) {
     app: (typeof availableApps)[number],
   ): Promise<void> => {
     // Open is only a workspace operation. Only Install calls the allocator, so
-    // opening the same installed Element repeatedly can create multiple Tiles
-    // while all of them still reference the same physical Phase 9 Atom.
+    // opening the same installed app repeatedly can create multiple Tiles while
+    // all of them still reference the same physical app instance.
     if (app.appInstanceId !== null) {
       launchAppInstance(app.appInstanceId, app.name);
       return;
