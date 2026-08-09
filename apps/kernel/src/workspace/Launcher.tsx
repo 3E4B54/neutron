@@ -18,6 +18,7 @@ import {
 } from "neutron-compiler/src/install.js";
 import {
   install_app,
+  getApps,
   add_app_pool_capacity,
   install_app_pool,
   select_app_pool_package,
@@ -281,8 +282,11 @@ export function Launcher(props: LauncherProps) {
     close(true);
   };
 
-  const appInstanceEntry = (appInstanceId: string): LauncherEntry | null => {
-    const registered = apps[appInstanceId];
+  const appInstanceEntry = (
+    appInstanceId: string,
+    registry = useAppsStore.getState().list,
+  ): LauncherEntry | null => {
+    const registered = registry[appInstanceId];
     if (!registered) return null;
 
     return (
@@ -293,14 +297,32 @@ export function Launcher(props: LauncherProps) {
     );
   };
 
-  const launchAppInstance = (
+  const launchAppInstance = async (
     appInstanceId: string,
-    elementName: string,
-  ): boolean => {
-    const entry = appInstanceEntry(appInstanceId);
+    appName: string,
+  ): Promise<boolean> => {
+    let entry = appInstanceEntry(appInstanceId);
+
+    // Logical app discovery and physical registry loading are independent.
+    // If allocation finishes first, refresh the committed app registry once
+    // rather than failing the launch because the frontend store is stale.
+    if (!entry) {
+      try {
+        const refreshedApps = await getApps();
+        entry = appInstanceEntry(appInstanceId, refreshedApps);
+      } catch (error) {
+        setAllocateError(
+          error instanceof Error
+            ? error.message
+            : `Unable to load ${appName}.`,
+        );
+        return false;
+      }
+    }
+
     if (!entry) {
       setAllocateError(
-        `${elementName} is installed, but its runtime tile is unavailable.`,
+        `${appName} is installed, but its runtime tile is unavailable.`,
       );
       return false;
     }
@@ -316,7 +338,7 @@ export function Launcher(props: LauncherProps) {
     // opening the same installed app repeatedly can create multiple Tiles while
     // all of them still reference the same physical app instance.
     if (app.appInstanceId !== null) {
-      launchAppInstance(app.appInstanceId, app.name);
+      await launchAppInstance(app.appInstanceId, app.name);
       return;
     }
     if (allocateBusyAppId !== null) return;
@@ -339,7 +361,7 @@ export function Launcher(props: LauncherProps) {
           item.appId === app.appId ? { ...item, appInstanceId } : item,
         ),
       );
-      launchAppInstance(appInstanceId, app.name);
+      await launchAppInstance(appInstanceId, app.name);
     } catch (error) {
       setAllocateError(
         error instanceof Error
