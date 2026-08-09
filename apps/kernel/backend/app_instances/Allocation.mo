@@ -4,13 +4,12 @@ import Text "mo:core/Text";
 module {
     // Resolve the physical instance already assigned to one logical app.
     //
-    // Tenant grants remain physical app-instance ids for stable-memory
-    // compatibility. The logical relation is derived through the existing
-    // app-instance registry rather than introducing a second installation or
-    // Atom schema into the Neutron kernel.
+    // Tenant grants store physical app-instance ids. The logical relation is
+    // derived through the app-instance registry rather than introducing a
+    // second installation record.
     //
     // Older state may contain duplicate grants for one logical app. Reads are
-    // deterministic in that case; all new Phase 9 writes prevent duplicates.
+    // deterministic in that case; allocation writes prevent new duplicates.
     public func allocatedInstanceForApp(
         grants : [Text],
         instances : Map.Map<Text, Text>,
