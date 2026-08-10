@@ -4,7 +4,8 @@ This directory is the composition boundary. It wires public subsystem contracts 
 
 Current Wave 2 composition:
 
-- `services.ts` creates the real persistent filesystem, association registry/default store, native process runtime, native window manager, Neutron bridge, OpenService router, and one shared FileManager clipboard;
+- `services.ts` routes Kernel-hosted Plasmon filesystem calls through the existing `FsRpcClient` to `app:plasmon:background`, while standalone preview uses a browser-selected local repository with safe fallback; it also creates the association registry/default store, native process runtime, native window manager, Neutron bridge, OpenService router, and one shared FileManager clipboard;
+- the persistent background surface owns the browser-local filesystem repository declared by `neutron.json`'s `persistent_browser_storage` capability; the foreground tile does not open IndexedDB directly when hosted by Neutron;
 - built-in Text, Markdown, Video, Browser, Settings, Explorer, and Properties applications are registered with the existing `NativeApplicationRegistry` and lazy loaders;
 - native content handlers and association rules are registered with the existing association subsystem;
 - `openService.ts` executes resolved handlers through `ProcessController`, safe external browser-tab routing, or `NeutronBridge` without embedding authenticated Neutron surfaces;
