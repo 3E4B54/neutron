@@ -83,3 +83,19 @@ export function modeFromTools(tools: ReadonlySet<string>): PlatformMode {
     ? "tenant-capable"
     : "neutron";
 }
+
+export function normalizePackageUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    throw new Error("Enter a valid package URL.");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("Package URLs must use HTTP or HTTPS.");
+  }
+  if (!parsed.pathname.toLowerCase().endsWith(".neutron")) {
+    throw new Error("The package URL must end in .neutron.");
+  }
+  return parsed.href;
+}
