@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { installAppIconFallbacks } from "./iconFallback.ts";
 import { PlasmonOS } from "./os/PlasmonOS.tsx";
 import "./style.scss";
+import "./os/integration/visual-tokens.scss";
 
 installAppIconFallbacks();
 
