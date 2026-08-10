@@ -1,30 +1,43 @@
 # OS integration
 
-This directory is the composition boundary. It may wire public subsystem contracts together, but it must not absorb subsystem behavior.
+This directory is the composition boundary. It wires public subsystem contracts together, but must not absorb subsystem behavior.
 
-Current bootstrap:
+Current Wave 2 composition:
 
-- `services.ts` supplies development fakes for filesystem/process/windowing and selects preview versus unavailable resource authorization;
-- `authorizationFakes.ts` provides the contract fake plus fail-closed vanilla placeholder; it does not model MTN internals;
-- `legacyNeutronBridge.ts` adapts the existing `src/platform/**` implementation without deleting or altering it;
-- `visual-tokens.scss` defines the shared cross-subsystem visual vocabulary for Wave 2;
-- `../PlasmonOS.tsx` is the composition root and contains only placeholder presentation until component agents land.
+- `services.ts` creates the real persistent filesystem, association registry/default store, native process runtime, native window manager, Neutron bridge, OpenService router, and one shared FileManager clipboard;
+- built-in Text, Markdown, Video, Browser, Settings, Explorer, and Properties applications are registered with the existing `NativeApplicationRegistry` and lazy loaders;
+- native content handlers and association rules are registered with the existing association subsystem;
+- `openService.ts` executes resolved handlers through `ProcessController`, safe external browser-tab routing, or `NeutronBridge` without embedding authenticated Neutron surfaces;
+- `authorizationFakes.ts` remains the contract fake plus fail-closed vanilla placeholder; it does not model MTN internals;
+- `visual-tokens.scss` defines shared tokens and the Desktop/native-window composition layout;
+- `../PlasmonOS.tsx` mounts `Shell`, `/Desktop`, `WindowLayer`, and `NativeProcessHost` using those shared services.
+
+The security/runtime boundary remains:
+
+```text
+Plasmon native app -> Plasmon-managed native window
+Neutron Element    -> Kernel-owned sibling tile
+```
+
+Plasmon never obtains or embeds an authenticated Neutron Element iframe.
+
+Normal filesystem, shell, and native-app state remains browser-local. MTN/sharing and backup are not part of Wave 2 composition.
 
 After Agent 0, only the integration agent may change this directory, `../PlasmonOS.tsx`, `../../index.tsx`, shared visual-token entrypoints, or shared build/package entrypoints unless a task explicitly grants an exception.
 
-## Merge order
+## Integration sequence
 
-1. Foundation gate: build `neutron-design-system` and run `neutron-plasmon` tests.
-2. Wave 1: filesystem, associations/Atoms, process, windowing, and vanilla-Neutron bridge work.
-3. Integrate Wave 1 behind the frozen contracts.
-4. Wave 2: desktop/file manager, shell, native apps; these consume the shared visual tokens.
-5. Integrate Wave 2.
-6. Sharing publication may be developed against fakes, but final orchestration waits for filesystem stability, the MTN 0.2 authorization API freeze, and Agent 8's MTN authorization adapter.
-7. Backup begins once filesystem representation/import semantics are stable; it does not need to wait for sharing.
+1. Foundation gate.
+2. Wave 1 filesystem, associations/Atoms, process, windowing, and vanilla-Neutron bridge.
+3. Wave 1 integration and functional gate.
+4. Wave 2 Desktop/FileManager, Shell, native apps, and approved tray metadata.
+5. Wave 2 composition and complete automated/manual gate.
+6. Sharing final orchestration only after Coordinator C's MTN 0.2 freeze/adapter gate.
+7. Backup after filesystem representation/import semantics are stable.
 8. Final integration/polish/end-to-end testing.
 
 Agents must request contract changes rather than editing `../contracts/**` themselves.
 
 ## Shared dependencies
 
-Subsystem agents record requested third-party packages/build capabilities in an owned `DEPENDENCIES.md`. Integration applies shared `package.json`, lockfile and common build changes centrally. Agent 1 may make only explicitly assigned filesystem background/manifest/build edits and must document them as integration-affecting.
+Subsystem agents record requested third-party packages/build capabilities in an owned `DEPENDENCIES.md`. Integration applies shared `package.json`, lockfile and common build changes centrally. The current Wave 2 gate does not require Monaco, marked, DOMPurify, or a media-player dependency; those remain future polish candidates.
