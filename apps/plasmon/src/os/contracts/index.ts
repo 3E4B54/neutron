@@ -5,5 +5,6 @@ export * from "./apps.ts";
 export * from "./process.ts";
 export * from "./window.ts";
 export * from "./neutron.ts";
+export * from "./authorization.ts";
 export * from "./sharing.ts";
 export * from "./backup.ts";
