@@ -26,7 +26,7 @@ export interface FsReadRange {
 }
 
 export interface CreateFileOptions {
-  mime?: string;
+  mime?: string | undefined;
   kind?: Exclude<FsNodeKind, "directory">;
   metadata?: Record<string, JsonValue>;
 }
