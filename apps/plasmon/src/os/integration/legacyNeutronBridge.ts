@@ -26,7 +26,6 @@ export class LegacyNeutronBridge implements NeutronBridge {
       tiles: app.tiles.map((tile) => ({ id: tile.id, title: tile.title })),
       running: snapshot.liveAppIds.has(app.id) ? "yes" : "no",
     }));
-    this.emit();
     return this.elements.map((element) => ({ ...element, tiles: [...element.tiles] }));
   }
 
@@ -59,6 +58,7 @@ export class LegacyNeutronBridge implements NeutronBridge {
 
   async refreshRuntimeState(): Promise<void> {
     await this.loadElements();
+    this.emit();
   }
 
   subscribe(listener: () => void): () => void {
