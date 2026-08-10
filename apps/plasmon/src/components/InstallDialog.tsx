@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { normalizePackageUrl } from "../platform/parse.ts";
 
 export function InstallDialog({
   open,
@@ -50,29 +51,25 @@ export function InstallDialog({
         </div>
 
         <p className="muted-copy">
-          Paste an HTTPS URL ending in <code>.neutron</code>. Plasmon only makes
-          an installation offer; the Kernel keeps its normal owner review and
-          final approval flow.
+          Paste an HTTP(S) URL ending in <code>.neutron</code>. Plasmon only
+          makes an installation offer; the Kernel keeps its normal owner review
+          and final approval flow.
         </p>
 
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            let parsed: URL;
+            let normalized: string;
             try {
-              parsed = new URL(url.trim());
-            } catch {
-              setError("Enter a valid package URL.");
-              return;
-            }
-            if (!parsed.pathname.endsWith(".neutron")) {
-              setError("The package URL must end in .neutron.");
+              normalized = normalizePackageUrl(url);
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : String(cause));
               return;
             }
             setError(null);
             // Keep this call in the submit activation task. Vanilla Neutron
             // requires install offers to originate from focused user action.
-            onInstall(parsed.href);
+            onInstall(normalized);
           }}
         >
           <label className="field-label" htmlFor="plasmon-package-url">
