@@ -7,17 +7,24 @@ export interface WindowGeometry {
   height: number;
 }
 
+export interface WindowCreateOptions extends Partial<WindowGeometry> {
+  minWidth?: number;
+  minHeight?: number;
+}
+
 export interface WindowState extends WindowGeometry {
   id: WindowId;
   processId: ProcessId;
   z: number;
   minimized: boolean;
   maximized: boolean;
+  minWidth?: number;
+  minHeight?: number;
   restoreGeometry?: WindowGeometry;
 }
 
 export interface WindowManager {
-  create(processId: ProcessId, initial: Partial<WindowGeometry>): WindowId;
+  create(processId: ProcessId, initial: WindowCreateOptions): WindowId;
   focus(id: WindowId): void;
   move(id: WindowId, x: number, y: number): void;
   resize(id: WindowId, width: number, height: number): void;
