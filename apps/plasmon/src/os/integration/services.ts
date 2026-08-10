@@ -6,12 +6,19 @@ import type {
   ResourceAuthorizationService,
   WindowManager,
 } from "../contracts/index.ts";
-import { MemoryFs, MemoryProcessController, MemoryWindowManager } from "./fakes.ts";
+import {
+  IndexedDbFsRepository,
+  MemoryFsRepository,
+  PersistentFsService,
+  type FsRepository,
+} from "../fs/index.ts";
+import { createNeutronBridge } from "../neutron/index.ts";
+import { NativeApplicationRegistry, NativeProcessController } from "../process/index.ts";
+import { NativeWindowManager } from "../windowing/index.ts";
 import {
   FakeResourceAuthorizationService,
   UnavailableResourceAuthorizationService,
 } from "./authorizationFakes.ts";
-import { LegacyNeutronBridge } from "./legacyNeutronBridge.ts";
 
 export interface PlasmonServices {
   fs: FsService;
@@ -29,22 +36,32 @@ function createAuthorizationService(): ResourceAuthorizationService {
     : new UnavailableResourceAuthorizationService();
 }
 
+function createFilesystemRepository(): FsRepository {
+  if (typeof globalThis.indexedDB !== "undefined") {
+    return new IndexedDbFsRepository();
+  }
+  return new MemoryFsRepository();
+}
+
 /**
- * Development composition only. Specialized agents replace individual fakes
- * behind these contracts; consumers never import those implementations.
+ * Wave 1 composition root. Browser-local filesystem state uses IndexedDB for
+ * the first functional gate, with memory reserved for non-browser/test hosts.
+ * Native process/window implementations are real but the native registry is
+ * intentionally empty until Wave 2 registers built-in applications.
  * Embedded vanilla Neutron intentionally reports resource authorization as
- * unavailable until Agent 8 can bind the frozen MTN authorization API.
+ * unavailable until the MTN authorization API is frozen and integrated.
  */
 export function createPlasmonServices(): PlasmonServices {
-  const fs = new MemoryFs();
-  const windows = new MemoryWindowManager();
-  const process = new MemoryProcessController(windows);
+  const fs = new PersistentFsService(createFilesystemRepository());
+  const windows = new NativeWindowManager();
+  const nativeApps = new NativeApplicationRegistry();
+  const process = new NativeProcessController(nativeApps, windows);
   return {
     fs,
     fsEvents: fs,
     process,
     windows,
-    neutron: new LegacyNeutronBridge(),
+    neutron: createNeutronBridge(),
     authorization: createAuthorizationService(),
   };
 }
