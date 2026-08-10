@@ -14,4 +14,66 @@
     --plasmon-motion-fast: 120ms;
     --plasmon-motion-window: 180ms;
   }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  /* Neutralize the legacy GUI2 .plasmon-shell grid selector at composition. */
+  .plasmon-shell {
+    display: block;
+    grid-template-columns: none;
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .plasmon-os-workspace {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .plasmon-os-desktop-layer,
+  .plasmon-os-window-layer-wrap {
+    position: absolute;
+    inset: 0;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .plasmon-os-desktop-layer {
+    z-index: 0;
+  }
+
+  .plasmon-os-window-layer-wrap {
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .plasmon-os-window-layer-wrap .plasmon-window:not(.plasmon-window--minimized) {
+    pointer-events: auto;
+  }
+
+  .plasmon-os-host-state {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 24px;
+    color: var(--plasmon-text-muted);
+    text-align: center;
+  }
+
+  .plasmon-os-host-state--error {
+    color: #ffb0b0;
+  }
 }
