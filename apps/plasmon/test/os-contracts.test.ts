@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
 import { MemoryFs, MemoryProcessController, MemoryWindowManager, fakeText } from "../src/os/integration/fakes.ts";
+import {
+  FakeResourceAuthorizationService,
+  UnavailableResourceAuthorizationService,
+} from "../src/os/integration/authorizationFakes.ts";
 
 test("filesystem fake preserves node identity across rename and move", async () => {
   const fs = new MemoryFs();
@@ -39,4 +43,37 @@ test("process and window fakes communicate only through public contracts", async
   process.close(processId);
   expect(process.list()).toHaveLength(0);
   expect(windows.list()).toHaveLength(0);
+});
+
+test("authorization fake owns bearer grant lifecycle independently of sharing", async () => {
+  const authorization = new FakeResourceAuthorizationService();
+  const grant = await authorization.issue({
+    resource: {
+      providerId: "plasmon-sharing",
+      resourceId: "resource:1",
+      revision: "7",
+    },
+    rights: ["read"],
+  });
+
+  const redeemed = await authorization.redeem({ token: grant.token });
+  expect(redeemed.resource.resourceId).toBe("resource:1");
+  expect(redeemed.rights).toEqual(["read"]);
+
+  await authorization.revoke(grant.grantId);
+  expect((await authorization.inspect(grant.grantId)).revoked).toBe(true);
+  await expect(authorization.redeem({ token: grant.token })).rejects.toThrow("revoked");
+});
+
+test("vanilla authorization placeholder fails closed", async () => {
+  const authorization = new UnavailableResourceAuthorizationService();
+  expect(authorization.available).toBe(false);
+  await expect(authorization.issue({
+    resource: {
+      providerId: "plasmon-sharing",
+      resourceId: "resource:1",
+      revision: "1",
+    },
+    rights: ["read"],
+  })).rejects.toThrow("unavailable");
 });
