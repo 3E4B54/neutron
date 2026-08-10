@@ -32,10 +32,21 @@ export class NeutronPlatform implements PlasmonPlatform {
 
     const apps = await Promise.all(
       installed
-        .filter(({ id }) => id !== "plasmon")
-        .map(async ({ id, description }) =>
-          parseAppDescription(await describeApp(id), description),
-        ),
+        .filter(({ id }) => id !== "plasmon" && id !== "kernel")
+        .map(async ({ id, description }): Promise<PlasmonApp> => {
+          try {
+            return parseAppDescription(await describeApp(id), description);
+          } catch {
+            // One malformed or temporarily unavailable app must not make the
+            // entire launcher unusable. Keep it visible but non-launchable.
+            return {
+              id,
+              name: id,
+              description: description || "Installed Neutron application.",
+              tiles: [],
+            };
+          }
+        }),
     );
 
     apps.sort((left, right) => left.name.localeCompare(right.name));
