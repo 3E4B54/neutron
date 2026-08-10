@@ -46,6 +46,23 @@ Standalone mode uses mock installed-app metadata. Production Neutron mode is sel
 
 `npm run watch` remains available when only rebuilding the production frontend files is useful.
 
+## Run inside local Neutron
+
+The repository-root `plasmon.ndeploy.json` is intentionally small. It installs only Hello as a control application and Plasmon as the launcher. Make sure the referenced Kernel, Hello, and Plasmon archives exist, then use Neutron's normal provisioner flow from the repository root:
+
+```sh
+npm run provision -- plasmon.ndeploy.json serve
+```
+
+Keep that process running. In another terminal:
+
+```sh
+npm run provision -- plasmon.ndeploy.json reinstall
+npm run provision -- plasmon.ndeploy.json status
+```
+
+Open the node URL printed by `status`. The provisioner consumes archives; it does not build the app workspaces for you.
+
 ## 0.1.0 behavior
 
 When running inside vanilla Neutron, Plasmon uses only Kernel-provided app tools:
@@ -58,7 +75,11 @@ When running inside vanilla Neutron, Plasmon uses only Kernel-provided app tools
 
 Plasmon never embeds another Neutron application as a child iframe and never bypasses the Kernel installer.
 
+If one installed app cannot be described, Plasmon keeps the rest of the launcher usable and renders that app as non-launchable instead of failing all discovery.
+
 The launcher deliberately does not assume access to another app's static asset paths or icons. Vanilla `apps.describe` exposes safe metadata and launch targets, so Plasmon renders its own launcher glyphs.
+
+Plasmon 0.1.0 has no borrowed `update_source`; updates are manual until Plasmon operates an update source of its own.
 
 ## Atoms and sharing
 
