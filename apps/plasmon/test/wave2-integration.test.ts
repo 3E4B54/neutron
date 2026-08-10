@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { createPlasmonServices } from "../src/os/integration/services.ts";
+import { FsRpcClient } from "../src/os/fs/index.ts";
+import { createFilesystemService, createPlasmonServices } from "../src/os/integration/services.ts";
 
 test("Wave 2 composition registers native apps, loaders, and content handlers", async () => {
   const services = createPlasmonServices();
@@ -45,4 +46,9 @@ test("Wave 2 associations prefer Markdown and honor explicit shortcut handlers w
   const currentShortcut = await services.fs.stat(shortcut.id);
   const probe = await services.fs.read(shortcut.id);
   expect((await services.associations.resolve(currentShortcut, probe))[0]?.id).toBe("native:video");
+});
+
+test("Kernel-hosted Wave 2 composition uses the background filesystem RPC client", () => {
+  const fs = createFilesystemService("hosted");
+  expect(fs).toBeInstanceOf(FsRpcClient);
 });
