@@ -14,6 +14,9 @@ export interface ShareRecord {
   createdAt: number;
 }
 
+/** Public descriptor name used by shell/properties consumers. */
+export type ShareDescriptor = ShareRecord;
+
 export interface ShareService {
   share(nodeId: NodeId, options?: ShareOptions): Promise<ShareRecord>;
   revoke(id: ShareId): Promise<void>;
