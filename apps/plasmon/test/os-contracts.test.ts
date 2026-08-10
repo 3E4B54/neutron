@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { MemoryFs, MemoryProcessController, MemoryWindowManager, fakeText } from "../src/os/integration/fakes.ts";
+import type { ExternalElement } from "../src/os/contracts/neutron.ts";
 import {
   FakeResourceAuthorizationService,
   UnavailableResourceAuthorizationService,
@@ -76,4 +77,25 @@ test("vanilla authorization placeholder fails closed", async () => {
     },
     rights: ["read"],
   })).rejects.toThrow("unavailable");
+});
+
+test("ExternalElement tray metadata is optional and limited to a title", () => {
+  const withTray: ExternalElement = {
+    id: "mail",
+    name: "Mail",
+    description: "Mail",
+    tray: { title: "Mail" },
+    tiles: [{ id: "main", title: "Mail" }],
+    running: "yes",
+  };
+  const withoutTray: ExternalElement = {
+    id: "chess",
+    name: "Chess",
+    description: "Chess",
+    tiles: [{ id: "main", title: "Chess" }],
+    running: "no",
+  };
+
+  expect(withTray.tray).toEqual({ title: "Mail" });
+  expect(withoutTray.tray).toBeUndefined();
 });
