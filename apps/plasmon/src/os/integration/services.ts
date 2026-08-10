@@ -16,10 +16,12 @@ import {
 } from "../associations/index.ts";
 import { FileOperationClipboard } from "../file-manager/index.ts";
 import {
-  IndexedDbFsRepository,
-  MemoryFsRepository,
   PersistentFsService,
+  createBrowserFsRepository,
+  createNeutronFsClient,
   type FsRepository,
+  type RepositoryCommit,
+  type RepositoryState,
 } from "../fs/index.ts";
 import { createNeutronBridge } from "../neutron/index.ts";
 import { NativeApplicationRegistry, NativeProcessController } from "../process/index.ts";
@@ -57,6 +59,8 @@ export interface PlasmonServices {
   fileClipboard: FileOperationClipboard;
 }
 
+export type FilesystemFrontendMode = "hosted" | "standalone";
+
 function createAuthorizationService(): ResourceAuthorizationService {
   const preview = typeof window === "undefined" || window.parent === window;
   return preview
@@ -64,11 +68,47 @@ function createAuthorizationService(): ResourceAuthorizationService {
     : new UnavailableResourceAuthorizationService();
 }
 
-function createFilesystemRepository(): FsRepository {
-  if (typeof globalThis.indexedDB !== "undefined") {
-    return new IndexedDbFsRepository();
+/**
+ * Synchronous repository adapter for standalone preview. Repository selection
+ * itself is asynchronous because IndexedDB can exist while open() is denied by
+ * browser storage policy. createBrowserFsRepository probes it and safely falls
+ * back rather than treating presence of globalThis.indexedDB as availability.
+ */
+class BrowserSelectedFsRepository implements FsRepository {
+  readonly kind = "browser-selected";
+  private readonly selected = createBrowserFsRepository({
+    onFallback: (error) => console.warn("Plasmon standalone filesystem storage fallback:", error.message),
+  });
+
+  async load(): Promise<RepositoryState | null> {
+    return (await this.selected).load();
   }
-  return new MemoryFsRepository();
+
+  async readChunk(hash: string, index: number): Promise<Uint8Array | null> {
+    return (await this.selected).readChunk(hash, index);
+  }
+
+  async commit(change: RepositoryCommit): Promise<void> {
+    await (await this.selected).commit(change);
+  }
+}
+
+function detectFilesystemFrontendMode(): FilesystemFrontendMode {
+  return typeof window !== "undefined" && window.parent !== window
+    ? "hosted"
+    : "standalone";
+}
+
+/**
+ * Kernel-hosted Plasmon uses the existing foreground RPC client so durable
+ * browser storage remains owned by the privileged/persistent background
+ * surface. Standalone preview keeps an in-page filesystem for development.
+ */
+export function createFilesystemService(
+  mode: FilesystemFrontendMode = detectFilesystemFrontendMode(),
+): FsService & FsEventSource {
+  if (mode === "hosted") return createNeutronFsClient();
+  return new PersistentFsService(new BrowserSelectedFsRepository());
 }
 
 function createAssociationDefaultStore(): AssociationDefaultStore {
@@ -117,16 +157,17 @@ function registerWave2Applications(
 }
 
 /**
- * Wave 2 composition root. Browser-local filesystem data uses IndexedDB for
- * the current functional gate, associations use safe browser-local defaults
- * when available, and all built-in applications share the real filesystem,
- * process, window, association, and OpenService implementations.
+ * Wave 2 composition root. In Neutron, filesystem calls are routed to the
+ * persistent Plasmon background surface through FsRpcClient; standalone
+ * preview selects a browser-local repository with safe fallback. Associations
+ * use safe browser-local defaults when available, and all built-in apps share
+ * the same filesystem/process/window/association/OpenService contracts.
  *
  * Authenticated Neutron application surfaces remain Kernel-owned sibling
  * tiles. Plasmon only discovers and opens them through NeutronBridge.
  */
 export function createPlasmonServices(): PlasmonServices {
-  const fs = new PersistentFsService(createFilesystemRepository());
+  const fs = createFilesystemService();
   const windows = new NativeWindowManager();
   const neutron = createNeutronBridge();
   const nativeApps = new NativeApplicationRegistry();
