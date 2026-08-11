@@ -179,9 +179,9 @@ The simplest sensible V1 model is:
 ```text
 Review persistent background/provider storage
   -> Atom catalog keyed by AtomId
-  -> current structured state for each Atom
-  -> append-only meaningful events
-  -> durable revisions/snapshots
+  -> normalized/current structured state for each Atom
+  -> append-only semantic transaction/event journal
+  -> sparse/occasional checkpoints as an implementation optimization
   -> source provenance
 ```
 
@@ -189,7 +189,9 @@ Use the normal Neutron persistent-background/browser-storage capability already 
 
 For the hackathon, "durable" means the Review Atom and its revisions survive ordinary tile close/reopen and app-session lifecycle expected from the declared persistent storage capability. Cross-device replication is not a MUST requirement.
 
-A future implementation may move or mirror this state into stronger app-backend storage without changing logical Atom identity.
+A future implementation may move or mirror this state into stronger app-backend storage without changing logical Atom identity or RevisionId semantics.
+
+A tiny hackathon implementation may choose to persist full state snapshots for convenience. That is a physical implementation choice only; it is not the semantic definition of a Review revision and must not harden into the generic Atom contract.
 
 ### 2.5 No special `.atom` file format for MUST
 
@@ -578,6 +580,52 @@ command(expectedRevision, commandId, operation)
 
 If the Atom advanced incompatibly, return a revision conflict and reload. Do not silently last-write-wins a stale edit.
 
+### 7.3 Semantic transaction granularity
+
+A durable provider revision represents one accepted **semantic application transaction**, not low-level UI activity.
+
+Freeze the invariant:
+
+```text
+one accepted semantic transaction -> one logical RevisionId
+```
+
+Examples:
+
+```text
+setResult(item72, NOT_WORKING)
+  -> one semantic transaction
+  -> one logical RevisionId
+
+setCoordination(item72, {
+  desired: MUST,
+  effort: Small,
+  owner: Agent 2,
+  workState: NEEDS_RETEST
+})
+  -> one atomic semantic transaction
+  -> one logical RevisionId
+
+import bounded TODO template with 80 items
+  -> one bounded bulk semantic transaction
+  -> one logical RevisionId
+```
+
+Do **not** create durable provider revisions for:
+
+- keypresses;
+- cursor movement;
+- focus;
+- selection;
+- React/component state;
+- rendering;
+- menu hover/open state;
+- other transient UI events.
+
+The UI may have local ephemeral state and may coalesce edits before submitting one typed semantic command. The application transaction boundary is defined by the accepted domain mutation, not by browser event frequency.
+
+A bulk TODO import should likewise be a bounded bulk transaction rather than one provider transaction/revision per imported line.
+
 ---
 
 ## 8. Comments: item-level only for MVP
@@ -640,22 +688,40 @@ For vanilla Neutron, actor labels/type are whatever Review can truthfully derive
 
 For the MTN stretch, the authoritative security identity rule is stricter and is defined in section 13.
 
-### 9.2 Durable revision per accepted transaction
+### 9.2 Durable logical revision per accepted semantic transaction
 
-For hackathon-sized Review Atoms, simplicity beats storage optimization.
-
-After each accepted provider transaction, create a durable revision that can reconstruct the full Atom state:
+Freeze the semantic rule:
 
 ```text
-R100 -> state after result update
-R101 -> state after comment
-R102 -> state after AI coordinator update
-R103 -> state after Desired=MUST
+one accepted semantic transaction -> one logical RevisionId
 ```
 
-Implementation may store full snapshots or snapshot-plus-delta internally. That storage optimization is not a V1 architecture requirement.
+A `RevisionId` identifies the resulting logical historical point in one Atom's application history. It MUST NOT imply a particular physical persistence or publication encoding.
 
-Required behavior is only:
+A revision does **not** inherently mean:
+
+- a full serialized Atom snapshot;
+- a content-addressed commit;
+- a Git tree/blob structure;
+- a hash tree;
+- a Sharing chunk manifest;
+- one immutable provider publication.
+
+For a tiny hackathon implementation, storing a full local snapshot per transaction is acceptable if expedient. That is an implementation choice only and must remain replaceable without changing Atom or RevisionId semantics.
+
+The recommended scalable physical shape is:
+
+```text
+normalized/current structured state
+        +
+append-only semantic transaction/event journal
+        +
+sparse/occasional checkpoints as an implementation optimization
+```
+
+This lets Review reconstruct/inspect historical logical revisions while keeping current-state mutation indexed and proportional to the changed records.
+
+Required logical behavior remains only:
 
 ```text
 list revisions
@@ -663,13 +729,46 @@ inspect revision
 restore revision
 ```
 
+### 9.2.1 Live structured Atom state is not snapshot publication
+
+Freeze a second independent invariant:
+
+> **Immutable snapshot/chunk/content-addressed publication is not the universal persistence model for live structured Atoms.**
+
+Agent 9's immutable snapshot/chunk publication model remains appropriate for resources such as:
+
+- immutable shared snapshots;
+- files/blobs;
+- attachments;
+- archives/backup;
+- portable Atom exports;
+- large binary Atom resources.
+
+It must not force live Review mutations through whole-Atom serialize/hash/chunk/publish cycles.
+
+Conceptual cost invariant:
+
+```text
+setResult(item72, ...)
+```
+
+or:
+
+```text
+setCoordination(item72, ...)
+```
+
+must be implementable with work proportional to the changed records plus small revision/event bookkeeping, **not proportional to total Atom size**.
+
+The design does not freeze a particular database, index, log, checkpoint format, storage engine, or compaction strategy. It freezes only the logical and cost boundaries needed to keep live Atoms scalable.
+
 ### 9.3 Whole-Atom restore instead of generalized selective revert
 
 The recovery mechanism is:
 
 > **Restore the whole Atom to revision R.**
 
-Restore creates a **new current revision** whose contents equal the selected historical revision.
+Restore creates a **new current logical revision** whose contents equal the selected historical logical revision.
 
 Example:
 
@@ -689,6 +788,15 @@ R105 restored Atom from R102
 
 The provider never rewrites or deletes prior history.
 
+Restoring historical state does not require Git-like commits, trees, branches, or content-addressed storage. It is a semantic operation:
+
+```text
+restore historical logical revision
+  -> apply historical state as current state
+  -> append restore event
+  -> create new current logical RevisionId
+```
+
 ### 9.4 Why generalized event-level revert is not MUST
 
 Selective dependency-aware revert requires substantially more machinery:
@@ -703,17 +811,18 @@ Review Atoms are small and human-readable, so whole-Atom restore is sufficient f
 
 ### 9.5 No sophisticated retention design yet
 
-For hackathon data volume, retain all revisions or a plainly generous bounded count.
+For hackathon data volume, retain enough journal/checkpoint history to satisfy the required logical revision behavior. A tiny implementation may retain all logical revisions and even full local snapshots if convenient.
 
 Do not build:
 
-- history compaction algorithms;
+- history compaction algorithms as a product feature;
 - CRDT garbage collection policy;
 - branch graphs;
 - merge commits;
-- Git-like ancestry.
+- Git-like ancestry;
+- content-addressed commit trees merely to represent RevisionIds.
 
-Measure actual data volume first.
+Checkpoint frequency, journal compaction, and physical retention are implementation concerns that can be tuned after measuring actual data volume without changing RevisionId semantics.
 
 ---
 
@@ -833,6 +942,26 @@ Because MTN live sharing is HIGH / stretch, the vanilla acceptance gate does not
 
 This is an intentional contraction.
 
+### 11.3 Generic contract redlines to preserve later
+
+When generic Atom/Sharing contracts do harden, they must preserve both redlines proven by Review:
+
+```text
+RevisionId = logical application-history identity
+RevisionId != required physical encoding/publication object
+```
+
+and:
+
+```text
+live structured Atom state
+  != mandatory immutable snapshot/chunk publication
+```
+
+A generic contract may support snapshot publication as one operation/resource form, but it must also permit indexed structured live-state mutation without forcing whole-resource republishing for each semantic change.
+
+These are generic architecture boundaries, not requirements to freeze a storage API or database engine now.
+
 ---
 
 ## 12. MUST for hackathon — vanilla Neutron
@@ -860,6 +989,8 @@ These are necessary to prove the base Atom abstraction and make the dog-food too
 - Stable logical `AtomId` distinct from the physical installation/AppScope.
 - Create/list/open enough to operate those Atoms independently.
 - Stable `ReviewItemId`s that survive ordinary item text/coordinator changes.
+- One accepted semantic application transaction creates one logical `RevisionId`.
+- `RevisionId` does not freeze snapshot, Git, content-addressed, chunk-manifest, or provider-publication encoding.
 
 ### Review data model
 
@@ -911,14 +1042,20 @@ optional dependency/blocker item references
 - AI/agent can structurally read Review state without DOM scraping.
 - AI/agent can comment and update separate coordinator metadata through typed Review commands when the local Review policy permits.
 - Basic expected-revision conflict protection prevents stale same-field mutation from silently winning.
+- A coordination command may atomically update Desired/Effort/Owner/Work state in one semantic transaction/revision.
+- A bounded TODO import is one bounded bulk semantic transaction rather than one durable provider transaction per line.
+- Transient UI events do not create durable provider revisions.
 
 ### Activity/recovery
 
 - Meaningful recent activity feed.
-- Durable revisions sufficient to inspect historical Atom state.
+- Durable logical revisions sufficient to inspect historical Atom state.
+- Recommended scalable persistence shape is current normalized state + semantic event journal + sparse/occasional checkpoints.
+- Small-field mutations can be implemented proportional to changed records plus small revision/event bookkeeping rather than total Atom size.
 - Owner/local authoritative Review user can restore the entire Atom to a historical revision.
-- Restore creates a new revision and preserves old history.
+- Restore creates a new logical revision and preserves old history.
 - No generalized selective-revert engine.
+- No Git-like storage/history requirement.
 
 ### Portability
 
@@ -933,7 +1070,9 @@ optional dependency/blocker item references
 - authenticated multi-user live sharing;
 - custom-kernel behavior;
 - Yjs/CRDT;
-- special Atom native file format.
+- special Atom native file format;
+- immutable snapshot/chunk publication for live state;
+- Git/content-addressed revision encoding.
 
 If these work on vanilla Neutron, the first hackathon gate passes.
 
@@ -1067,6 +1206,12 @@ owner has logical Review Atom
 
 The Atom's current Review revision is application state, not MTN resource identity.
 
+Agent 9's immutable snapshot/chunk/content-addressed publication model remains valid for immutable publication use cases, but it must **not** become the universal persistence or mutation model for a live Review Atom.
+
+For live structured state, MTN authorization and Plasmon bootstrap/sharing may identify and authorize the stable Atom resource while Review mutates indexed provider-owned application state directly. A small field update must not require publishing a fresh whole-Atom immutable snapshot merely because Sharing also supports snapshot resources.
+
+This does not expand or change MTN 0.2. It is a Plasmon/Atom persistence and Sharing boundary.
+
 ### 13.4 Absolute minimum generic Sharing integration
 
 Only the HIGH/stretch path needs a generic Sharing bridge:
@@ -1087,6 +1232,13 @@ AtomId
 != physical app_instance_id/AppScope
 != grant/bearer token
 != Review revision
+```
+
+It must also preserve the distinction:
+
+```text
+live authorized resource mutation
+  != mandatory immutable snapshot publication
 ```
 
 Plasmon owns bootstrap UX around frozen MTN semantics; Review owns Review-domain behavior.
@@ -1161,8 +1313,8 @@ User opens Review.neutron
   -> read /todo.md
   -> parse TODOs into stable ReviewItemIds
   -> allocate logical AtomId
-  -> persist Atom in Review background/provider catalog
-  -> create revision R1
+  -> persist bounded imported item set as one semantic transaction
+  -> create logical revision R1
   -> open Atom
 ```
 
@@ -1183,7 +1335,8 @@ Brian marks #72 NOT WORKING
   -> typed Review mutation
   -> expected revision checked
   -> Brian's evidence record updated
-  -> revision R12
+  -> one semantic transaction accepted
+  -> logical revision R12
   -> meaningful activity event
 ```
 
@@ -1202,6 +1355,8 @@ agent command:
 Brian's evidence remains unchanged
 ```
 
+A single coordination command may atomically update Desired/Effort/Owner/Work state and produce one logical revision rather than one revision per field.
+
 ### 16.5 Vanilla: owner recovers from mistake
 
 ```text
@@ -1210,12 +1365,15 @@ R41 destructive/mistaken changes
 R42 more changes
 
 Owner selects "Restore R40"
-  -> provider writes current state equivalent to R40
-  -> creates new revision R43
+  -> provider reconstructs/reads historical logical R40
+  -> writes current state equivalent to R40
+  -> creates new logical revision R43
   -> activity says "restored Atom from R40"
 
 R41/R42 remain in history
 ```
+
+No Git tree/commit representation is implied by this sequence.
 
 ### 16.6 Stretch: shared URL
 
@@ -1237,7 +1395,7 @@ AI principal calls Review under MTN #write
   -> Review records subject as authoritative actor principal
   -> Review may also display actorType=ai / friendly agent label
   -> typed coordinator/comment mutation accepted if Review policy allows
-  -> activity event + revision
+  -> activity event + logical revision
 ```
 
 ---
@@ -1259,11 +1417,15 @@ Review.neutron installs and opens normally
   -> Desired/Effort/Owner/Work state
   -> comments
   -> human + agent structured operations
+  -> semantic transactions
+  -> one logical RevisionId per accepted semantic transaction
   -> activity
-  -> durable revisions
-  -> whole-Atom restore
+  -> durable logical history
+  -> whole-Atom restore creates a new logical revision
   -> Markdown/TODO export
 ```
+
+Physical persistence remains free to evolve from expedient hackathon snapshots toward normalized current state + event journal + sparse checkpoints without changing Atom semantics.
 
 ### HIGH / stretch
 
@@ -1276,6 +1438,7 @@ shared URL
   -> authenticated humans + AI
   -> MTN 0.2 #read/#write/#reshare only
   -> AuthorizationContext.subject authoritative
+  -> live state does not require whole-Atom snapshot publication per mutation
   -> revocation enforced
 ```
 
@@ -1312,11 +1475,18 @@ Review Atom
   -> independent test evidence
   -> lightweight Review-specific coordination fields
   -> item comments
-  -> typed human/agent operations
-  -> append-only meaningful activity
-  -> durable revisions + whole-Atom restore
+  -> typed human/agent semantic transactions
+  -> append-only meaningful activity/event journal
+  -> logical RevisionIds
+  -> normalized/current structured state
+  -> sparse/occasional checkpoints as an implementation optimization
+  -> whole-Atom restore creates a new logical revision
   -> Markdown import/export
 ```
+
+A tiny implementation may use full snapshots for convenience, but neither `AtomId` nor `RevisionId` implies a snapshot, Git commit/tree, hash tree, chunk manifest, or immutable provider publication.
+
+Live structured Review mutations must be capable of touching only changed records plus small revision/event bookkeeping. Immutable snapshot/chunk publication remains available for snapshot/file/blob/archive/export use cases rather than becoming universal live Atom persistence.
 
 No MTN or Plasmon dependency is required for that base application.
 
