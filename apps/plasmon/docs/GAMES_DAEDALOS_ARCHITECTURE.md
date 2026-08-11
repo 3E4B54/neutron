@@ -1,6 +1,6 @@
 # Plasmon Games / daedalOS Architecture
 
-Status: design-first hackathon MVP recommendation  
+Status: design-first hackathon MVP recommendation, corrected by Coordinator A  
 Research date: 2026-08-11  
 Plasmon starting point: `3dc25e00511c9070165560e324aba3cc31235a8e`  
 daedalOS source inspected: `DustinBrett/daedalOS@0df82d75e6114727ad035f6fce93842a96682355`
@@ -11,26 +11,53 @@ This document is a research/design handoff. It deliberately does **not** impleme
 
 Plasmon should make games ordinary filesystem resources opened through the existing association/OpenService path, not a separate hard-coded games launcher.
 
-Recommended conceptual launch path:
+Correct conceptual launch path:
 
 ```text
 game file
   -> ordinary AssociationRegistry resolution
-  -> built-in native handler
-  -> lazily loaded runtime assets under /System/Program Files
+  -> js-dos or EmulatorJS handler registration
+  -> lazily loaded runtime/assets under /System/Program Files
   -> game window/session
 ```
 
-For the hackathon, use **two built-in handlers/applications**, not one monolithic `Games.sys` and not one handler per console:
+The runtime split is:
 
-- a DOS handler (working name `DOS.sys`) for `.jsdos`, backed by js-dos;
-- an emulator handler (working name `Emulator.sys`) for selected ROM extensions, backed by EmulatorJS and a small curated set of cores.
+```text
+.jsdos
+  -> js-dos handler
+  -> /System/Program Files/js-dos
 
-The names are recommendations, not frozen filesystem names.
+ROM extension
+  -> EmulatorJS handler
+  -> /System/Program Files/EmulatorJs + selected core
+```
 
-Two handlers are worth keeping because js-dos and EmulatorJS have materially different package formats, persistence APIs, runtime assets, input behavior, and save semantics. One Emulator handler should still cover all supported cartridge/ROM systems by selecting the core from the resolved format/system. Per-console `.sys` applications would add complexity without adding a useful user concept.
+### Critical `.sys` distinction
 
-The most important architectural requirement is persistence: **browser IndexedDB/OPFS/localStorage must not become authoritative game storage.** Both runtime families have browser-local persistence behaviors. Plasmon should use those only as temporary runtime caches, or disable/override them, while authoritative save bytes live through Plasmon's persistent `FsService` model.
+**Do not create `DOS.sys`, `Emulator.sys`, or a `Games.sys` facade.**
+
+js-dos and EmulatorJS are already the programs/runtimes. Their association handlers route an `OpenTarget` into those runtimes. A handler registration does **not** require a corresponding `.sys` filesystem application.
+
+`.sys` is reserved for a Plasmon-native application where Plasmon itself supplies the program/application identity. It must not become a wrapper convention for every runtime or library under `/System/Program Files`.
+
+If the current `HandlerDefinition.kind` value used by the integration is `native`, that is local OpenService routing metadata only. It must **not** be interpreted as requiring a `.sys` node.
+
+Keep two runtime handler registrations because js-dos and EmulatorJS have materially different package formats, persistence APIs, runtime assets, input behavior, and save semantics. Keep only one EmulatorJS handler for all supported ROM systems; it selects the system/core from file type. Do not create one handler/program per console.
+
+The target is **daedalOS game-format parity**, not a convenience subset. Every game content type used by the known daedalOS js-dos/EmulatorJS demo set is a hackathon parity requirement:
+
+- `.jsdos` — Doom, Duke Nukem 3D, Wolfenstein 3-D;
+- `.nes` — Alter Ego;
+- `.gba` — Anguna;
+- `.gen` — Mega Q*bert;
+- `.nds` — Bilou: School Rush;
+- `.a26` — Halo 2600;
+- `.smc` — Classic Kong Complete.
+
+The tracked daedalOS association table supports a broader runtime surface than those demo files. That full surface is enumerated below and should remain visible in the design so implementation does not accidentally hard-code only the bundled examples.
+
+The most important persistence requirement remains unchanged: **browser IndexedDB/OPFS/localStorage must not become authoritative game storage.** Both runtime families have browser-local persistence behaviors. Plasmon should use those only as temporary runtime caches, or disable/override them, while authoritative save bytes live through Plasmon's persistent `FsService` model.
 
 The correct lesson from daedalOS "Snapshots" is not to copy its folder literally. daedalOS stores runtime-specific save artifacts as ordinary files under `/Users/Public/Snapshots`, with a generated screenshot used as the saved file's icon. For js-dos those artifacts are filesystem-change bundles. For EmulatorJS they are emulator save-state bytes. They are **not filesystem snapshots**. daedalOS keys them by source basename, which is convenient but wrong for Plasmon because a rename breaks the relationship. Plasmon should attach saves to stable game `NodeId` instead.
 
@@ -48,7 +75,15 @@ Recommended visible save model:
 
 The visible names are for people; metadata contains the stable source `NodeId`, runtime/system/core identifiers, and compatibility metadata. Native saves, emulator states, and DOS filesystem changes should remain distinct because they have different portability and compatibility properties.
 
-For bundled demo content, the licensing review is intentionally conservative. `Anguna.gba` v0.95 has explicit binary redistribution permission in its accompanying readme provided that readme remains available with it. The other requested ROMs do not have sufficiently clear redistribution grants for a public hackathon bundle based on the evidence found. The proposed Doom/Duke/Wolfenstein `.jsdos` bundles are also **BLOCKED** unless the exact redistribution/repackaging terms for the exact shareware package are preserved and approved; engine source licenses do not grant rights to game data. The safest demo is a tiny Plasmon-authored DOS `.jsdos` plus Anguna and, ideally, a small Plasmon-authored/permissively licensed NES demo.
+### Temporary/unverified demo-content policy
+
+The licensing audit remains useful evidence, but it is **not** a hackathon-development removal instruction.
+
+Keep the already intended/provided demo assets for the hackathon/development build even where redistribution clearance remains unresolved. Do **not** describe those assets as legally cleared. Mark them as **temporary/unverified demo content** and require a removal/replacement/clearance gate before any distribution that requires clean redistribution rights.
+
+Do not add new copyrighted game content beyond the assets already intended/provided for this project.
+
+The runtime architecture must never depend on a particular game name. Removing or replacing any demo is therefore a filesystem-content change, not a runtime-code change.
 
 No proof code was necessary for this research pass.
 
@@ -69,16 +104,17 @@ Important paths inspected:
 | js-dos process config | `components/apps/JSDOS/config.ts` | js-dos path prefix, save extension, DOS config files, captured keys |
 | js-dos session | `components/apps/JSDOS/useDosCI.ts` | bundle loading, `ci.persist()`, save restore, snapshot creation |
 | js-dos UI/runtime | `components/apps/JSDOS/useJSDOS.ts` | lazy runtime setup, player creation, canvas/session lifecycle |
-| Emulator config | `components/apps/Emulator/config.ts` | extension-to-system mapping |
+| Emulator config | `components/apps/Emulator/config.ts` | complete tracked extension-to-system mapping |
 | Emulator session | `components/apps/Emulator/useEmulator.ts` | ROM Blob URL, core selection, auto-save-state, restore, screenshot |
 | Snapshot helper | `hooks/useSnapshots.ts` | `/Users/Public/Snapshots`, ordinary file writes, icon cache |
 | Isolated content | `hooks/useIsolatedContentWindow.ts` | same-origin iframe used as isolated runtime/content window |
-| Process definitions | `contexts/process/directory.ts` | dependent Program Files assets, app identity/icons |
-| File extensions | `components/system/Files/FileEntry/extensions.ts` | `.jsdos` and ROM association behavior |
+| Process definitions | `contexts/process/directory.ts` | Program Files runtime assets and runtime process identity |
+| File extensions | `components/system/Files/FileEntry/extensions.ts` | `.jsdos`, `.exe`, `.zip`, and EmulatorJS ROM association behavior |
 | Constants | `utils/constants.ts` | snapshot path and dynamic save extensions |
 | Runtime assets | `public/Program Files/EmulatorJs/*` | vendored EmulatorJS loader/runtime assets |
 | Version lock | `package.json`, `yarn.lock` | js-dos packages and exact lock versions |
 | User-facing behavior | `README.md` | IndexedDB FS, save-state-on-close, Open With/Properties behavior |
+| Git ignore | `.gitignore` | `public/private`, generated indexes, and most `public/Users/Public/**` game/user content are intentionally untracked |
 | Credits | `public/CREDITS.md` | upstream references but not a game-content licensing audit |
 
 Exact js-dos package versions in the inspected daedalOS lockfile:
@@ -86,7 +122,74 @@ Exact js-dos package versions in the inspected daedalOS lockfile:
 - `emulators` 8.3.9
 - `emulators-ui` 0.73.9
 
-The current daedalOS `public/Program Files/EmulatorJs/loader.js` contains a loader `VERSION = 23.5`, while the vendored `emulator.min.js` identifies its player implementation as version 2.3.5. In other words, daedalOS' proven EmulatorJS wrapper is useful architectural reference, but its vendored EmulatorJS runtime is old and should not be copied as Plasmon's new dependency.
+The inspected daedalOS `public/Program Files/EmulatorJs/loader.js` contains a loader `VERSION = 23.5`, while the vendored `emulator.min.js` identifies its player implementation as version 2.3.5. In other words, daedalOS' proven EmulatorJS wrapper is useful architectural reference, but its vendored EmulatorJS runtime is old and should not be copied as Plasmon's new dependency.
+
+### Why the public Git tree cannot enumerate every bundled game file
+
+At the inspected commit, `.gitignore` excludes:
+
+- `public/private`;
+- generated `public/.index/*` filesystem indexes;
+- most of `public/Users/Public/**`.
+
+Therefore the public tracked repository is authoritative for the handler/extension tables, but it is not an exhaustive manifest of the deployed/private game content. The known game catalog supplied for this Plasmon task is used below for the **demo parity set**; the tracked daedalOS code is used for the **full association surface**.
+
+### Exact tracked daedalOS js-dos association surface
+
+`components/system/Files/FileEntry/extensions.ts` routes:
+
+| Extension | daedalOS type | daedalOS candidate process(es) | Plasmon interpretation |
+| --- | --- | --- | --- |
+| `.jsdos` | JSDOS Bundle | `JSDOS`, `FileExplorer` | js-dos handler is the game runtime candidate |
+| `.exe` | Application | `BoxedWine`, `JSDOS` | js-dos is one ordinary candidate; preserve multi-handler semantics if/when `.exe` is exposed |
+| `.zip` | Compressed Folder | `FileExplorer`, `BoxedWine`, `JSDOS` | js-dos is one ordinary candidate; do not steal generic ZIP handling |
+
+The known daedalOS DOS demo set for this project uses `.jsdos`, so `.jsdos` is the required DOS game-content parity type. `.exe` and `.zip` are part of the tracked runtime association surface and must not be forgotten if later parity work includes daedalOS content using those forms.
+
+### Exact tracked daedalOS EmulatorJS association surface
+
+`components/apps/Emulator/config.ts` defines these systems/extensions, and `components/system/Files/FileEntry/extensions.ts` registers every extension in that table to the single Emulator process:
+
+| System | daedalOS EmulatorJS system key | Extensions |
+| --- | --- | --- |
+| Atari 2600 | `atari2600` | `.a26` |
+| Atari 5200 | `atari5200` | `.a52` |
+| Atari 7800 | `atari7800` | `.a78` |
+| Atari Jaguar | `jaguar` | `.j64`, `.jag` |
+| Atari Lynx | `lynx` | `.lnx` |
+| Neo Geo Pocket | `ngp` | `.ngc`, `.ngp` |
+| Nintendo 64 | `n64` | `.n64`, `.v64`, `.z64` |
+| Nintendo DS | `nds` | `.nds` |
+| Nintendo Entertainment System | `nes` | `.nes` |
+| Nintendo Game Boy | `gb` | `.gb` |
+| Nintendo Game Boy Advance | `gba` | `.gba` |
+| Nintendo Game Boy Color | `gb` | `.gbc` |
+| PC Engine | `pce` | `.pce` |
+| Sega 32X | `sega32x` | `.32x` |
+| Sega Game Gear | `segaGG` | `.gg` |
+| Sega Genesis / Mega Drive | `segaMD` | `.gen`, `.md`, `.smd` |
+| Sega Master System | `segaMS` | `.sms` |
+| Super Nintendo Entertainment System | `snes` | `.sfc`, `.smc` |
+| Virtual Boy | `vb` | `.vb`, `.vboy` |
+| WonderSwan | `ws` | `.ws`, `.wsc` |
+
+This is the broader **association capability surface**. Plasmon should keep the design data-driven so adding any of these formats is a rule/core-packaging change, not a new application or console-specific program.
+
+### Known daedalOS demo parity set for this project
+
+| Demo content | Extension | Runtime | daedalOS system key | Hackathon parity |
+| --- | --- | --- | --- | --- |
+| Doom | `.jsdos` | js-dos | DOS | **MUST** |
+| Duke Nukem 3D | `.jsdos` | js-dos | DOS | **MUST** |
+| Wolfenstein 3-D | `.jsdos` | js-dos | DOS | **MUST** |
+| Alter Ego | `.nes` | EmulatorJS | `nes` | **MUST** |
+| Anguna | `.gba` | EmulatorJS | `gba` | **MUST** |
+| Mega Q*bert | `.gen` | EmulatorJS | `segaMD` | **MUST** |
+| Bilou: School Rush | `.nds` | EmulatorJS | `nds` | **MUST** |
+| Halo 2600 | `.a26` | EmulatorJS | `atari2600` | **MUST** |
+| Classic Kong Complete | `.smc` | EmulatorJS | `snes` | **MUST** |
+
+NDS is therefore **not** a post-MVP format merely because it is harder. If the selected modern EmulatorJS NDS core introduces a concrete BIOS/firmware, touch, threading, or browser blocker, the implementation owner must escalate that blocker to Coordinator A instead of silently dropping `.nds` from parity.
 
 ### Existing Plasmon mechanisms inspected
 
@@ -104,11 +207,11 @@ The contracts already provide:
 - extension and MIME association rules;
 - multiple candidate handlers;
 - user defaults;
-- native handler kind;
+- local/native OpenService routing kind;
 - `OpenService.open(handlerId, OpenTarget)` where `OpenTarget` can carry `nodeId`;
 - defaults persisted through the Plasmon filesystem metadata path rather than browser-local application storage.
 
-**Design conclusion:** game launching does not require a new association contract. Register normal native handlers/rules and let existing Open With/default resolution do its job.
+**Design conclusion:** game launching does not require a new association contract and does not require a `.sys` wrapper. Register normal js-dos and EmulatorJS handlers/rules and let existing Open With/default resolution do its job.
 
 ---
 
@@ -147,7 +250,7 @@ This is a good lifecycle pattern, but Plasmon should not copy the basename-based
 The current npm `emulators` line is newer than daedalOS' 8.3.9 pin. For the implementation pass:
 
 1. start with exact `emulators@8.3.9` / `emulators-ui@0.73.9` if the objective is lowest-risk parity with daedalOS' wrapper behavior;
-2. run the one-bundle smoke gate against the then-current 8.4.x line before deciding whether to upgrade;
+2. smoke-test the current supported line before deciding whether to upgrade;
 3. pin the selected exact versions and runtime assets; do not use a floating `latest` URL.
 
 The js-dos packages are GPL-2.0. Runtime redistribution must include the required license/source-offer compliance appropriate to how Plasmon ships the compiled assets.
@@ -191,7 +294,7 @@ Implementation rules:
 - disable js-dos cloud persistence;
 - ensure default IndexedDB/OPFS data cannot silently win over Plasmon data after a browser/profile restore;
 - temporary browser cache is acceptable only if it can be discarded and reconstructed from Plasmon state;
-- force a final change flush during clean application close before worker teardown;
+- force a final change flush during clean window/session close before worker teardown;
 - a close failure must not report success if the authoritative save write did not complete.
 
 ### DOS save semantics
@@ -219,7 +322,7 @@ Current `main` was also inspected for architecture, including:
 - `data/src/emulator.js`
 - `data/src/consts.js`
 
-At research time, upstream also has a 4.3.0 pre-release. The MVP should pin stable 4.2.3 rather than track the pre-release.
+At research time, upstream also has a 4.3.0 pre-release. The MVP should pin a tested stable release rather than track a pre-release without an explicit reason.
 
 ### How daedalOS launches ROMs
 
@@ -238,9 +341,9 @@ The iframe is an isolation container for a game canvas/runtime. It is **not** a 
 
 ### Recommended runtime architecture
 
-Use one built-in Emulator application/handler and a core mapping table. It should receive the `nodeId`, inspect the already-associated extension/system metadata, read bytes via `FsService`, lazy-load the required selected core, and start one isolated runtime session.
+Use one **EmulatorJS handler registration** and a system/core mapping table. It receives the `nodeId`, determines the system from the already-associated extension, reads bytes via `FsService`, lazy-loads the required core, and starts one isolated runtime session/window.
 
-Do not create one native application per console.
+EmulatorJS is the program/runtime. There is no `Emulator.sys` facade and no native application per console.
 
 ### EmulatorJS persistence behavior
 
@@ -279,7 +382,22 @@ CLOSE
   revoke Blob URLs / dispose isolated window
 ```
 
-Settings/controller mapping should eventually use a Plasmon application settings/persistence mechanism. For the MVP, disable runtime localStorage where possible and keep only a small explicit default mapping rather than creating a second settings authority.
+Settings/controller mapping should eventually use a Plasmon settings/persistence mechanism. For the MVP, disable runtime localStorage where possible and keep only a small explicit default mapping rather than creating a second settings authority.
+
+### NDS parity requirement
+
+`.nds` is part of the required demo parity set because Bilou: School Rush is in the known daedalOS demo catalog.
+
+Modern EmulatorJS exposes multiple NDS core choices (`melonds`, `desmume`, `desmume2015` in current upstream). Core selection should be driven by the compatibility test, not by a desire to remove NDS from scope.
+
+Implementation rule:
+
+1. first choose a pinned EmulatorJS NDS core that launches the intended `.nds` demo in both target browsers without adding new proprietary content;
+2. if a chosen core requires BIOS/firmware that is not already an intended/provided project asset, do not silently add new copyrighted firmware;
+3. try a compatible no-new-firmware core where practical;
+4. if no acceptable core can meet parity, escalate the concrete blocker to Coordinator A before changing scope.
+
+Touch/dual-screen layout is a runtime-window/input concern, not a reason by itself to remove NDS parity.
 
 ---
 
@@ -342,7 +460,7 @@ Recommended visible model:
     Anguna/
       autosave.state
   DOS/
-    Plasmon DOS Demo/
+    Doom/
       current.changes
 ```
 
@@ -350,8 +468,8 @@ The friendly folder name is presentation only. Each save node/folder should carr
 
 ```text
 sourceNodeId       stable FsNode.id of source game
-runtimeId          e.g. plasmon.dos / plasmon.emulator
-systemId           e.g. gba / nes / dos
+runtimeId          e.g. js-dos / emulatorjs
+systemId           e.g. gba / nes / nds / dos
 coreId             e.g. mgba (when relevant)
 runtimeVersion     pinned runtime version used to create state
 sourceContentHash  optional integrity/reassociation hint
@@ -400,18 +518,22 @@ Recommended hackathon layout:
 ```text
 /Games/
   DOS Bundles/
-    plasmon-demo.jsdos
+    doom.jsdos
+    dn3d.jsdos
+    w3d.jsdos
   Roms/
+    Alter Ego.nes
     Anguna.gba
-    <optional Plasmon-owned NES demo>.nes
+    Mega Qbert.gen
+    School Rush.nds
+    Halo 2600.a26
+    Classic Kong.smc
   Saves/
     Native/
     States/
     DOS/
 
 /System/
-  <DOS application>.sys
-  <Emulator application>.sys
   Program Files/
     js-dos/
       runtime.json
@@ -426,12 +548,14 @@ Recommended hackathon layout:
       loader.js
       <curated UI/runtime assets>
       cores/
-        <only shipped/tested cores>
+        <parity cores, packaged/lazy-loaded as required>
 ```
 
-This is conceptual and must be reconciled with Agent 10's final `.sys`, system-path, hidden/read-only, and shortcut semantics.
+**There are intentionally no DOS/Emulator `.sys` files in this model.** The game files associate directly with js-dos or EmulatorJS handler registrations. `/System/Program Files` contains the runtimes/assets those handlers load.
 
-Game files are ordinary files. Saves are ordinary user files. Runtime/library assets are curated, read-only system resources. Applications/handlers are distinct from runtime/library directories.
+The exact demo filenames above are descriptive of the known intended set; runtime logic must not depend on those names.
+
+Game files are ordinary files. Saves are ordinary user files. Runtime/library assets are curated, read-only system resources. Handler registrations are routing/integration metadata, distinct from both `.sys` native applications and Program Files runtime directories.
 
 ---
 
@@ -439,61 +563,88 @@ Game files are ordinary files. Saves are ordinary user files. Runtime/library as
 
 The existing Plasmon `AssociationRegistry` is already sufficient.
 
-Conceptual rules:
+Conceptual required rules for the known demo parity set:
 
 ```text
-handler: native:dos
+handler: js-dos
   extension: .jsdos
-  priority: built-in default
+  priority: built-in/default runtime candidate
 
-handler: native:emulator
-  extensions: selected tested ROM extensions
-  priority: built-in default
+handler: EmulatorJS
+  extensions: .nes .gba .gen .nds .a26 .smc
+  priority: built-in/default runtime candidate
 ```
+
+The EmulatorJS handler must use a data-driven mapping from extension to system/core. It must not switch on game names.
+
+The broader daedalOS extension table in section 2 is the compatibility roadmap. Where Plasmon advertises those additional extensions, they still resolve to this same EmulatorJS handler rather than new console programs.
 
 When a user double-clicks a game:
 
 1. FileManager asks normal association resolution.
 2. Registry returns ordered candidates.
 3. The existing default/user-default logic chooses the handler.
-4. `OpenService` launches the native handler with `OpenTarget.nodeId`.
-5. The handler reads the source through `FsService` and launches the lazy runtime.
+4. `OpenService` invokes the handler with `OpenTarget.nodeId`.
+5. The handler reads the source through `FsService` and launches the lazy runtime/core in a game window.
 
 No `switch(gameName)` and no Games-specific launcher table should exist in the Shell.
 
-Open With remains useful: if a future `.neutron` Element advertises compatible ROM support, it can appear as another candidate using normal association semantics. Games should not be hard-locked to the built-in emulator.
+Open With remains useful: another compatible handler can appear as a candidate using normal association semantics. Games should not be hard-locked to one future implementation forever.
+
+### A handler is not a `.sys` application
+
+This distinction is architectural and frozen for this design:
+
+```text
+Association handler
+  = routing/execution registration known to AssociationRegistry/OpenService
+
+.sys
+  = filesystem representation of a Plasmon-native application identity
+
+/System/Program Files/<runtime>
+  = inspectable runtime/library assets
+```
+
+These concepts may be related for some Plasmon-native applications, but there is **no one-to-one requirement**.
+
+For games:
+
+```text
+.jsdos -> js-dos handler -> js-dos runtime assets
+ROM    -> EmulatorJS handler -> EmulatorJS runtime/core assets
+```
+
+Do not introduce a `.sys` facade simply to make a runtime look like a Plasmon-native application.
 
 ---
 
-## 9. Proposed `.sys` applications/handlers
+## 9. Runtime handler model — no wrapper applications
 
-Recommended conceptual split:
+### js-dos handler
 
-### DOS application (`DOS.sys`, working name)
+- ordinary AssociationRegistry/OpenService handler registration;
+- default runtime candidate for `.jsdos` game bundles;
+- owns the integration adapter between `FsService`, js-dos runtime APIs, window lifecycle, and Plasmon save persistence;
+- loads runtime/library implementation from `/System/Program Files/js-dos`;
+- does **not** correspond to `DOS.sys`.
 
-- user-visible built-in Plasmon application;
-- default handler for `.jsdos`;
-- owns window/input/lifecycle adapter for js-dos;
-- reads source/save bytes only through Plasmon services;
-- runtime/library implementation is under `/System/Program Files/js-dos`.
+### EmulatorJS handler
 
-### Emulator application (`Emulator.sys`, working name)
+- ordinary AssociationRegistry/OpenService handler registration;
+- default runtime candidate for the ROM formats in the parity set;
+- maps file type/system to a selected EmulatorJS core;
+- owns the integration adapter for ROM bytes, native-save/state persistence, input, and window lifecycle;
+- loads runtime/library implementation from `/System/Program Files/EmulatorJs`;
+- does **not** correspond to `Emulator.sys`.
 
-- user-visible built-in Plasmon application;
-- default handler for selected ROM types;
-- maps file type/system to one of the curated EmulatorJS cores;
-- owns native-save/state bridge and runtime lifecycle;
-- runtime/library implementation is under `/System/Program Files/EmulatorJs`.
+### Why not one game-name launcher
 
-### Why not one `Games.sys`
+A central `Games` program that switches on filenames would bypass the association model and couple product behavior to demo content. It would also make replacement/removal of temporary demo assets harder.
 
-A single Games app is superficially simpler, but it obscures two distinct execution/persistence stacks and makes Open With/Properties less clear. It also encourages a central game-name dispatcher.
+### Why not one handler/application per console
 
-### Why not one `.sys` per console
-
-All selected consoles share the same EmulatorJS host and lifecycle. Separate apps would duplicate window/persistence code and create noisy application identities for no MVP benefit.
-
-Final names/paths belong to the filesystem/system-app owners.
+All parity ROMs share the same EmulatorJS host and lifecycle. Separate console handlers/programs would duplicate window/persistence code and create unnecessary product identities. Format/core selection belongs inside the single EmulatorJS handler's data table.
 
 ---
 
@@ -508,9 +659,11 @@ Each runtime directory should contain:
 - only runtime files actually needed by the shipped handler/cores;
 - small meaningful defaults/config files.
 
-The visible filesystem can be a projection even if the bundler stores compiled assets elsewhere. The contract needed from Agent 10 is that system runtime resources can be read-only and inspectable without implying they are normal mutable user packages.
+The visible filesystem can be a projection even if the bundler stores compiled assets elsewhere. The contract needed from Agent 10 is that system runtime resources can be read-only and inspectable without implying they are `.sys` applications or normal mutable user packages.
 
 Saves must never be written under Program Files.
+
+For EmulatorJS, "curated" means package the parity cores needed by the known demo set and lazy-load them. It does **not** mean dropping parity formats merely to reduce effort.
 
 ---
 
@@ -537,12 +690,12 @@ Game shortcuts should use the normal Plasmon shortcut model owned by Agent 10/Fi
   -> target NodeId for /Games/DOS Bundles/doom.jsdos
   -> resolve target
   -> normal association resolution
-  -> DOS handler
+  -> js-dos handler
 ```
 
 A shortcut must not encode a second game-launch mechanism.
 
-Game-specific visual requirement: use the target game's legal artwork/thumbnail or generic game icon, then apply Agent 11's ordinary shortcut overlay treatment.
+Game-specific visual requirement: use the target game's provided/approved-for-current-build artwork or generic game icon, then apply Agent 11's ordinary shortcut overlay treatment. Temporary/unverified art follows the same pre-distribution removal/clearance gate as the corresponding demo content.
 
 ---
 
@@ -553,19 +706,19 @@ Useful ROM properties:
 - Type (`NES ROM`, `Game Boy Advance ROM`, etc.);
 - System;
 - Size;
-- Runtime/application;
+- Runtime/handler;
 - Save data present/size;
 - Modified;
-- Associated application.
+- Associated handler.
 
 Useful `.jsdos` properties:
 
 - Type (`DOS Bundle`);
 - Size;
-- Runtime/application (`js-dos` through the DOS handler);
+- Runtime/handler (`js-dos`);
 - Save data present/size;
 - Modified;
-- Associated application.
+- Associated handler.
 
 Do not expose internal Emscripten mount paths, worker filenames, core debugging flags, or browser database keys in normal Properties.
 
@@ -577,7 +730,7 @@ Research conclusion: daedalOS makes game save-state presentation visually useful
 
 MVP hierarchy:
 
-1. local curated artwork/thumbnail that has explicit redistribution rights;
+1. local provided/curated artwork available for the current build;
 2. last locally generated game screenshot where available;
 3. platform-specific generic ROM icon if Agent 11 wants variants;
 4. generic ROM/game icon;
@@ -591,18 +744,20 @@ For save files:
 
 Artwork must be packaged/local or generated locally. FileManager rendering must not depend on fetching game art from a third-party website.
 
+Temporary/unverified provided artwork may remain in the hackathon/development build with the same distribution gate as its game. It must not be represented as cleared merely because it is present.
+
 Agent 11 owns final icon language, border/size treatment, and shortcut overlay.
 
 ---
 
 ## 15. Window, fullscreen, and input behavior
 
-Games need tighter lifecycle rules than document viewers, but should still behave as normal native windows.
+Games need tighter lifecycle rules than document viewers, but should still behave as normal Plasmon windows.
 
 ### Window states
 
 - normal and maximized: canvas resizes to available client area;
-- minimize: emulator remains owned by the same process; audio should pause/mute if feasible and input must release;
+- minimize: emulator remains owned by the same runtime session; audio should pause/mute if feasible and input must release;
 - restore/focus: runtime receives focus again without reinitializing the game;
 - close: save barrier first, then runtime teardown.
 
@@ -611,7 +766,7 @@ Games need tighter lifecycle rules than document viewers, but should still behav
 Two concepts may exist:
 
 - maximized Plasmon window;
-- browser-level Fullscreen API requested by the game application from a user gesture.
+- browser-level Fullscreen API requested by the runtime integration from a user gesture.
 
 Browser fullscreen must be optional. Escape must always provide a path out of browser fullscreen/pointer lock and back to Plasmon.
 
@@ -627,6 +782,12 @@ Browser fullscreen must be optional. Escape must always provide a path out of br
 - pointer lock only after an explicit game click/user gesture where required;
 - release on Escape, blur, minimize, or close;
 - mouse capture is a runtime option, not a global OS mode.
+
+### Touch / NDS
+
+For `.nds`, the game window must expose the dual-screen/touch interaction required by the selected EmulatorJS core. This can be a runtime-local layout/overlay; it does not require a new Plasmon windowing primitive.
+
+If the selected NDS core cannot receive usable pointer/touch input in Firefox and Chromium/Edge under the packaged environment, record and escalate that concrete parity blocker.
 
 ### Controllers
 
@@ -650,15 +811,16 @@ On close dispose/revoke:
 
 Acceptance target: current desktop Firefox and Chromium/Edge in the packaged Neutron/Plasmon environment.
 
-| Capability | js-dos | EmulatorJS selected cores | MVP requirement |
+| Capability | js-dos | EmulatorJS parity cores | MVP requirement |
 | --- | --- | --- | --- |
 | WebAssembly | Yes | Yes | MUST |
-| Worker | Preferred/normal backend | runtime/core dependent | MUST for js-dos path |
-| SharedArrayBuffer / threaded WASM | Avoid for selected DOS path unless chosen build requires it | not required by the proposed low-end core set | Do not make cross-origin isolation an MVP dependency |
+| Worker | Preferred/normal backend | runtime/core dependent | MUST where selected runtime/core requires it |
+| SharedArrayBuffer / threaded WASM | avoid unless selected build requires it | core dependent; verify parity cores individually | Escalate if a parity core requires unavailable cross-origin isolation |
 | Canvas/WebGL | Canvas; optional OffscreenCanvas | Canvas/WebGL depending core | MUST |
 | AudioContext/AudioWorklet | audio path | audio path | user-gesture/autoplay test |
 | Fullscreen API | supported option | supported | HIGH |
 | Pointer Lock | optional mouse capture | core/system dependent | HIGH for mouse games |
+| Touch/pointer input | optional DOS mouse/touch mapping | required for NDS parity usability | MUST for NDS parity |
 | Gamepad API | UI/runtime support | built in | HIGH |
 | IndexedDB | upstream default save/cache | IDBFS/native save cache | available but non-authoritative |
 | OPFS | current js-dos local-persistence work | not primary | non-authoritative |
@@ -667,9 +829,17 @@ Acceptance target: current desktop Firefox and Chromium/Edge in the packaged Neu
 
 CSP/package requirements should be tested rather than guessed. Likely allowances include self-hosted WASM/worker/script assets and `blob:` for Object URLs/worker paths if the selected integration uses them. Do not open broad remote script origins; all runtime/core assets should be packaged locally for the MVP.
 
-Selected EmulatorJS systems (`nes`, `gba`, `segaMD`, `snes`, `atari2600`) do not need the threaded cores that current EmulatorJS marks for PSP/DOSBox-Pure/Azahar. This keeps SharedArrayBuffer/cross-origin-isolation out of the baseline.
+The known parity systems are:
 
-NDS is excluded from the initial recommendation for broader scope reasons, not because its extension is unsupported.
+- NES;
+- Game Boy Advance;
+- Sega Genesis/Mega Drive;
+- Nintendo DS;
+- Atari 2600;
+- SNES;
+- DOS through js-dos.
+
+None may be classified LATER solely for convenience. A format can leave the parity gate only by an explicit Coordinator A scope decision after a concrete blocker is documented.
 
 ---
 
@@ -706,59 +876,63 @@ It may remain a performance/session cache if eliminating it would require a deep
 
 ### Settings
 
-Disable EmulatorJS localStorage where practical (`EJS_disableLocalStorage`) and keep MVP settings fixed/minimal. A later settings bridge belongs to normal Plasmon app persistence, not a game-specific browser database.
+Disable EmulatorJS localStorage where practical (`EJS_disableLocalStorage`) and keep MVP settings fixed/minimal. A later settings bridge belongs to normal Plasmon persistence, not a game-specific browser database.
 
 ---
 
 ## 18. Performance and package-size analysis
 
-Do not make the initial Plasmon bundle pay for every emulator core.
+Do not make the initial Plasmon bundle pay for every emulator core, but do package/lazy-deliver every core required for the known daedalOS demo parity set.
 
 ### Runtime table
 
-| Runtime | Purpose | Size/cost finding | Browser requirements | Persistence default/behavior | MVP? |
+| Runtime | Purpose | Size/cost finding | Browser requirements | Persistence default/behavior | Parity? |
 | --- | --- | --- | --- | --- | --- |
-| js-dos `emulators` + UI | DOS `.jsdos` | JS/UI + WASM/worker assets; exact shipped size must be measured from pinned build | WASM, Worker preferred, canvas/audio, Blob if used | IndexedDB by default; current custom `fsChanges`; current local persistence also references OPFS | YES |
-| EmulatorJS 4.2.3 host | Multi-console ROM host | small host compared with all-core release; package only host + selected cores | WASM, canvas/WebGL, audio, Gamepad, Blob if used | IDBFS for native saves; localStorage settings | YES |
-| EmulatorJS all-core release | every supported core | release archive is hundreds of MB; unacceptable as default Plasmon payload | varies by core | varies | NO |
-| Individual selected EJS cores | NES/GBA/etc. | typically low-single-MB class assets per core; verify exact release files before integration | core dependent | shares EJS save bridge | YES, lazy |
+| js-dos `emulators` + UI | DOS `.jsdos` | JS/UI + WASM/worker assets; exact shipped size must be measured from pinned build | WASM, Worker preferred, canvas/audio, Blob if used | IndexedDB by default; current custom `fsChanges`; current local persistence also references OPFS | MUST |
+| EmulatorJS host | Multi-console ROM host | small host compared with all-core release; package host + parity cores | WASM, canvas/WebGL, audio, Gamepad, Blob if used | IDBFS for native saves; localStorage settings | MUST |
+| EmulatorJS all-core release | every supported core | release archive is hundreds of MB; unacceptable as unconditional startup payload | varies by core | varies | NO |
+| Parity EJS cores | NES/GBA/Genesis/NDS/Atari2600/SNES | lazy package/load the tested core set; exact release sizes must be measured | core dependent | shares EJS save bridge | MUST |
+| Additional daedalOS association cores | broader table in section 2 | add only when the corresponding content/format is actually exposed | core dependent | shares EJS save bridge | compatibility roadmap |
 
-The stable EmulatorJS 4.2.3 prebuilt all-core release is roughly 300 MB. That is evidence for a curated-core strategy, not a reason to reject EmulatorJS.
+The stable EmulatorJS all-core prebuilt release is hundreds of MB. That is evidence for a curated/lazy-core strategy, not a reason to reject required parity systems.
 
 ### Packaging strategy
 
 - initial desktop load: no game runtime/core payload executed or fetched;
 - opening first `.jsdos`: lazy-load pinned js-dos assets;
 - opening first ROM: lazy-load EmulatorJS host plus only the mapped core;
+- every core needed by the known demo parity set must be packaged/available to lazy-load before the parity gate passes;
 - cache immutable runtime assets normally after first load;
 - package/hash runtime assets locally rather than depend on CDN availability;
-- keep game/ROM bytes in the filesystem and stream/read only when launched;
-- do not package NDS BIOS/firmware.
+- keep game/ROM bytes in the filesystem and read only when launched;
+- do not add new proprietary BIOS/firmware merely to satisfy a core choice; choose another compatible core or escalate if parity is otherwise blocked.
 
-Exact compressed/brotli sizes and memory peaks are an implementation gate. The implementing agent should record bundle analyzer output for the pinned assets and one representative game per runtime.
+Exact compressed/brotli sizes and memory peaks are an implementation gate. The implementing agent should record bundle analyzer output for the pinned assets and one representative game per parity runtime/system.
 
 ---
 
-## 19. Game/ROM licensing audit
+## 19. Game/ROM licensing audit and temporary-content gate
 
-This table is a technical redistribution audit, not legal advice. "BLOCKED" means the evidence found is insufficient for bundling in a public hackathon artifact.
+This table is a technical redistribution-risk audit, not legal advice and **not a statement that any demo asset is legally cleared for public redistribution**.
+
+Coordinator A product direction for the hackathon/development build is to retain the already intended/provided demo assets while clearly marking unresolved rights. The architecture must make them removable/replacable without changing runtime code.
 
 ### Requested ROMs
 
-| Game | Format | Upstream/source evidence | License/status found | Redistribution evidence | Ship? |
-| --- | --- | --- | --- | --- | --- |
-| Alter Ego | `.nes` | Shiru/Retrosouls NES homebrew; NESdev author discussion | no exact formal license negotiated for the NES version | Shiru explicitly stated no exact license was negotiated; personal repro/ports discussed, but this is not a clean public redistribution grant | **BLOCKED** |
-| Anguna v0.95 | `.gba` | Nathan Tolbert/Gauauu readme, mirrored with the homebrew binary | custom freeware distribution permission | readme explicitly permits free binary distribution provided the readme text is made available with it | **YES, conditional** |
-| Mega Q*bert | `.gen` | Jaklub itch.io / SpritesMind | free downloadable homebrew/fan adaptation | download availability but no redistribution license located; also derivative Q*bert IP | **BLOCKED** |
-| Bilou: School Rush | `.nds` | PypeBros itch.io | free NDS homebrew; engine described as open source | no explicit binary redistribution grant located; third-party catalog labels license "Mixed" | **BLOCKED** |
-| Halo 2600 | `.a26` | Ed Fries; Smithsonian catalog | copyrighted work; Halo derivative | Smithsonian marks `© 2010, Ed Fries`; historical permission to create/distribute was limited/context-specific, not a general grant to Plasmon | **BLOCKED** |
-| Classic Kong Complete | `.smc` | BubbleZap homebrew; community catalogs | often tagged `(PD)` | NESdev documents that GoodTools `(PD)` can mean "freely distributed", not legal public domain; game is a Donkey Kong fangame/remake | **BLOCKED** |
+| Game | Format | Evidence found | Rights confidence for clean redistribution | Hackathon/development treatment |
+| --- | --- | --- | --- | --- |
+| Alter Ego | `.nes` | Shiru/Retrosouls NES homebrew; NESdev author discussion | unresolved; no clean formal redistribution license established in this pass | **KEEP TEMPORARILY / UNVERIFIED** |
+| Anguna v0.95 | `.gba` | Nathan Tolbert/Gauauu readme contains explicit binary-distribution language if its text accompanies the binary | strongest evidence in this set, but still subject to project distribution review | **KEEP TEMPORARILY / UNVERIFIED FOR PROJECT GATE** |
+| Mega Q*bert | `.gen` | free downloadable homebrew/fan adaptation | no clean redistribution license established; derivative-IP concern | **KEEP TEMPORARILY / UNVERIFIED** |
+| Bilou: School Rush | `.nds` | free NDS homebrew; engine described as open source | no explicit binary redistribution grant established in this pass | **KEEP TEMPORARILY / UNVERIFIED** |
+| Halo 2600 | `.a26` | Ed Fries / Smithsonian evidence | copyrighted/derivative work; no general Plasmon redistribution grant established | **KEEP TEMPORARILY / UNVERIFIED** |
+| Classic Kong Complete | `.smc` | homebrew/community `(PD)` tagging | `(PD)` is not reliable evidence of legal public-domain status; derivative-IP concern | **KEEP TEMPORARILY / UNVERIFIED** |
 
 Anguna evidence:
 
 - https://github.com/retrobrews/gba-games/blob/add86969f1a7a3b9534822a9a015d05ed20a0dcf/anguna.txt
 
-The readme states that Anguna may be distributed freely in binary form if that text is made available with it. If shipped, pin the exact v0.95 binary/hash and include the complete readme/notice. The art/music resources may not be extracted and reused separately.
+The readme contains favorable redistribution language for the binary if that text remains available with it. Do not convert that research observation into a blanket product claim that the full packaged asset set is legally cleared.
 
 Alter Ego evidence:
 
@@ -782,11 +956,11 @@ Classic Kong caution:
 
 ### Requested DOS bundles
 
-| Game | Format | Source/status | Redistribution concern | Ship? |
+| Game | Format | Evidence/status | Rights confidence for repackaged `.jsdos` | Hackathon/development treatment |
 | --- | --- | --- | --- | --- |
-| Doom | `.jsdos` | likely Doom shareware content in analogous daedalOS demos | Doom engine source is GPL, but game data is separate. Doom shareware license permits giving copies, while prohibiting modification/derivative works; repacking extracted game files into a new `.jsdos` container is not clearly the unmodified distribution form | **BLOCKED pending exact package/legal approval** |
-| Duke Nukem 3D | `.jsdos` | historical shareware episode exists | open-source engine release explicitly says original game data remains separately copyrighted; exact shareware redistribution/repack terms for the intended files were not established from a primary license | **BLOCKED** |
-| Wolfenstein 3-D | `.jsdos` | historical Episode 1 shareware | shareware was intended for redistribution, but exact permission for repackaging the installed files into a `.jsdos` derivative bundle was not established in this pass | **BLOCKED pending exact archive terms** |
+| Doom | `.jsdos` | historical shareware data; engine source license is separate from game data | exact `.jsdos` repackaging permission not established | **KEEP TEMPORARILY / UNVERIFIED** |
+| Duke Nukem 3D | `.jsdos` | historical shareware episode; source/data rights separate | exact `.jsdos` repackaging permission not established | **KEEP TEMPORARILY / UNVERIFIED** |
+| Wolfenstein 3-D | `.jsdos` | historical shareware Episode 1 | exact `.jsdos` repackaging permission not established | **KEEP TEMPORARILY / UNVERIFIED** |
 
 Important Doom references:
 
@@ -801,18 +975,19 @@ Duke source/data distinction:
 
 ### Why daedalOS chose these games
 
-The inspected daedalOS source and credits do **not** document a formal rationale for this exact catalog. The selection appears to be a system-diverse set weighted toward homebrew/free-download content, but that is an inference, not source-backed licensing policy. Plasmon should not assume daedalOS inclusion equals redistribution permission.
+The inspected public daedalOS source and credits do **not** document a formal rationale for this exact catalog. The selection appears to be a system-diverse set weighted toward homebrew/free-download/shareware content, but that is an inference, not source-backed licensing policy. Plasmon must not assume daedalOS inclusion equals redistribution permission.
 
-### Safe replacement recommendation
+### Required pre-distribution gate
 
-For the public MVP:
+Before any release/distribution mode that requires clean redistribution rights:
 
-1. Create a tiny **Plasmon-authored DOS demo** and package it as `.jsdos`. This proves the DOS handler/runtime/save path with no commercial game-data ambiguity.
-2. Ship **Anguna v0.95** only if the exact readme/notice is included and the binary/version is verified.
-3. Prefer a **Plasmon-authored or clearly permissively licensed NES demo** for a second ROM. A starter/reference codebase may be used only under its own clear license; the final bundled ROM/art should have explicit Plasmon-compatible rights.
-4. Allow users to open their own legally obtained ROMs for other supported extensions without Plasmon redistributing them.
+1. inventory every bundled game binary, DOS bundle, artwork file, firmware/BIOS file, and accompanying notice;
+2. classify each as cleared, project-owned, or unresolved;
+3. remove or replace unresolved assets before that distribution;
+4. keep handler/core/association behavior unchanged when content is removed;
+5. do not add substitute copyrighted game content without a separate rights review.
 
-Do not download or commit questionable ROM/game binaries as part of this design branch.
+For hackathon/development, the already intended/provided assets may remain. This design correction itself adds none.
 
 ---
 
@@ -821,7 +996,7 @@ Do not download or commit questionable ROM/game binaries as part of this design 
 | Piece | Classification | Recommendation |
 | --- | --- | --- |
 | Extension -> process association idea | **COPY/ADAPT** | map extensions to ordinary Plasmon handlers through existing AssociationRegistry |
-| One Emulator app for many systems | **COPY/ADAPT** | keep one handler and core map |
+| One Emulator runtime handler for many systems | **COPY/ADAPT** | keep one EmulatorJS handler and core map |
 | Read game bytes from virtual FS then Blob URL | **COPY/ADAPT** | use `FsService`; prefer direct byte API if stable, Blob only as adapter |
 | Lazy runtime dependencies | **COPY/ADAPT** | critical for package cost |
 | Save-on-close lifecycle | **COPY/ADAPT** | preserve, but await Plasmon persistence barrier |
@@ -830,85 +1005,86 @@ Do not download or commit questionable ROM/game binaries as part of this design 
 | `/Users/Public/Snapshots` user-visible concept | **CONCEPT ONLY** | replace with typed `/Games/Saves` structure |
 | Emscripten filesystem exposure in FileManager | **CONCEPT ONLY / POST-MVP** | interesting inspectability, not required to prove launch/save |
 | daedalOS basename save keys | **DO NOT USE** | breaks on rename and collides |
-| daedalOS old vendored EmulatorJS 2.3.5 | **DO NOT USE** | pin current stable 4.2.3 instead |
+| daedalOS old vendored EmulatorJS runtime | **DO NOT USE** | pin a tested supported EmulatorJS release instead |
 | browser IndexedDB as durable game truth | **DO NOT USE** | Plasmon `FsService` must be authoritative |
 | hard-coded game catalog/switch statements | **DO NOT USE** | associations drive launch |
-| all EmulatorJS cores/assets | **DO NOT USE** | curated lazy core set only |
-| daedalOS game binaries without independent license review | **DO NOT USE** | license each bundled content file independently |
+| all EmulatorJS cores as unconditional startup payload | **DO NOT USE** | curated lazy core set; include all parity cores, not every upstream core |
+| `.sys` facade for js-dos/EmulatorJS | **DO NOT USE** | handler registrations route directly to existing runtimes |
+| assuming daedalOS inclusion means legal clearance | **DO NOT USE** | keep existing demos temporary/unverified; enforce pre-distribution gate |
 
 If any daedalOS wrapper code is copied substantially, preserve its MIT attribution. js-dos and EmulatorJS runtime licenses remain separate obligations.
 
 ---
 
-## 21. Bounded hackathon MVP proposal
+## 21. Bounded hackathon parity proposal
 
-Two runtimes are justified because they prove that Plasmon's filesystem/application abstraction is not specific to one emulator format.
+Two runtimes are justified because they prove that Plasmon's filesystem/association abstraction is not specific to one emulator format.
 
 ### MUST demo flow A: DOS
 
 ```text
-/Games/DOS Bundles/plasmon-demo.jsdos
+/Games/DOS Bundles/<existing demo>.jsdos
   -> AssociationRegistry
-  -> DOS native handler
-  -> lazy js-dos runtime
+  -> js-dos handler
+  -> lazy /System/Program Files/js-dos runtime
   -> play/change DOS files
   -> close
   -> /Games/Saves/DOS/.../current.changes
   -> reopen and restore
 ```
 
-Use a tiny Plasmon-owned DOS program/game, not Doom/Duke/Wolfenstein unless licensing is separately cleared.
+The intended Doom, Duke Nukem 3D, and Wolfenstein 3-D bundles may remain as temporary/unverified hackathon/development examples. Runtime code must treat them as generic `.jsdos` files.
 
-### MUST demo flow B: ROM
+### MUST demo flow B: EmulatorJS parity
+
+Every known daedalOS EmulatorJS demo format must launch through the single EmulatorJS handler:
 
 ```text
-/Games/Roms/Anguna.gba
-  -> AssociationRegistry
-  -> Emulator native handler
-  -> lazy EmulatorJS + mgba core
-  -> play/save
-  -> close
-  -> native save and/or autosave state under /Games/Saves
-  -> reopen and restore
+Alter Ego.nes         -> EmulatorJS -> NES core
+Anguna.gba            -> EmulatorJS -> GBA core
+Mega Qbert.gen        -> EmulatorJS -> Genesis/Mega Drive core
+School Rush.nds       -> EmulatorJS -> NDS core
+Halo 2600.a26         -> EmulatorJS -> Atari 2600 core
+Classic Kong.smc      -> EmulatorJS -> SNES core
 ```
 
-A small legally owned NES ROM is the ideal second ROM because NES is lightweight and demonstrates a second extension/core without the NDS BIOS burden.
+Each flow must use normal `FsService` reads, normal associations, lazy core assets, and the same generic save bridge.
 
-### MVP supported formats
+### Hackathon parity formats
 
-Hard gate: **only advertise formats whose core is packaged and smoke-tested.**
-
-Recommended first gate:
+Hard gate: **the known daedalOS demo content types are MUST.**
 
 - `.jsdos`;
-- `.gba` (`mgba`);
-- `.nes` (`fceumm`).
+- `.nes`;
+- `.gba`;
+- `.gen`;
+- `.nds`;
+- `.a26`;
+- `.smc`.
 
-If the first gate is stable and package cost remains small, add in this order:
+Implementation may stage these in an efficient order, but the final parity gate is not complete until all seven content types launch or a concrete blocker has been escalated and explicitly dispositioned by Coordinator A.
 
-- `.a26` (`stella2014`);
-- `.smc`/`.sfc` (`snes9x`);
-- `.gen`/`.md` (`genesis_plus_gx`).
-
-Do not include `.nds` in the hackathon baseline.
+The broader association surface in section 2 remains a compatibility target/data table, but the seven content types above are the required known-demo parity subset.
 
 ### Convincing demo acceptance
 
-- double-click launches via normal associations;
+- double-click launches every known parity content type via normal associations;
 - Open With shows normal candidates/default behavior;
+- no game launch depends on a `.sys` wrapper;
 - a desktop shortcut opens the same target through normal resolution;
 - Properties shows system/runtime/save information;
-- runtime is lazy-loaded;
-- save progress survives close/reopen from Plasmon persistence;
+- runtime/core is lazy-loaded;
+- save progress survives close/reopen from Plasmon persistence where the game/core has persistent data/state support;
 - renaming/moving the source file does not lose its save because `NodeId` is stable;
-- current Firefox and Edge/Chromium pass launch/audio/input/close/reopen smoke tests.
+- current Firefox and Edge/Chromium pass launch/audio/input/close/reopen smoke tests for each parity system;
+- NDS touch/dual-screen interaction is usable or a concrete blocker is escalated;
+- removing a temporary demo file does not require changing handler/runtime code.
 
 ---
 
 ## 22. Post-MVP features
 
-- more EmulatorJS systems/cores;
-- NDS with an explicit BIOS ownership/import story or a core choice that does not require bundled proprietary firmware;
+- EmulatorJS systems/cores from the broader daedalOS association table that are not represented in the known current demo set;
 - multiple save-state slots;
 - save import/reassociation UX;
 - controller remapping UI;
@@ -921,6 +1097,8 @@ Do not include `.nds` in the hackathon baseline.
 - game catalog/discovery/store UX;
 - Atom-like shareable game-session/save resources after the Atom design is complete.
 
+**NDS itself is not listed here** because it is part of the hackathon parity requirement.
+
 No Atom/MTN/Sharing dependency is required for the hackathon game subsystem.
 
 ---
@@ -931,23 +1109,23 @@ No Atom/MTN/Sharing dependency is required for the hackathon game subsystem.
 
 Need final decisions/guarantees for:
 
-1. `.sys` built-in application representation and canonical system paths;
-2. stable `NodeId` preservation across rename/move in the actual implementation;
-3. shortcut target representation/resolution so a shortcut reaches the target node before normal association resolution;
-4. read-only/system semantics for `/System/Program Files`;
-5. hidden metadata conventions, especially whether typed save metadata belongs directly on `FsNode.metadata`;
-6. whether `/Games/Saves` is seeded or created on first use;
-7. search/index behavior for save files;
-8. copy semantics for NodeId so copied games naturally receive a new save identity.
+1. stable `NodeId` preservation across rename/move in the actual implementation;
+2. shortcut target representation/resolution so a shortcut reaches the target node before normal association resolution;
+3. read-only/system semantics for `/System/Program Files`;
+4. hidden metadata conventions, especially whether typed save metadata belongs directly on `FsNode.metadata`;
+5. whether `/Games/Saves` is seeded or created on first use;
+6. search/index behavior for save files;
+7. copy semantics for NodeId so copied games naturally receive a new save identity;
+8. clear confirmation that handler registration can exist without a `.sys` filesystem application, preserving the Coordinator A distinction rather than coupling the two concepts later.
 
-Agent 12 does not need Agent 10 to implement runtime launch; these are integration contracts to consume after Agent 10 freezes them.
+Agent 12 does **not** require Agent 10 to invent DOS/Emulator `.sys` nodes.
 
 ### Agent 11 — visual system
 
 Need assets/rules for:
 
-1. built-in DOS application icon;
-2. built-in Emulator application icon;
+1. js-dos handler/runtime icon identity where a handler icon is surfaced;
+2. EmulatorJS handler/runtime icon identity where a handler icon is surfaced;
 3. generic `.jsdos` bundle icon;
 4. generic ROM icon, optionally with small platform variants if consistent with the new visual system;
 5. native-save icon/presentation;
@@ -956,21 +1134,28 @@ Need assets/rules for:
 8. thumbnail dimensions/cropping/fallback behavior;
 9. whether platform/system badges are allowed without making icons visually noisy.
 
+These are handler/runtime/file visuals, **not requests for DOS/Emulator `.sys` application icons.**
+
 Agent 12 supplies the semantic states; Agent 11 owns final art and icon language.
 
 ---
 
-## 24. Work later needed from native-app, Shell, and FileManager owners
+## 24. Work later needed from runtime, Shell, and FileManager owners
 
-### Native-app/game runtime owner
+### Game runtime integration owner
 
-- implement DOS and Emulator native application shells;
-- implement lazy runtime asset loading;
+- implement the js-dos handler adapter/window integration;
+- implement the single EmulatorJS handler adapter/window integration;
+- implement data-driven extension -> system/core selection for all parity formats;
+- implement lazy runtime/core asset loading;
 - implement `FsService` byte bridge;
 - implement js-dos change persistence adapter;
 - implement EmulatorJS native-save and state bridge;
 - implement worker/iframe/objectURL/audio teardown;
-- implement focused input/pointer/fullscreen handling.
+- implement focused input/pointer/fullscreen handling;
+- implement NDS dual-screen/touch behavior required by the selected core.
+
+Do not implement `.sys` wrapper shells around either runtime.
 
 ### Shell/window owner
 
@@ -983,37 +1168,40 @@ No WindowManager redesign is requested.
 
 ### FileManager/Open With owner
 
-- register built-in handler definitions/rules at integration composition point;
+- register js-dos and EmulatorJS handler definitions/rules at the integration composition point;
 - preserve normal Open With/default semantics;
 - surface game-specific Properties data using provider/metadata extension points;
-- render legal artwork/generated thumbnails through the normal icon/thumbnail path;
+- render provided/generated thumbnails through the normal icon/thumbnail path;
 - make shortcuts visually resolve to target game artwork plus normal overlay.
 
 ### Build/package owner
 
 - package exact pinned runtime assets;
-- exclude unused EmulatorJS cores;
+- include every EmulatorJS core needed by the known demo parity set while still lazy-loading them;
+- exclude unrelated unused cores from the unconditional/startup payload;
 - include required GPL notices/source compliance artifacts;
 - collect exact compressed sizes and bundle analyzer output;
-- configure CSP for local WASM/worker/Blob use only as needed.
+- configure CSP for local WASM/worker/Blob use only as needed;
+- do not introduce new proprietary BIOS/firmware without explicit project direction.
 
 ---
 
 ## 25. Implementation sequence
 
-1. **Freeze integration names only after Agent 10 review.** Keep internal handler IDs stable even if display filenames change.
-2. Register two native handlers with existing AssociationRegistry; add only `.jsdos`, `.gba`, `.nes` at the first gate.
-3. Implement a shared small `GameSession` lifecycle helper only if it reduces duplicated focus/close/resource cleanup; do not create a second game framework.
-4. Implement DOS handler with a Plasmon-authored `.jsdos` fixture and no browser-authoritative persistence.
-5. Implement Emulator handler with one permissive/test ROM, `mgba` or `fceumm`, and Plasmon-authoritative save bridge.
-6. Add typed `/Games/Saves` creation/metadata using Agent 10's final FS semantics.
-7. Add close autosave state after native-save correctness is proven.
-8. Add Properties and shortcut behavior through existing FileManager surfaces.
-9. Add Agent 11 icons/thumbnail hierarchy.
-10. Run Firefox + Edge/Chromium packaged-environment acceptance.
-11. Record actual runtime/core compressed sizes and memory observations.
-12. Only then add `.a26`, `.smc/.sfc`, `.gen/.md` if schedule/package budget allows.
-13. Keep `.nds` post-MVP unless the BIOS/firmware and UX scope is explicitly accepted.
+1. Register js-dos and EmulatorJS handlers with existing `AssociationRegistry`; do not create `.sys` wrappers.
+2. Implement js-dos launch against an existing intended `.jsdos` demo and make browser-local persistence non-authoritative.
+3. Implement one generic EmulatorJS handler plus data-driven extension/system mapping.
+4. Bring up the easiest EmulatorJS parity ROM first to validate the generic loader/save bridge.
+5. Add the remaining parity mappings/cores in a staged order, but keep all `.nes`, `.gba`, `.gen`, `.nds`, `.a26`, `.smc` targets in MUST scope.
+6. For `.nds`, test a pinned compatible core that does not require adding new proprietary firmware if possible; escalate a concrete blocker rather than demoting NDS silently.
+7. Add typed `/Games/Saves` creation/metadata using Agent 10's final FS semantics.
+8. Add native-save correctness, then close autosave state where supported.
+9. Add Properties and shortcut behavior through existing FileManager surfaces.
+10. Add Agent 11 icons/thumbnail hierarchy.
+11. Run Firefox + Edge/Chromium packaged-environment acceptance for all seven parity content types.
+12. Record actual runtime/core compressed sizes and memory observations.
+13. Keep the broader daedalOS association surface data-driven for later content without packaging every upstream core at startup.
+14. Before a clean-rights distribution, execute the temporary-content removal/replacement/clearance gate without changing runtime code.
 
 ---
 
@@ -1026,57 +1214,95 @@ Definitions requested for this project:
 
 | Work | Priority | Size | Owner note |
 | --- | --- | --- | --- |
-| Register DOS + Emulator handlers using existing associations | MUST | Small | integration/native app |
-| `.jsdos` runtime launch from `FsService` | MUST | Medium | native app |
-| js-dos Plasmon-authoritative changes persistence | MUST | Medium | native app/persistence |
-| EmulatorJS one-core launch from `FsService` | MUST | Medium | native app |
-| EmulatorJS native-save bridge | MUST | Big | native app/persistence |
-| EmulatorJS autosave-state bridge | MUST | Medium | native app/persistence |
+| Register js-dos + EmulatorJS handlers using existing associations, with no `.sys` wrappers | MUST | Small | integration |
+| `.jsdos` runtime launch from `FsService` | MUST | Medium | runtime integration |
+| js-dos Plasmon-authoritative changes persistence | MUST | Medium | runtime/persistence |
+| Generic EmulatorJS launch from `FsService` | MUST | Medium | runtime integration |
+| EmulatorJS native-save bridge | MUST | Big | runtime/persistence |
+| EmulatorJS autosave-state bridge | MUST | Medium | runtime/persistence |
+| `.nes` parity | MUST | Small after generic loader | EmulatorJS |
+| `.gba` parity | MUST | Small after generic loader | EmulatorJS |
+| `.gen` parity | MUST | Small after generic loader | EmulatorJS |
+| `.a26` parity | MUST | Small after generic loader | EmulatorJS |
+| `.smc` parity | MUST | Small after generic loader | EmulatorJS |
+| `.nds` parity including touch/core/firmware decision | MUST | Big | EmulatorJS; escalate blocker, do not silently defer |
 | `/Games/Saves` typed metadata/layout | MUST | Medium | coordinate Agent 10 |
 | Runtime manifests/license notices | MUST | Small | build/package |
-| Lazy runtime/core packaging | MUST | Medium | build/package |
-| Plasmon-owned DOS demo `.jsdos` | MUST | Small | content/test |
-| Anguna verification/readme packaging | HIGH | Small | content/legal gate |
-| Current Firefox + Edge/Chromium smoke matrix | MUST | Medium | integration QA |
+| Lazy runtime/parity-core packaging | MUST | Medium | build/package |
+| Keep intended demo content data-only/generic | MUST | Tiny | no game-name dispatcher |
+| Temporary/unverified content pre-distribution gate | MUST before clean-rights distribution | Medium | packaging/release |
+| Current Firefox + Edge/Chromium parity smoke matrix | MUST | Big | integration QA across all parity systems |
 | Properties fields | HIGH | Small | FileManager |
-| Game/save thumbnails | HIGH | Medium | native app + Agent 11 |
+| Game/save thumbnails | HIGH | Medium | runtime + Agent 11 |
 | Shortcut target game icon integration | HIGH | Small | FileManager + Agent 11 |
-| Add Atari 2600 core/extension | NORMAL | Small | after generic loader |
-| Add SNES core/extensions | NORMAL | Small | after generic loader |
-| Add Genesis core/extensions | NORMAL | Small | after generic loader |
+| Additional daedalOS association formats beyond current demo set | NORMAL | Medium cumulative | same EmulatorJS handler |
 | Save import/reassociation UI | LATER | Medium | FileManager |
-| Multi-slot save-state UI | LATER | Medium | native app |
-| NDS support with BIOS/firmware story | LATER | Big | runtime/legal/UX |
-| All-core emulator catalog | LATER | Really Big | explicitly out of hackathon scope |
+| Multi-slot save-state UI | LATER | Medium | runtime |
+| All upstream EmulatorJS cores/content catalog | LATER | Really Big | not required for current daedalOS demo parity |
 | Netplay/store/achievements | LATER | Really Big | explicitly out of scope |
 
 ---
 
 ## 27. Unresolved decisions
 
-1. Final visible names/paths: `DOS.sys`, `Emulator.sys`, or Agent 10 alternatives.
-2. Exact js-dos pin for implementation: reproduce daedalOS-proven 8.3.9 first versus moving directly to current 8.4.x after a smoke test. Recommendation: start from 8.3.9 behavior and upgrade only with a measured test.
-3. Whether `/System/Program Files` is physically materialized or a virtual read-only projection.
-4. Exact save extensions. Recommendation is `.changes` for DOS delta, native/core-appropriate save extension for native bytes, and `.state` for emulator state; avoid globally hijacking generic `.sav` for all concepts.
-5. Whether the MVP advertises only `.gba`/`.nes` initially or also the three low-scope extra core families after the first integration gate.
+1. Exact js-dos pin for implementation: reproduce daedalOS-proven 8.3.9 first versus moving to a newer supported line after a measured smoke test.
+2. Whether `/System/Program Files` is physically materialized or a virtual read-only projection.
+3. Exact save extensions. Recommendation is `.changes` for DOS delta, native/core-appropriate save extension for native bytes, and `.state` for emulator state; avoid globally hijacking generic `.sav` for all concepts.
+4. Exact modern EmulatorJS core selection for each parity system, especially `.nds`.
+5. For NDS, whether the chosen core can satisfy School Rush parity without adding new proprietary BIOS/firmware. If not, escalate the specific blocker to Coordinator A.
 6. Whether every clean close creates `autosave.state` or only native save data is automatic. Recommendation: native save always; autosave state on clean close where core supports it, clearly labeled as state.
-7. Exact EmulatorJS 4.2.3 method used to ensure IDBFS can never beat newer Plasmon bytes. The 4.2.2 events make the bridge feasible, but implementation should include a targeted smoke test of startup seed -> play -> save -> clear browser storage -> restore from Plasmon.
+7. Exact EmulatorJS method used to ensure IDBFS can never beat newer Plasmon bytes. Implementation should include a targeted smoke test of startup seed -> play -> save -> clear browser storage -> restore from Plasmon.
 8. Exact CSP rules in the packaged Neutron context after runtime assets are pinned.
-9. Legal approval for any commercial/shareware-derived DOS demo content. Until approved, ship only Plasmon-owned DOS content.
+9. Which temporary/unverified game/art assets survive the separate pre-distribution rights gate. This must not affect handler/runtime architecture.
+
+The question of `DOS.sys` versus `Emulator.sys` is **not unresolved**: neither wrapper should exist.
 
 ---
 
 ## Required format table
 
-| Extension | System | Handler/runtime | Save support | BIOS? | MVP? | Confidence / browser note |
+### Known daedalOS demo parity — all MUST
+
+| Extension | Demonstrated system/content | Handler/runtime | Save support | BIOS/firmware concern | Hackathon parity | Browser note |
 | --- | --- | --- | --- | --- | --- | --- |
-| `.jsdos` | DOS | DOS handler / js-dos | filesystem-change bundle; in-game saves inside changes | No | **YES** | High; Worker/WASM/audio/pointer behavior must pass packaged-browser smoke |
-| `.nes` | NES/Famicom cartridge | Emulator / EmulatorJS `fceumm` | native save where cartridge supports it + save state | No for ordinary NES carts; FDS BIOS only for FDS | **YES** | High |
-| `.gba` | Game Boy Advance | Emulator / EmulatorJS `mgba` | native save + state | GBA BIOS optional | **YES** | High |
-| `.gen`, `.md` | Sega Mega Drive/Genesis | Emulator / `genesis_plus_gx` | SRAM where game supports it + state | upstream documents TMSS `bios_MD.bin`; ordinary cart path should be tested without bundling BIOS | **NORMAL after first gate** | High for core; validate BIOS-free test ROM |
-| `.a26` | Atari 2600 | Emulator / `stella2014` | state; native persistent save only for cartridges/peripherals that provide it | No normal console BIOS | **NORMAL after first gate** | High, small scope |
-| `.smc`, `.sfc` | SNES/Super Famicom | Emulator / `snes9x` | SRAM + state | No ordinary-cart BIOS; BS-X/Sufami BIOS optional for those modes | **NORMAL after first gate** | High |
-| `.nds` | Nintendo DS | Emulator / default `melonds` | native save + state | **Yes for melonDS:** `bios7.bin`, `bios9.bin`, `firmware.bin` | **NO / LATER** | Technically supported, but BIOS/firmware + dual-screen/touch + package/UX expand scope |
+| `.jsdos` | DOS | js-dos handler / js-dos | filesystem-change bundle; in-game saves inside changes | No normal BIOS requirement | **MUST** | Worker/WASM/audio/pointer behavior must pass packaged-browser smoke |
+| `.nes` | NES/Famicom cartridge | EmulatorJS handler / `nes` system | native save where cartridge supports it + state | No for ordinary NES carts; FDS is separate | **MUST** | expected low-risk parity path |
+| `.gba` | Game Boy Advance | EmulatorJS handler / `gba` system | native save + state | GBA BIOS is optional for common emulation paths | **MUST** | expected low-risk parity path |
+| `.gen` | Sega Mega Drive/Genesis | EmulatorJS handler / `segaMD` system | SRAM where game supports it + state | verify selected core's BIOS/TMSS behavior without adding new firmware | **MUST** | test Mega Q*bert directly |
+| `.a26` | Atari 2600 | EmulatorJS handler / `atari2600` system | state; native persistence only where cartridge/peripheral supports it | No normal console BIOS | **MUST** | expected low-risk parity path |
+| `.smc` | SNES/Super Famicom | EmulatorJS handler / `snes` system | SRAM + state | no ordinary-cart BIOS | **MUST** | test Classic Kong directly |
+| `.nds` | Nintendo DS | EmulatorJS handler / `nds` system | native save + state | core-dependent; melonDS may require BIOS/firmware, other available cores may differ | **MUST** | dual-screen/touch + core/firmware path must be tested; escalate blocker rather than defer |
+
+### Broader tracked daedalOS EmulatorJS association surface
+
+These extensions all map to the same daedalOS Emulator process and therefore should remain expressible through one Plasmon EmulatorJS handler if/when exposed:
+
+```text
+.32x
+.a26 .a52 .a78
+.gb .gba .gbc
+.gen .md .smd
+.gg .sms
+.j64 .jag
+.lnx
+.n64 .v64 .z64
+.nds .nes
+.ngc .ngp
+.pce
+.sfc .smc
+.vb .vboy
+.ws .wsc
+```
+
+Tracked js-dos candidate surface:
+
+```text
+.jsdos
+.exe   (js-dos is one candidate alongside BoxedWine in daedalOS)
+.zip   (js-dos is one candidate alongside archive/FileExplorer and BoxedWine behavior in daedalOS)
+```
+
+Do not collapse generic `.exe` or `.zip` handling merely to imitate js-dos; preserve normal multi-handler/Open With semantics.
 
 System documentation:
 
@@ -1120,27 +1346,27 @@ Make `FsService` authoritative. Seed runtime caches from Plasmon on launch, flus
 
 ### 8. Which ROM systems should the hackathon MVP support?
 
-First gate: NES and GBA. Add Atari 2600, SNES, and Genesis only after the generic loader/save bridge passes and package cost remains acceptable. Do not make NDS a baseline.
+Every system represented in the known daedalOS EmulatorJS demo set: NES, GBA, Genesis/Mega Drive, Nintendo DS, Atari 2600, and SNES. `.jsdos` DOS content is also MUST. NDS may not be demoted merely for convenience; a concrete blocker must be escalated.
 
 ### 9. Which requested sample games are legally redistributable?
 
-Anguna v0.95 has explicit binary redistribution permission provided its readme text accompanies it. No other requested ROM received a sufficiently clear public-bundling approval from the evidence found in this pass.
+This design does **not** claim that the packaged demo set is legally cleared. Anguna has the strongest explicit redistribution evidence found, while several other demos remain unresolved. All intended/provided demo assets are treated as temporary/unverified for the hackathon/development build until the separate pre-distribution rights gate.
 
 ### 10. Which require replacements?
 
-Alter Ego, Mega Q*bert, School Rush, Halo 2600, and Classic Kong should be considered blocked until explicit rights evidence is obtained. For the hackathon, replace at least the NES example with a Plasmon-owned/permissively licensed demo. Doom/Duke/Wolf `.jsdos` examples are also blocked pending exact repackaging rights; use a Plasmon-owned DOS demo.
+None are required to be replaced merely to continue the hackathon/development build under the current product direction. Any asset that remains unresolved at a clean-rights distribution gate must then be removed, replaced, or separately cleared. No new copyrighted substitute content should be added casually.
 
 ### 11. Should there be one `Games.sys`, separate `DOS.sys`/`Emulator.sys`, or something else?
 
-Use two conceptual applications: DOS and Emulator. One Emulator app handles all selected ROM systems. Do not create one app per console and do not collapse the materially different DOS/emulator runtimes into a game-name launcher.
+**None of those wrappers.** Register one js-dos handler and one EmulatorJS handler. They route directly to runtimes/assets under `/System/Program Files`. A handler does not require a `.sys`; `.sys` remains for Plasmon-native application identity.
 
 ### 12. What belongs in `/System/Program Files`?
 
-Pinned, read-only, curated runtime assets; version/upstream/license manifest; license notices; only selected EmulatorJS cores; meaningful defaults. Not node_modules/build cache, not saves, and not the user-facing application identity itself.
+Pinned, read-only, curated runtime assets; version/upstream/license manifest; license notices; parity EmulatorJS cores; meaningful defaults. Not `node_modules`/build cache, not saves, and not fake `.sys` facade applications.
 
 ### 13. How should normal Open With/association resolution launch games?
 
-Register normal native handler definitions/rules with existing AssociationRegistry. `OpenService` receives the chosen handler plus `OpenTarget.nodeId`; the handler reads the game from `FsService`.
+Register normal js-dos/EmulatorJS handler definitions/rules with existing AssociationRegistry. `OpenService` receives the chosen handler plus `OpenTarget.nodeId`; the handler reads the game from `FsService` and invokes the corresponding runtime.
 
 ### 14. How should game shortcuts work?
 
@@ -1164,19 +1390,19 @@ Yes. Native saves are usually more portable; states are core/version-sensitive. 
 
 ### 19. How are game thumbnails generated/selected?
 
-Known legal packaged art first, then locally generated last-session screenshot, then platform/generic game icon. Save-state screenshots can be thumbnails; no live web art dependency.
+Provided/local current-build artwork first where available, then locally generated last-session screenshot, then platform/generic game icon. Temporary/unverified provided art follows the same distribution gate as its game. Save-state screenshots can be thumbnails; no live web art dependency.
 
 ### 20. What is the minimum convincing hackathon implementation?
 
-Two normal file types (`.jsdos` plus one/two ROM types), two native handlers, lazy runtimes, one legal DOS demo, one legal ROM, Plasmon-authoritative save/restore, normal shortcut/Open With/Properties, and Firefox/Edge smoke acceptance.
+Association-driven launch and persistence for the complete known daedalOS js-dos/EmulatorJS demo-format set: `.jsdos`, `.nes`, `.gba`, `.gen`, `.nds`, `.a26`, `.smc`; one js-dos handler; one EmulatorJS handler; lazy runtimes/cores; normal shortcut/Open With/Properties; Plasmon-authoritative save/restore; Firefox and Edge/Chromium parity tests; and no `.sys` wrappers.
 
 ### 21. What can we directly adapt from daedalOS?
 
-Association-driven launch concept, one Emulator app for many systems, FS-byte-to-runtime bridge, lazy dependencies, save-on-close lifecycle, generated screenshots, and optional iframe isolation pattern.
+Association-driven launch concept, one Emulator runtime handler for many systems, FS-byte-to-runtime bridge, lazy dependencies, save-on-close lifecycle, generated screenshots, and optional iframe isolation pattern.
 
 ### 22. What should we deliberately not copy?
 
-Basename save keys, old vendored EmulatorJS runtime, browser-local persistence authority, hard-coded game catalogs, all-core bundles, ambiguous mixed snapshot formats, or any bundled game data whose redistribution rights were not independently verified.
+Basename save keys, old vendored EmulatorJS runtime, browser-local persistence authority, hard-coded game catalogs, all-core unconditional payloads, ambiguous mixed snapshot formats, `.sys` facades around third-party runtimes, or the assumption that daedalOS inclusion proves redistribution clearance.
 
 ---
 
@@ -1185,6 +1411,7 @@ Basename save keys, old vendored EmulatorJS runtime, browser-local persistence a
 ### daedalOS exact source
 
 - https://github.com/DustinBrett/daedalOS/tree/0df82d75e6114727ad035f6fce93842a96682355
+- https://github.com/DustinBrett/daedalOS/blob/0df82d75e6114727ad035f6fce93842a96682355/.gitignore
 - https://github.com/DustinBrett/daedalOS/blob/0df82d75e6114727ad035f6fce93842a96682355/components/apps/JSDOS/config.ts
 - https://github.com/DustinBrett/daedalOS/blob/0df82d75e6114727ad035f6fce93842a96682355/components/apps/JSDOS/useDosCI.ts
 - https://github.com/DustinBrett/daedalOS/blob/0df82d75e6114727ad035f6fce93842a96682355/components/apps/JSDOS/useJSDOS.ts
@@ -1231,10 +1458,13 @@ Basename save keys, old vendored EmulatorJS runtime, browser-local persistence a
 
 ## Design-phase confirmations
 
-- No ROM binaries were downloaded or committed.
-- No DOS commercial/shareware game data was committed.
+- No production implementation was added.
+- No new ROM binaries or new copyrighted game content were added by this design correction.
+- No DOS commercial/shareware game data was added by this design correction.
+- Existing intended/provided demo assets are allowed to remain in hackathon/development content under the temporary/unverified policy; this document does not claim they are legally cleared.
 - No proof code was added; source inspection was sufficient to answer the design questions.
 - No Plasmon frozen OS contracts were changed.
 - No MTN, Sharing, Atom, Kernel, Shell/Desktop production code, Agent 10 filesystem design, Agent 11 theme design, or package lock was changed.
-- This document is the only intended branch change for the design phase.
+- The `.sys` wrapper concept is explicitly rejected for js-dos and EmulatorJS.
+- The known daedalOS game-format parity target is explicitly `.jsdos`, `.nes`, `.gba`, `.gen`, `.nds`, `.a26`, `.smc`.
 - No pull request is required or intended for this Agent 12 handoff.
