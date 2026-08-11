@@ -4,6 +4,10 @@ export const DEFAULT_ELEMENT_ICON_PROBE_TIMEOUT_MS = 1_500;
 
 const ICON_PATH_MAX_LENGTH = 512;
 const URI_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/u;
+const COMPATIBILITY_ICON_PATHS = [
+  "static/icon.svg",
+  "static/icon.png",
+] as const;
 
 export type ElementIconProbe = (candidate: string) => boolean | Promise<boolean>;
 
@@ -78,9 +82,9 @@ export function declaredElementIconPath(
 }
 
 /**
- * Resolve one declared package-local path through the two Neutron app-origin
- * forms already supported by the runtime. This deliberately does not invent
- * alternate extensions or other asset paths.
+ * Resolve one package-local path through the two Neutron app-origin forms
+ * already supported by the runtime. This function never invents an extension
+ * or trusts an arbitrary URL.
  */
 export function elementIconCandidates(
   appId: string,
@@ -157,48 +161,25 @@ async function probeWithTimeout(
 }
 
 /**
- * Start the at-most-two safe origin probes concurrently. Resolve as soon as
- * the highest-priority candidate that can still win is known.
+ * Probe candidates strictly in priority order and stop after the first success.
+ * This avoids the old burst of parallel 404s while retaining a finite timeout
+ * for an origin that never settles.
  */
 export async function firstLoadableIconCandidate(
   candidates: readonly string[],
   probe: ElementIconProbe,
   timeoutMs = DEFAULT_ELEMENT_ICON_PROBE_TIMEOUT_MS,
 ): Promise<string | undefined> {
-  if (candidates.length === 0) return undefined;
   const timeout = normalizedTimeout(timeoutMs);
-
-  return await new Promise<string | undefined>((resolve) => {
-    const results: Array<boolean | undefined> = new Array(candidates.length).fill(undefined);
-    let settled = false;
-
-    const choose = (): void => {
-      if (settled) return;
-      for (let index = 0; index < results.length; index += 1) {
-        const result = results[index];
-        if (result === undefined) return;
-        if (result) {
-          settled = true;
-          resolve(candidates[index]);
-          return;
-        }
-      }
-      settled = true;
-      resolve(undefined);
-    };
-
-    candidates.forEach((candidate, index) => {
-      void probeWithTimeout(candidate, probe, timeout).then((loaded) => {
-        results[index] = loaded;
-        choose();
-      });
-    });
-  });
+  for (const candidate of candidates) {
+    if (await probeWithTimeout(candidate, probe, timeout)) return candidate;
+  }
+  return undefined;
 }
 
 /**
- * Browser Image probing avoids fetch/CORS assumptions. No probe is created at
- * all when descriptor metadata supplies no safe package-local icon path.
+ * Browser Image probing avoids fetch/CORS assumptions. Each call is bounded;
+ * the caller controls sequential candidate ordering and short-circuiting.
  */
 export function probeBrowserImage(
   candidate: string,
@@ -225,17 +206,36 @@ export function probeBrowserImage(
   });
 }
 
-/** Resolve one verified descriptor-declared icon for ExternalElement.icon. */
+/**
+ * Resolve exactly one verified package-local icon for ExternalElement.icon.
+ *
+ * Descriptor-declared safe paths always win and are the only path tried when
+ * present. Current Kernel apps.describe does not expose tile/tray icon paths,
+ * so a missing declaration receives one tightly bounded compatibility search:
+ * static/icon.svg followed by static/icon.png. Each path tries the preferred
+ * Neutron origin, then the alternate origin, and every success short-circuits.
+ */
 export async function resolveElementIcon(
   appId: string,
   declaredPath?: string,
   href?: string,
   options: ElementIconResolveOptions = {},
 ): Promise<string | undefined> {
-  const candidates = elementIconCandidates(appId, declaredPath, href);
-  if (candidates.length === 0) return undefined;
+  const safeDeclaredPath = safePackageIconPath(declaredPath);
+  const paths = safeDeclaredPath === undefined
+    ? COMPATIBILITY_ICON_PATHS
+    : [safeDeclaredPath];
   const timeout = normalizedTimeout(options.timeoutMs);
   const probe = options.probe
     ?? ((candidate: string) => probeBrowserImage(candidate, timeout));
-  return await firstLoadableIconCandidate(candidates, probe, timeout);
+
+  for (const path of paths) {
+    const resolved = await firstLoadableIconCandidate(
+      elementIconCandidates(appId, path, href),
+      probe,
+      timeout,
+    );
+    if (resolved !== undefined) return resolved;
+  }
+  return undefined;
 }
