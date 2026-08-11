@@ -88,3 +88,9 @@ For each changed production app:
 
 Do not publish first and repair migration, versioning, or package evidence
 afterward.
+
+## Plasmon work
+
+For any work under `apps/plasmon/**`, read `apps/plasmon/AGENTS.md` and then the nearest nested `AGENTS.md` before editing. The closest scoped instructions refine Plasmon implementation behavior; these repository-level production, migration, packaging, and release rules still apply.
+
+Do not use Plasmon documentation to infer or redefine Neutron Kernel contracts outside `apps/plasmon/**`. When Plasmon needs a Kernel capability that is not actually exposed by vanilla Neutron, surface the dependency instead of inventing a local substitute.

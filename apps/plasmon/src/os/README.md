@@ -1,100 +1,112 @@
-# Plasmon OS architecture boundary
+# Plasmon OS architecture
 
-`src/os/contracts/**` is the public interface freeze. Subsystem agents import shared concepts from there and must not redefine them locally or edit contracts without an explicit integration change request.
+`apps/plasmon/src/os/` contains the shared desktop-OS layer for Plasmon. It composes filesystem, associations, process/window management, desktop/FileManager, Shell, Neutron integration, and shared visual primitives without taking ownership away from the Neutron Kernel.
 
-The final Agent 0 amendment separates shared-resource publication from authorization. Plasmon publishes/version resources; MTN (through `ResourceAuthorizationService`) owns grants, bearer secrets, secret hashing, audience/rights, lease issuance, revocation, reshare policy, authorization epochs, cross-AppScope routing, and trusted authorization context.
+## Boundaries
 
-## Agent ownership
+- Neutron remains authoritative for installation, AppScope isolation, capabilities, and Kernel security.
+- `src/os/contracts/**` contains shared subsystem interfaces. Do not redefine those concepts inside consumers.
+- `FsService` is the filesystem authority; higher layers operate through filesystem/core services rather than repositories or storage internals.
+- `src/os/integration/**` is the central composition layer for shared services and cross-subsystem wiring.
 
-| Agent | Exclusive implementation ownership |
-|---|---|
-| 1 Filesystem | `src/os/fs/**` plus explicitly assigned filesystem background/build entry changes |
-| 2 Associations/Atoms | `src/os/associations/**` |
-| 3 Native process runtime | `src/os/process/**` |
-| 4 Window manager | `src/os/windowing/**` |
-| 5 Desktop/File Manager | `src/os/file-manager/**`, `src/os/desktop/**`, `src/native-apps/explorer/**`, `src/native-apps/properties/**` |
-| 6 Shell | `src/os/shell/**` |
-| 7 Native apps | `src/native-apps/text/**`, `markdown/**`, `video/**`, `browser/**`, `settings/**` |
-| 8 Neutron bridge | `src/os/neutron/**` |
-| 9 Sharing | `src/os/sharing/**` plus explicitly assigned Plasmon backend stable-memory methods |
-| 10 Backup | `src/os/backup/**` |
-| Integration | `src/os/integration/**`, `src/os/PlasmonOS.tsx`, `src/index.tsx`, shared visual tokens, shared build/package integration |
+## Filesystem model
 
-`src/gui2/**` remains a behavioral/reference implementation and is not the new architecture.
-
-## Isolation rules
-
-Consumers depend on contracts, never another subsystem's repository/store/reducer internals. Examples: Desktop may import `FsService`; it may not import a SQLite repository. Shell may import `ProcessController`/`WindowManager`; it may not import an internal process reducer.
-
-The Desktop is a filesystem presentation (eventually a File Manager view rooted at `/Desktop`), not the filesystem service and not the OS composition root. Atoms are typed filesystem resources with immutable `atomId`; they are not a second object hierarchy.
-
-Sharing follows the same rule:
+The managed Plasmon filesystem includes user-visible roots plus system-managed resources such as:
 
 ```text
-ShareService
-  ├── FsService
-  ├── SharedResourceProvider
-  └── ResourceAuthorizationService
+/
+├── Desktop/
+├── Documents/
+├── Games/
+├── Music/
+├── Pictures/
+├── Videos/
+├── Apps/
+└── System/
+    ├── Start Menu/
+    ├── .Trash/
+    └── Program Files/
 ```
 
-`SharedResourceProvider` owns snapshot/version publication, stable-memory chunking, dedupe, integrity, resource revisions, provider-side resource storage/read/write, import/copy, and AtomId-to-ResourceRef mapping. It must not implement bearer-grant security.
+Key invariants:
 
-`ResourceAuthorizationService` is generic and optional. Preview/tests may use `FakeResourceAuthorizationService`; vanilla Neutron fails closed with `UnavailableResourceAuthorizationService`; an MTN-capable bridge will provide the real adapter after the MTN 0.2 API is frozen.
+- `NodeId` is stable across rename/move and Trash/restore.
+- Dot-prefixed names define hidden semantics.
+- `/Apps/*.neutron` entries are Kernel-backed projections and cannot be generically deleted.
+- `/System/Start Menu` is filesystem-backed and intentionally user-customizable.
+- `/System/.Trash` implements Trash/restore/permanent-delete core behavior.
+- `.sys` resources are only actual Plasmon-native applications/system programs.
 
-## Parallelization gates
+## Opening resources
 
-After the Agent 0 build/test gate succeeds, Agents 1-4 may begin in parallel. Agent 8 may implement the vanilla-Neutron bridge in parallel, but its MTN authorization adapter must wait for the MTN 0.2 API freeze.
+Filesystem-aware opening is shared infrastructure, not Shell behavior.
 
-Wave 2 Desktop/Shell/Native Apps should integrate after Wave 1 service contracts are green. Agent 9 may design stable-memory publication earlier, but final share orchestration waits for all three of:
-
-1. filesystem behavior/representation stable enough for snapshotting;
-2. MTN 0.2 authorization API freeze;
-3. Agent 8 authorization adapter contract/implementation against that API.
-
-Backup does not depend on sharing, but it should wait for the actual filesystem representation/import semantics to stabilize.
-
-## daedalOS implementation reuse
-
-Agents 4, 5, 6 and 7 are explicitly allowed and encouraged to adapt generic implementation code from `DustinBrett/daedalOS` where that improves polish. The supplied research notes identify useful source areas including `RndWindow`/`useRnd`, drag and marquee selection, FileManager interactions, Properties/Open With, Start/Search/taskbar/calendar behavior, text/Markdown/media applications and URL shortcuts.
-
-Do **not** transplant daedalOS BrowserFS, its full process architecture, Next.js-specific structure, or assumptions that arbitrary apps can be same-origin embedded.
-
-Any directly copied or substantially adapted daedalOS code must preserve MIT license/attribution requirements. The implementing agent must record the source repository/path and adaptation in its component README (or a local attribution file) so the integration agent can maintain project-level third-party notices.
-
-## Shared dependency/build policy
-
-Subsystem agents do not edit shared package/build files merely to add dependencies. Preferred workflow:
-
-1. implement within the owned source paths;
-2. add `DEPENDENCIES.md` inside the owned subsystem directory listing each required package, runtime/dev classification, reason, version constraint if material, and any build/manifest capability required;
-3. the integration agent applies/reconciles `package.json`, lockfile and shared build changes centrally.
-
-Agent 1 is the explicit exception when its filesystem background authority genuinely requires assigned background-service entry, `neutron.json`, storage capability, or build wiring. Such edits must be narrowly scoped and documented as integration-affecting changes.
-
-## Shared visual language
-
-Wave 2 agents consume the shared CSS custom properties defined by the integration layer rather than inventing separate typography/window/shell values. At minimum these include:
+Conceptually:
 
 ```text
---plasmon-font-ui
---plasmon-font-size-ui
---plasmon-radius-window
---plasmon-taskbar-height
---plasmon-titlebar-height
---plasmon-surface
---plasmon-surface-elevated
---plasmon-text
---plasmon-text-muted
---plasmon-accent
---plasmon-shadow-window
---plasmon-motion-fast
---plasmon-motion-window
+filesystem node
+  -> shared open dispatcher
+  -> directory / shortcut / .sys / .neutron classification
+  -> AssociationRegistry for ordinary files
+  -> OpenService / ProcessController / NeutronBridge as appropriate
 ```
 
-Subsystem-specific styling is still owned locally; the tokens are the shared visual vocabulary.
+Shortcuts dereference stable node identity and support cycle protection. Association-backed Program Files runtimes such as js-dos do not become `.sys` applications merely because they use the native process host.
 
-## Integration notes
+## Subsystems
 
-`integration/fakes.ts` exists only to let downstream agents build and test before real services land. `integration/legacyNeutronBridge.ts` delegates to the pre-existing `src/platform/**` adapter so vanilla-Neutron behavior survives the architecture split. Agent 8 should replace that compatibility adapter behind the same `NeutronBridge` contract; it must not delete working platform behavior merely to move files.
+### `contracts/`
+Shared interfaces for filesystem, applications, associations, process, windowing, Neutron, sharing, authorization, backup, and common identifiers.
 
-After Agent 0, only the integration agent modifies `PlasmonOS.tsx`, `src/index.tsx`, shared visual-token entrypoints, or shared package/build entrypoints unless a task explicitly grants ownership.
+### `fs/`
+Persistent filesystem service, bootstrap/reconciliation, resource classification/protection, stable Neutron projections, dot-hidden behavior, Trash, shortcuts, and the shared open dispatcher.
+
+### `associations/`
+Handler registry, matching/default rules, Open With service model, shortcut association helpers, and Atom package matching where applicable.
+
+### `process/` and `windowing/`
+Native application process lifecycle and Plasmon window management. These are local application-host mechanics, not Kernel AppScope ownership.
+
+### `desktop/` and `file-manager/`
+Filesystem presentation, selection, drag/drop, rename, clipboard, shortcuts, properties, download, thumbnails, and FileManager behavior. Desktop is a filesystem view, not filesystem authority.
+
+### `shell/`
+Start, Search, taskbar, calendar, preferences, and shell presentation. Shell consumes shared open/filesystem services; it does not own generic launch semantics.
+
+### `neutron/`
+The bridge to actual vanilla-Neutron behavior. Do not invent capabilities here that the Kernel does not expose.
+
+### `integration/`
+Service composition and shared adapters. Cross-cutting changes to `PlasmonOS.tsx`, service construction, or build/package wiring belong here unless a task explicitly grants another owner.
+
+### `visual/`
+Shared visual tokens, resource/native-app/system/file-type icons, shortcut overlays, media presentation, sizing, and wallpaper primitives.
+
+## Native applications and runtimes
+
+Native app implementations live under `../../native-apps/`. Association-backed runtimes can be hosted through the native process/window system without becoming filesystem `.sys` applications.
+
+Games currently use the same generic open path as other resources. `.jsdos` resolves through `AssociationRegistry` to the js-dos runtime under `/System/Program Files/js-dos`; there is no game-name dispatcher and no `DOS.sys`/`Games.sys`.
+
+## Atom and sharing boundary
+
+An Atom is an app-defined logical unit, not a physical Neutron app instance or filesystem path. One accepted semantic transaction produces one logical `RevisionId`; the revision identifier does not prescribe a snapshot, Git-like commit, hash tree, chunk manifest, or provider publication.
+
+Live structured Atom state must be capable of record-level semantic mutation. Immutable snapshots/chunks remain appropriate for exports, files/blobs, attachments, archives/backups, and immutable publications.
+
+Plasmon resource providers own resource semantics and publication. MTN authorization owns grants, bearer-secret handling, rights/audience, leases, revocation, authorization epochs, reshare policy, and cross-AppScope routing.
+
+## Validation
+
+Use focused subsystem tests while iterating, then run the relevant Plasmon package/integration checks. User-visible work is complete only when it works in packaged Plasmon/Neutron.
+
+## Further reading
+
+- [`AGENTS.md`](AGENTS.md) — scoped OS implementation instructions.
+- [`../../docs/README.md`](../../docs/README.md) — architecture/design document index.
+- [`fs/README.md`](fs/README.md) — filesystem details.
+- [`file-manager/README.md`](file-manager/README.md) — FileManager behavior.
+- [`associations/README.md`](associations/README.md) — association model.
+- [`neutron/README.md`](neutron/README.md) — Neutron bridge.
+- [`integration/README.md`](integration/README.md) — integration layer.
+- [`visual/README.md`](visual/README.md) — visual primitives.

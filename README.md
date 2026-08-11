@@ -74,3 +74,9 @@ core contracts, repository map, and suggested reading paths.
 
 - [Developer Experience Roadmap](doc/developer-experience-roadmap.md) records workflow improvements still planned for Kernel, app, and integration developers.
 - [Open Questions And Design Gaps](doc/open-questions-and-design-gaps.md) collects unresolved cross-cutting questions and is not a statement of current authority.
+
+## Plasmon
+
+Plasmon is the user-facing desktop and application environment being built on top of Neutron. It is a normal Neutron application, not a replacement Kernel, and its product code lives under [`apps/plasmon/`](apps/plasmon/).
+
+For Plasmon architecture, terminology, development entry points, and subsystem documentation, start with [`apps/plasmon/README.md`](apps/plasmon/README.md). Neutron remains authoritative for Kernel capabilities, security boundaries, installation, AppScope isolation, and package/runtime behavior.

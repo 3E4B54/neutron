@@ -1,109 +1,89 @@
-# Plasmon 0.1.0
+# Plasmon
 
-Plasmon is a Neutron-native application launcher. It is intentionally a normal `.neutron` app rather than a replacement Kernel: Neutron keeps app isolation, tile/window ownership, authorization, and installation review while Plasmon provides the user-facing launcher experience.
+Plasmon is the user-facing desktop and application environment built on Neutron. It is packaged as a normal `.neutron` application and does not replace or weaken the Neutron Kernel. Neutron remains authoritative for installation, AppScope isolation, capabilities, authorization, package execution, and owner-reviewed security boundaries.
 
-This app was bootstrapped from Neutron's `apps/hello` application on the upstream `dev` branch. The separate `init` branch preserves that Hello-derived baseline.
+## Mental model
 
-## Setup and verification
+- **Neutron** — Kernel/runtime substrate.
+- **Element** — an application/package.
+- **Isotope** — a variant, version, or runtime profile of an Element.
+- **Atom** — an app-defined, independently addressable logical unit. A physical Element installation may own many Atoms.
+- **NodeId** — the stable identity of a filesystem node. Rename and move must not change it.
+
+An Atom is not a Neutron app instance, AppScope, window, path, or revision. Earlier proof-of-concept code that treated `Atom == app_instance_id` is not the current product model.
+
+## Filesystem and application rules
+
+`FsService` and the filesystem core under `src/os/fs/**` are authoritative for Plasmon filesystem behavior.
+
+- Ordinary files open through the shared filesystem-aware open dispatcher and `AssociationRegistry`.
+- Shortcuts dereference by stable target identity rather than Shell ownership.
+- Dot-prefixed names are hidden by filesystem semantics.
+- `/System/Start Menu` is filesystem-backed and user-customizable.
+- `/System/.Trash` backs Trash/restore/permanent-delete while preserving `NodeId`.
+- `/Apps/*.neutron` entries are projections of Kernel-installed applications; they are not installation authority and do not support generic filesystem Delete.
+- `.sys` is reserved for actual Plasmon-native applications/system programs.
+- There is no `DOS.sys`, `Emulator.sys`, or `Games.sys`.
+- js-dos and EmulatorJS are association-backed runtimes under `/System/Program Files`, not `.sys` applications.
+
+## Architecture
+
+Primary code lives under [`src/os/`](src/os/):
+
+- `contracts/` — shared public interfaces between OS subsystems.
+- `fs/` — persistent filesystem, bootstrap/reconciliation, resource policy, projections, Trash, shortcuts, and open dispatch.
+- `associations/` — file/type associations and Open With behavior.
+- `process/` and `windowing/` — native application process/window lifecycle.
+- `desktop/` and `file-manager/` — filesystem presentation and file interactions.
+- `shell/` — Start, Search, taskbar, and shell presentation.
+- `neutron/` — vanilla-Neutron bridge and Kernel-facing integration.
+- `integration/` — composition root and shared service wiring.
+- `visual/` — shared Plasmon visual primitives and resource icon system.
+
+Native applications and association-backed runtimes live under [`src/native-apps/`](src/native-apps/).
+
+## Entry points
+
+- [`src/index.tsx`](src/index.tsx) — frontend entry.
+- [`src/os/PlasmonOS.tsx`](src/os/PlasmonOS.tsx) — OS composition surface.
+- [`src/os/integration/services.ts`](src/os/integration/services.ts) — service composition.
+- [`src/os/fs/core.ts`](src/os/fs/core.ts) — filesystem-core composition.
+- [`build.ts`](build.ts) — package/frontend build wiring.
+
+## Development and verification
 
 From the repository root:
 
 ```sh
-npm install
-cd apps/plasmon
-npm test
-npm run package
+npm ci
+npm --workspace neutron-plasmon run package
 ```
 
-`npm test` already executes the official Neutron package pipeline before Bun tests:
+Run focused tests for the subsystem being changed as well as the repository's Plasmon integration tests. Product acceptance is based on the packaged application, not only source-level or mocked tests. A feature that is green in unit tests but not visible/functional in packaged Plasmon is not complete.
 
-```text
-validate -> frontend build/mogen -> mopack -> method schema -> pack -> Bun tests
-```
-
-The expected archive is:
+The expected package is currently:
 
 ```text
 plasmon.v0.1.0.neutron
 ```
 
-## Fast UI development
+For standalone UI development, use the app's development script. Standalone mode is a development surface; final behavior must also be verified inside packaged Neutron.
 
-The launcher has a standalone preview mode specifically so UI work does not require rebuilding or starting the Neutron Kernel:
+## Current product boundaries
 
-```sh
-cd apps/plasmon
-npm run dev
-```
+Plasmon may adapt generic UI/interaction ideas from daedalOS where licensing and attribution are preserved, but it must not import daedalOS BrowserFS, process ownership, same-origin application assumptions, or other architecture that conflicts with Neutron.
 
-Then open:
+Cross-AppScope sharing and authorization remain security-sensitive. Plasmon providers own resource semantics and publication; MTN authorization owns grants, bearer-secret handling, audience/rights, leases, revocation, authorization epochs, and cross-AppScope routing.
 
-```text
-http://localhost:5173
-```
+Live structured Atoms must support semantic mutation without requiring whole-Atom snapshot/chunk publication. Immutable snapshots remain appropriate for exports, archives, attachments, backups, and other immutable resources.
 
-Standalone mode uses mock installed-app metadata. Production Neutron mode is selected automatically when Plasmon runs in a Kernel-owned app frame.
+## Documentation
 
-`npm run watch` remains available when only rebuilding the production frontend files is useful.
+Start with:
 
-## Run inside local Neutron
+- [`AGENTS.md`](AGENTS.md) — scoped implementation rules for agents and contributors.
+- [`docs/README.md`](docs/README.md) — Plasmon architecture/design index.
+- [`src/os/README.md`](src/os/README.md) — OS architecture and subsystem map.
+- [`src/os/AGENTS.md`](src/os/AGENTS.md) — OS implementation invariants and validation rules.
 
-The repository-root `plasmon.ndeploy.json` is intentionally small. It installs only Hello as a control application and Plasmon as the launcher. Make sure the referenced Kernel, Hello, and Plasmon archives exist, then use Neutron's normal provisioner flow from the repository root:
-
-```sh
-npm run provision -- plasmon.ndeploy.json serve
-```
-
-Keep that process running. In another terminal:
-
-```sh
-npm run provision -- plasmon.ndeploy.json reinstall
-npm run provision -- plasmon.ndeploy.json status
-```
-
-Open the node URL printed by `status`. The provisioner consumes archives; it does not build the app workspaces for you.
-
-## 0.1.0 behavior
-
-When running inside vanilla Neutron, Plasmon uses only Kernel-provided app tools:
-
-- `apps.list` discovers installed app ids.
-- `apps.describe` reads safe app and tile metadata.
-- `workspace.open_tile` opens/focuses the real outer-Kernel app tile.
-- `apps.install_offer` hands a `.neutron` package URL to the native owner review flow.
-- `tools.list` is used for capability discovery.
-
-Plasmon never embeds another Neutron application as a child iframe and never bypasses the Kernel installer.
-
-If one installed app cannot be described, Plasmon keeps the rest of the launcher usable and renders that app as non-launchable instead of failing all discovery.
-
-The launcher deliberately does not assume access to another app's static asset paths or icons. Vanilla `apps.describe` exposes safe metadata and launch targets, so Plasmon renders its own launcher glyphs.
-
-Plasmon 0.1.0 has no borrowed `update_source`; updates are manual until Plasmon operates an update source of its own.
-
-## Atoms and sharing
-
-The Atoms and Shared sections establish the product model without claiming functionality vanilla Neutron does not provide yet.
-
-An Atom is intended to be an independently named, openable, and shareable object produced by an Atom-aware application. A future app-level tool contract can expose operations such as:
-
-```text
-atoms.list
-atoms.create
-atoms.describe
-atoms.share
-```
-
-On vanilla Neutron, an Atom is logically isolated by its owning app; 0.1.0 does not claim per-Atom physical AppScope isolation.
-
-## Capability-based evolution
-
-Plasmon does not detect a branded runtime name. It inspects Kernel tools. The current adapter treats the presence of both `apps.catalog` and `apps.allocate` as a future tenant-capable runtime extension. Until those generic tools exist, the same package operates as a vanilla Neutron launcher.
-
-## Branches
-
-- `dev` — untouched Neutron upstream-development baseline.
-- `init` — Hello-derived Plasmon app/package baseline.
-- `version-0.1.0` — first Plasmon launcher implementation.
-
-The inherited `hello_world` backend remains for this initial version as a known-good Neutron packaging/runtime smoke path. It can be removed or replaced only after the launcher baseline is proven locally.
+Repository-level Neutron documentation remains under [`../../doc/`](../../doc/) and is authoritative for Kernel behavior.
