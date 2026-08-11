@@ -1,9 +1,11 @@
 import type {
   AssociationRegistry,
   FsEventSource,
+  FsNode,
   FsService,
   NativeAppRegistry,
   NeutronBridge,
+  NodeId,
   OpenService,
   ProcessController,
 } from "../contracts/index.ts";
@@ -13,6 +15,7 @@ import {
   bootstrapFilesystem,
   type BootstrapFilesystemResult,
   type FilesystemSeedSpec,
+  type TrashEntry,
 } from "./managed.ts";
 import { FilesystemOpenDispatcher } from "./openDispatcher.ts";
 import { ProtectedManagedFsService } from "./protectedService.ts";
@@ -32,10 +35,18 @@ export interface FilesystemCoreInitialization extends BootstrapFilesystemResult 
   neutronProjectionError: string | null;
 }
 
+export interface FilesystemTrashService {
+  trash(nodeId: NodeId): Promise<TrashEntry>;
+  list(): Promise<TrashEntry[]>;
+  restore(trashedNodeId: NodeId, fallbackPath?: string): Promise<{ node: FsNode; usedFallback: boolean; renamed: boolean }>;
+  permanentlyDelete(trashedNodeId: NodeId): Promise<void>;
+  empty(): Promise<number>;
+}
+
 export interface FilesystemCoreServices {
   fs: ProtectedManagedFsService;
   ready: Promise<FilesystemCoreInitialization>;
-  trash: TrashService;
+  trash: FilesystemTrashService;
   open: FilesystemOpenDispatcher;
   projections: NeutronProjectionService;
   reconcileNeutron(): Promise<void>;
@@ -55,6 +66,7 @@ function message(error: unknown): string {
 export function createFilesystemCore(options: FilesystemCoreOptions): FilesystemCoreServices {
   const managed = new ProtectedManagedFsService(options.fs);
   const projections = new NeutronProjectionService(options.fs);
+  const privilegedTrash = new TrashService(options.fs);
   let disposed = false;
   let stopNeutron = () => undefined;
   let reconcileTail: Promise<void> = Promise.resolve();
@@ -94,7 +106,19 @@ export function createFilesystemCore(options: FilesystemCoreOptions): Filesystem
       .catch(() => undefined);
   });
 
-  const trash = new TrashService(managed);
+  const trash: FilesystemTrashService = {
+    trash: async (nodeId) => { await ready; return privilegedTrash.trash(nodeId); },
+    list: async () => { await ready; return privilegedTrash.list(); },
+    restore: async (nodeId, fallbackPath) => {
+      await ready;
+      return fallbackPath === undefined
+        ? privilegedTrash.restore(nodeId)
+        : privilegedTrash.restore(nodeId, fallbackPath);
+    },
+    permanentlyDelete: async (nodeId) => { await ready; await privilegedTrash.permanentlyDelete(nodeId); },
+    empty: async () => { await ready; return privilegedTrash.empty(); },
+  };
+
   const open = new FilesystemOpenDispatcher({
     fs: managed,
     associations: options.associations,
