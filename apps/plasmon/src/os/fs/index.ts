@@ -6,6 +6,7 @@ export * from "./resourcePolicy.ts";
 export * from "./shortcut.ts";
 export * from "./managed.ts";
 export * from "./defaultSeeds.ts";
+export * from "./stableProjection.ts";
 export * from "./protectedService.ts";
 export * from "./openDispatcher.ts";
 export * from "./core.ts";
