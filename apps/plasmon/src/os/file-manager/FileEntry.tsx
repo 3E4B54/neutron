@@ -110,8 +110,7 @@ export const FileEntry = memo(function FileEntry({
       return;
     }
     suppressBlurCommitRef.current = false;
-    renameSelectionRef.current.initialize(
-      rename.session,
+    renameSelectionRef.current.initialize(rename.session,
       inputRef.current,
       rename.initialName,
       node.kind === "directory",
