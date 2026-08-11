@@ -8,7 +8,6 @@ import type {
   ProcessController,
 } from "../contracts/index.ts";
 import {
-  ManagedFsService,
   NeutronProjectionService,
   TrashService,
   bootstrapFilesystem,
@@ -16,6 +15,7 @@ import {
   type FilesystemSeedSpec,
 } from "./managed.ts";
 import { FilesystemOpenDispatcher } from "./openDispatcher.ts";
+import { ProtectedManagedFsService } from "./protectedService.ts";
 
 export interface FilesystemCoreOptions {
   fs: FsService & FsEventSource;
@@ -33,7 +33,7 @@ export interface FilesystemCoreInitialization extends BootstrapFilesystemResult 
 }
 
 export interface FilesystemCoreServices {
-  fs: ManagedFsService;
+  fs: ProtectedManagedFsService;
   ready: Promise<FilesystemCoreInitialization>;
   trash: TrashService;
   open: FilesystemOpenDispatcher;
@@ -48,11 +48,12 @@ function message(error: unknown): string {
 
 /**
  * Composes filesystem policy without changing FsService persistence contracts.
- * Bootstrap uses the raw service; public consumers receive a gated facade so no
- * Desktop/FileManager/Search call observes a half-migrated product tree.
+ * Bootstrap uses the raw service; public consumers receive a gated/protected
+ * facade so no Desktop/FileManager/Search call observes a half-migrated tree or
+ * can mutate protected system/application resources with generic FsService ops.
  */
 export function createFilesystemCore(options: FilesystemCoreOptions): FilesystemCoreServices {
-  const managed = new ManagedFsService(options.fs);
+  const managed = new ProtectedManagedFsService(options.fs);
   const projections = new NeutronProjectionService(options.fs);
   let disposed = false;
   let stopNeutron = () => undefined;
