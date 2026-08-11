@@ -7,6 +7,15 @@ const ICON_PATHS = [
   "static/icon.jpg",
 ] as const;
 
+export const DEFAULT_ELEMENT_ICON_PROBE_TIMEOUT_MS = 1_500;
+
+export type ElementIconProbe = (candidate: string) => boolean | Promise<boolean>;
+
+export interface ElementIconResolveOptions {
+  probe?: ElementIconProbe;
+  timeoutMs?: number;
+}
+
 export function elementIconCandidates(appId: string, href?: string): string[] {
   const sourceHref = href ?? (typeof window === "undefined" ? undefined : window.location.href);
   if (!sourceHref) return [];
@@ -49,12 +58,117 @@ export function elementIconCandidates(appId: string, href?: string): string[] {
   return [...new Set(candidates)];
 }
 
+function normalizedTimeout(timeoutMs: number | undefined): number {
+  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : DEFAULT_ELEMENT_ICON_PROBE_TIMEOUT_MS;
+}
+
+async function probeWithTimeout(
+  candidate: string,
+  probe: ElementIconProbe,
+  timeoutMs: number,
+): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (loaded: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(loaded);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+
+    void Promise.resolve()
+      .then(() => probe(candidate))
+      .then((loaded) => finish(loaded === true), () => finish(false));
+  });
+}
+
 /**
- * The bridge exposes one stable package-local icon candidate through the frozen
- * contract. Consumers that support progressive image fallback can use the full
- * candidate list above, preserving GUI2's SVG/PNG/WebP/JPEG + resident-origin
- * behavior without trusting arbitrary remote icon URLs from app metadata.
+ * Start every probe concurrently. Resolve as soon as the highest-priority
+ * candidate that can still win is known, without waiting for lower-priority
+ * probes that cannot affect the result.
  */
-export function resolveElementIcon(appId: string, href?: string): string | undefined {
-  return elementIconCandidates(appId, href)[0];
+export async function firstLoadableIconCandidate(
+  candidates: readonly string[],
+  probe: ElementIconProbe,
+  timeoutMs = DEFAULT_ELEMENT_ICON_PROBE_TIMEOUT_MS,
+): Promise<string | undefined> {
+  if (candidates.length === 0) return undefined;
+  const timeout = normalizedTimeout(timeoutMs);
+
+  return await new Promise<string | undefined>((resolve) => {
+    const results: Array<boolean | undefined> = new Array(candidates.length).fill(undefined);
+    let settled = false;
+
+    const choose = (): void => {
+      if (settled) return;
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index];
+        if (result === undefined) return;
+        if (result) {
+          settled = true;
+          resolve(candidates[index]);
+          return;
+        }
+      }
+      settled = true;
+      resolve(undefined);
+    };
+
+    candidates.forEach((candidate, index) => {
+      void probeWithTimeout(candidate, probe, timeout).then((loaded) => {
+        results[index] = loaded;
+        choose();
+      });
+    });
+  });
+}
+
+/**
+ * Image-element probing intentionally avoids fetch/CORS assumptions. The
+ * browser is asked whether the same package-local URL that consumers render
+ * can actually load. The outer candidate probe also enforces a timeout, while
+ * this helper clears browser handlers when its own bounded probe completes.
+ */
+export function probeBrowserImage(
+  candidate: string,
+  timeoutMs = DEFAULT_ELEMENT_ICON_PROBE_TIMEOUT_MS,
+): Promise<boolean> {
+  if (typeof Image === "undefined") return Promise.resolve(false);
+  const timeout = normalizedTimeout(timeoutMs);
+
+  return new Promise<boolean>((resolve) => {
+    const image = new Image();
+    let settled = false;
+    const finish = (loaded: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+      resolve(loaded);
+    };
+    const timer = setTimeout(() => finish(false), timeout);
+    image.onload = () => finish(true);
+    image.onerror = () => finish(false);
+    image.src = candidate;
+  });
+}
+
+/**
+ * Resolve exactly one verified package-local icon URL for the frozen
+ * ExternalElement.icon contract. Arbitrary app metadata URLs are never read.
+ */
+export async function resolveElementIcon(
+  appId: string,
+  href?: string,
+  options: ElementIconResolveOptions = {},
+): Promise<string | undefined> {
+  const candidates = elementIconCandidates(appId, href);
+  const timeout = normalizedTimeout(options.timeoutMs);
+  const probe = options.probe
+    ?? ((candidate: string) => probeBrowserImage(candidate, timeout));
+  return await firstLoadableIconCandidate(candidates, probe, timeout);
 }
