@@ -9,9 +9,8 @@ import type {
   WindowManager,
 } from "../contracts/index.ts";
 import {
+  FsServiceAssociationDefaultStore,
   HandlerAssociationRegistry,
-  LocalStorageAssociationDefaultStore,
-  MemoryAssociationDefaultStore,
   type AssociationDefaultStore,
 } from "../associations/index.ts";
 import { FileOperationClipboard } from "../file-manager/index.ts";
@@ -111,17 +110,13 @@ export function createFilesystemService(
   return new PersistentFsService(new BrowserSelectedFsRepository());
 }
 
-function createAssociationDefaultStore(): AssociationDefaultStore {
-  if (typeof window !== "undefined") {
-    try {
-      const storage = window.localStorage;
-      void storage.length;
-      return new LocalStorageAssociationDefaultStore(storage);
-    } catch {
-      // Sandboxed/private browser contexts may deny localStorage access.
-    }
-  }
-  return new MemoryAssociationDefaultStore();
+/**
+ * Association defaults follow the same hosted persistence boundary as Shell
+ * preferences: foreground code persists through FsService, which routes to the
+ * persistent Plasmon background surface when running inside Neutron.
+ */
+export function createAssociationDefaultStore(fs: FsService): AssociationDefaultStore {
+  return new FsServiceAssociationDefaultStore(fs);
 }
 
 function registerWave2Applications(
@@ -159,9 +154,10 @@ function registerWave2Applications(
 /**
  * Wave 2 composition root. In Neutron, filesystem calls are routed to the
  * persistent Plasmon background surface through FsRpcClient; standalone
- * preview selects a browser-local repository with safe fallback. Associations
- * use safe browser-local defaults when available, and all built-in apps share
- * the same filesystem/process/window/association/OpenService contracts.
+ * preview selects a browser-local repository with safe fallback. Association
+ * user defaults persist through that same FsService rather than foreground
+ * browser storage. All built-in apps share the same filesystem/process/window/
+ * association/OpenService contracts.
  *
  * Authenticated Neutron application surfaces remain Kernel-owned sibling
  * tiles. Plasmon only discovers and opens them through NeutronBridge.
@@ -171,7 +167,7 @@ export function createPlasmonServices(): PlasmonServices {
   const windows = new NativeWindowManager();
   const neutron = createNeutronBridge();
   const nativeApps = new NativeApplicationRegistry();
-  const associations = new HandlerAssociationRegistry({ defaults: createAssociationDefaultStore() });
+  const associations = new HandlerAssociationRegistry({ defaults: createAssociationDefaultStore(fs) });
   const process = new NativeProcessController(nativeApps, windows);
   const openService = new IntegratedOpenService({ nativeApps, associations, process, neutron });
   const fileClipboard = new FileOperationClipboard();
