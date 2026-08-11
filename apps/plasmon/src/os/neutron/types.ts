@@ -23,11 +23,13 @@ export interface VanillaNeutronApi {
 
 export type ElementIconResolver = (
   appId: string,
+  declaredPath?: string,
 ) => string | undefined | Promise<string | undefined>;
 
 export function cloneExternalElement(element: ExternalElement): ExternalElement {
   return {
     ...element,
+    ...(element.tray === undefined ? {} : { tray: { ...element.tray } }),
     tiles: element.tiles.map((tile) => ({ ...tile })),
   };
 }
