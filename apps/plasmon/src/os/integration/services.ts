@@ -17,7 +17,9 @@ import { FileOperationClipboard } from "../file-manager/index.ts";
 import {
   PersistentFsService,
   createBrowserFsRepository,
+  createFilesystemCore,
   createNeutronFsClient,
+  type FilesystemCoreServices,
   type FsRepository,
   type RepositoryCommit,
   type RepositoryState,
@@ -48,6 +50,7 @@ import { IntegratedOpenService } from "./openService.ts";
 export interface PlasmonServices {
   fs: FsService;
   fsEvents: FsEventSource;
+  filesystem: FilesystemCoreServices;
   process: ProcessController;
   windows: WindowManager;
   neutron: NeutronBridge;
@@ -155,28 +158,43 @@ function registerWave2Applications(
  * Wave 2 composition root. In Neutron, filesystem calls are routed to the
  * persistent Plasmon background surface through FsRpcClient; standalone
  * preview selects a browser-local repository with safe fallback. Association
- * user defaults persist through that same FsService rather than foreground
- * browser storage. All built-in apps share the same filesystem/process/window/
- * association/OpenService contracts.
+ * user defaults persist through that same raw FsService rather than foreground
+ * browser storage.
+ *
+ * The returned public fs is the filesystem-core facade: it waits for migration
+ * and bootstrap to finish and applies dot-hidden listing semantics. The core
+ * itself still mutates only through FsService primitives, so persistence remains
+ * owned by the existing hosted/background boundary.
  *
  * Authenticated Neutron application surfaces remain Kernel-owned sibling
  * tiles. Plasmon only discovers and opens them through NeutronBridge.
  */
 export function createPlasmonServices(): PlasmonServices {
-  const fs = createFilesystemService();
+  const rawFs = createFilesystemService();
   const windows = new NativeWindowManager();
   const neutron = createNeutronBridge();
   const nativeApps = new NativeApplicationRegistry();
-  const associations = new HandlerAssociationRegistry({ defaults: createAssociationDefaultStore(fs) });
+  const associations = new HandlerAssociationRegistry({ defaults: createAssociationDefaultStore(rawFs) });
   const process = new NativeProcessController(nativeApps, windows);
   const openService = new IntegratedOpenService({ nativeApps, associations, process, neutron });
   const fileClipboard = new FileOperationClipboard();
 
-  registerWave2Applications(nativeApps, associations, fs, openService, fileClipboard);
+  registerWave2Applications(nativeApps, associations, rawFs, openService, fileClipboard);
+
+  const filesystem = createFilesystemCore({
+    fs: rawFs,
+    nativeApps,
+    neutron,
+    associations,
+    openService,
+    process,
+  });
+  const fs = filesystem.fs;
 
   return {
     fs,
     fsEvents: fs,
+    filesystem,
     process,
     windows,
     neutron,
