@@ -26,7 +26,7 @@
     width: var(--plasmon-icon-art-size);
   }
 
-  .plasmon-icon-frame--standard .plasmon-icon-frame__art {
+  .plasmon-icon-frame--standard {
     background: color-mix(in srgb, var(--plasmon-panel-elevated) 82%, transparent);
     border: 1px solid var(--plasmon-border-subtle);
     border-radius: var(--plasmon-radius-icon-frame);
@@ -34,7 +34,7 @@
     overflow: hidden;
   }
 
-  .plasmon-icon-frame--thumbnail .plasmon-icon-frame__art {
+  .plasmon-icon-frame--thumbnail {
     background-color: var(--plasmon-panel-elevated);
     background-image:
       linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
@@ -51,7 +51,8 @@
 
   .plasmon-icon-art,
   .plasmon-native-app-icon,
-  .plasmon-media-thumbnail {
+  .plasmon-media-thumbnail,
+  .plasmon-custom-icon {
     display: block;
     height: 100%;
     max-height: 100%;
@@ -60,6 +61,18 @@
     min-width: 0;
     object-fit: contain;
     pointer-events: none;
+    width: 100%;
+  }
+
+  .plasmon-custom-icon > img,
+  .plasmon-custom-icon > svg,
+  .plasmon-custom-icon > video,
+  .plasmon-custom-icon > canvas {
+    display: block;
+    height: 100%;
+    max-height: 100%;
+    max-width: 100%;
+    object-fit: contain;
     width: 100%;
   }
 

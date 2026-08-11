@@ -26,6 +26,7 @@ test("resource shortcut keeps target artwork and adds only the lower-left overla
     />,
   );
   expect(markup).toContain("/games/doom/icon.png");
+  expect(markup).toContain("plasmon-custom-icon");
   expect(markup).toContain("/static/plasmon/icons/shortcut-overlay.svg");
   expect(markup).toContain("--plasmon-icon-frame-size:48px");
   expect(markup).toContain("--plasmon-icon-art-size:42px");

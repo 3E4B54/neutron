@@ -14,11 +14,12 @@ export type IconFrameVariant = "standard" | "bare" | "thumbnail";
 export interface IconFrameProps {
   context: IconContext;
   children: ReactNode;
+  overlay?: ReactNode | undefined;
   className?: string | undefined;
   variant?: IconFrameVariant | undefined;
 }
 
-export function IconFrame({ context, children, className, variant = "standard" }: IconFrameProps) {
+export function IconFrame({ context, children, overlay, className, variant = "standard" }: IconFrameProps) {
   const style = iconContextCssVariables(context) as unknown as CSSProperties;
   return (
     <span
@@ -28,6 +29,7 @@ export function IconFrame({ context, children, className, variant = "standard" }
       aria-hidden="true"
     >
       <span className="plasmon-icon-frame__art">{children}</span>
+      {overlay}
     </span>
   );
 }
@@ -131,7 +133,7 @@ export interface ResourceIconProps {
 }
 
 function defaultFrameVariant(presentation: ResourceIconPresentation): IconFrameVariant {
-  if (presentation.kind === "file-type") return "bare";
+  if (presentation.kind === "file-type" || presentation.kind === "system") return "bare";
   if (presentation.kind === "thumbnail") return "thumbnail";
   return "standard";
 }
@@ -147,7 +149,7 @@ function ResourceArtwork({ presentation }: { presentation: ResourceIconPresentat
     case "thumbnail":
       return <MediaThumbnail src={presentation.src} mediaKind={presentation.mediaKind} fallback={presentation.fallback} />;
     case "custom":
-      return <>{presentation.content}</>;
+      return <span className="plasmon-custom-icon">{presentation.content}</span>;
   }
 }
 
@@ -164,9 +166,13 @@ export function ResourceIcon({
   frameVariant = defaultFrameVariant(presentation),
 }: ResourceIconProps) {
   return (
-    <IconFrame context={context} variant={frameVariant} className={className}>
+    <IconFrame
+      context={context}
+      variant={frameVariant}
+      className={className}
+      overlay={shortcut ? <ShortcutOverlay /> : null}
+    >
       <ResourceArtwork presentation={presentation} />
-      {shortcut ? <ShortcutOverlay /> : null}
     </IconFrame>
   );
 }
