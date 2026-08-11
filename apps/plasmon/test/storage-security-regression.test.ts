@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+import { FsServiceAssociationDefaultStore } from "../src/os/associations/index.ts";
+import type { FsService } from "../src/os/contracts/index.ts";
 import { FsRpcClient, createBrowserFsRepository } from "../src/os/fs/index.ts";
-import { createFilesystemService } from "../src/os/integration/services.ts";
+import { createAssociationDefaultStore, createFilesystemService } from "../src/os/integration/services.ts";
 
 function insecureIndexedDbFactory(counter: { opens: number }): IDBFactory {
   return {
@@ -47,4 +49,15 @@ test("Kernel-hosted foreground never opens IndexedDB even when the exposed facto
     if (previous) Object.defineProperty(globalThis, "indexedDB", previous);
     else delete (globalThis as { indexedDB?: IDBFactory }).indexedDB;
   }
+});
+
+test("association defaults use FsService-backed persistence rather than foreground browser storage", async () => {
+  const fakeFs = {} as FsService;
+  const store = createAssociationDefaultStore(fakeFs);
+  expect(store).toBeInstanceOf(FsServiceAssociationDefaultStore);
+
+  const source = await Bun.file(new URL("../src/os/integration/services.ts", import.meta.url)).text();
+  expect(source).not.toContain("LocalStorageAssociationDefaultStore");
+  expect(source).not.toContain("window.localStorage");
+  expect(source).toContain("createAssociationDefaultStore(fs)");
 });
