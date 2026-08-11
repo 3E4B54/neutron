@@ -56,7 +56,6 @@ const config: BuildOptions = {
     { in: "monaco-editor/esm/vs/language/typescript/ts.worker.js", out: "monaco-workers/ts.worker" },
   ],
   outdir: "./dist/web",
-  entryNames: "[name]",
   bundle: true,
   minify: !devMode,
   sourcemap: devMode ? "inline" : false,
