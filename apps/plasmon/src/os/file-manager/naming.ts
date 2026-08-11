@@ -1,5 +1,5 @@
 export function normalizedSiblingName(name: string): string {
-  return name.normalize("NFC").toLocaleLowerCase();
+  return name.normalize("NFC").toLowerCase();
 }
 
 export interface NameParts {
