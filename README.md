@@ -77,6 +77,19 @@ core contracts, repository map, and suggested reading paths.
 
 ## Plasmon
 
-Plasmon is the user-facing desktop and application environment being built on top of Neutron. It is a normal Neutron application, not a replacement Kernel, and its product code lives under [`apps/plasmon/`](apps/plasmon/).
+Plasmon is the user-facing desktop and application environment built on top of
+Neutron. It is a normal Neutron application, not a replacement Kernel, and its
+product code lives under [`apps/plasmon/`](apps/plasmon/).
 
-For Plasmon architecture, terminology, development entry points, and subsystem documentation, start with [`apps/plasmon/README.md`](apps/plasmon/README.md). Neutron remains authoritative for Kernel capabilities, security boundaries, installation, AppScope isolation, and package/runtime behavior.
+For Plasmon work, start with [`apps/plasmon/README.md`](apps/plasmon/README.md)
+and [`apps/plasmon/AGENTS.md`](apps/plasmon/AGENTS.md). The Plasmon tree uses
+nested `README.md` and `AGENTS.md` files at subsystem ownership boundaries; the
+nearest scoped `AGENTS.md` refines implementation rules for that directory.
+
+The active Plasmon frontend entrypoint is `apps/plasmon/src/index.tsx`, which
+renders `src/os/PlasmonOS.tsx`. Older launcher/GUI experiments under `src/`
+must not be assumed to be the active product merely because they remain in the
+repository.
+
+Neutron remains authoritative for Kernel capabilities, security boundaries,
+installation, AppScope isolation, and package/runtime behavior.
