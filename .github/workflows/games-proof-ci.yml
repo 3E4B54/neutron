@@ -49,4 +49,4 @@ jobs:
           exit 1
 
       - name: Playable browser smoke
-        run: nix develop --command bash -lc 'set -euxo pipefail; npx playwright test test/e2e/plasmon-games-proof.spec.ts --project=chromium'
+        run: nix develop --command bash -lc 'set -euxo pipefail; npx playwright test test/e2e/plasmon-games-proof.spec.ts --project=chromium --retries=0'
