@@ -278,12 +278,13 @@ export class VanillaNeutronBridge implements NeutronBridge {
 
     const declaredPath = declaredElementIconPath(descriptor, hint.id);
     let icon: string | undefined;
-    if (declaredPath !== undefined) {
-      try {
-        icon = await this.resolveIcon(hint.id, declaredPath);
-      } catch {
-        // Icon failure must never hide the Element or poison other metadata.
-      }
+    try {
+      // A missing safe descriptor path intentionally reaches the resolver:
+      // current Kernel apps.describe strips tile/tray icon paths, so the
+      // resolver performs only the bounded SVG -> PNG compatibility search.
+      icon = await this.resolveIcon(hint.id, declaredPath);
+    } catch {
+      // Icon failure must never hide the Element or poison other metadata.
     }
 
     const element = parseExternalElement(descriptor, hint, runtime, icon);
