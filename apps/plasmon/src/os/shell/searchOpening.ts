@@ -53,9 +53,10 @@ export class SearchResultInspectionError extends Error {
 }
 
 /**
- * Opens a filesystem search result through the association subsystem's public
- * Open With model. Shell only decides whether a bounded probe is needed; it
- * never reproduces association precedence or parses resource formats itself.
+ * Opens a filesystem search result. Directories route straight to the existing
+ * Explorer/native path; file/resource nodes use the association subsystem's
+ * public Open With model. Shell never applies Open With to directories and does
+ * not reproduce association precedence for resources.
  */
 export async function openFilesystemSearchResult(
   fs: FsService,
@@ -65,7 +66,8 @@ export async function openFilesystemSearchResult(
 ): Promise<void> {
   const node = await fs.stat(nodeId);
   if (node.kind === "directory") {
-    throw new Error("Directories are navigated by FileManager/Explorer");
+    await openService.open("native:explorer", { nodeId: node.id });
+    return;
   }
 
   const probe = await readSearchAssociationProbe(fs, node);
