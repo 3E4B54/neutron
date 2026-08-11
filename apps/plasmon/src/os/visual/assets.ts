@@ -9,7 +9,12 @@ export type FileTypeIconName =
   | "image"
   | "video"
   | "audio"
-  | "atom";
+  | "atom"
+  | "jsdos"
+  | "rom-game"
+  | "game-save"
+  | "emulator-save-state"
+  | "dos-changes";
 
 export type SystemIconName =
   | "application"
@@ -31,6 +36,11 @@ export const FILE_TYPE_ICON_ASSETS: Readonly<Record<FileTypeIconName, string>> =
   video: `${PLASMON_ICON_ASSET_ROOT}/video.svg`,
   audio: `${PLASMON_ICON_ASSET_ROOT}/audio.svg`,
   atom: `${PLASMON_ICON_ASSET_ROOT}/atom.svg`,
+  jsdos: `${PLASMON_ICON_ASSET_ROOT}/jsdos.svg`,
+  "rom-game": `${PLASMON_ICON_ASSET_ROOT}/rom-game.svg`,
+  "game-save": `${PLASMON_ICON_ASSET_ROOT}/game-save.svg`,
+  "emulator-save-state": `${PLASMON_ICON_ASSET_ROOT}/emulator-save-state.svg`,
+  "dos-changes": `${PLASMON_ICON_ASSET_ROOT}/dos-changes.svg`,
 });
 
 export const SYSTEM_ICON_ASSETS: Readonly<Record<SystemIconName, string>> = Object.freeze({

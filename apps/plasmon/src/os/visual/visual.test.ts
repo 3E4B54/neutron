@@ -1,5 +1,6 @@
 // @ts-ignore -- bun:test is available to the repository test runner but excluded from browser tsconfig globals.
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   FILE_TYPE_ICON_ASSETS,
   SHORTCUT_OVERLAY_ASSET,
@@ -11,24 +12,39 @@ import {
   composeShortcutPresentation,
   resolveImagePresentation,
 } from "./presentation.ts";
-import { ICON_CONTEXT_SIZES, iconContextCssVariables } from "./sizing.ts";
+import { ICON_CONTEXT_SIZE_TOKENS, iconContextCssVariables } from "./sizing.ts";
 
-test("approved icon contexts encode one shared frame/artwork size map", () => {
-  expect(ICON_CONTEXT_SIZES).toEqual({
-    desktop: { frame: 48, artwork: 42 },
-    "file-grid": { frame: 44, artwork: 38 },
-    "file-list": { frame: 26, artwork: 22 },
-    start: { frame: 32, artwork: 28 },
-    search: { frame: 30, artwork: 26 },
-    taskbar: { frame: 30, artwork: 26 },
-    titlebar: { frame: 18, artwork: 16 },
-    "context-menu": { frame: 20, artwork: 16 },
-    properties: { frame: 56, artwork: 46 },
+test("approved icon contexts map to the shared semantic size tokens", () => {
+  expect(ICON_CONTEXT_SIZE_TOKENS).toEqual({
+    desktop: { frame: "--plasmon-icon-desktop-frame", artwork: "--plasmon-icon-desktop-art" },
+    "file-grid": { frame: "--plasmon-icon-grid-frame", artwork: "--plasmon-icon-grid-art" },
+    "file-list": { frame: "--plasmon-icon-list-frame", artwork: "--plasmon-icon-list-art" },
+    start: { frame: "--plasmon-icon-start-frame", artwork: "--plasmon-icon-start-art" },
+    search: { frame: "--plasmon-icon-search-frame", artwork: "--plasmon-icon-search-art" },
+    taskbar: { frame: "--plasmon-icon-taskbar-frame", artwork: "--plasmon-icon-taskbar-art" },
+    titlebar: { frame: "--plasmon-icon-titlebar-frame", artwork: "--plasmon-icon-titlebar-art" },
+    "context-menu": { frame: "--plasmon-icon-context-frame", artwork: "--plasmon-icon-context-art" },
+    properties: { frame: "--plasmon-icon-properties-frame", artwork: "--plasmon-icon-properties-art" },
   });
   expect(iconContextCssVariables("desktop")).toEqual({
-    "--plasmon-icon-frame-size": "48px",
-    "--plasmon-icon-art-size": "42px",
+    "--plasmon-icon-frame-size": "var(--plasmon-icon-desktop-frame)",
+    "--plasmon-icon-art-size": "var(--plasmon-icon-desktop-art)",
   });
+});
+
+test("visual-tokens.scss is the single numeric source for approved context sizes", () => {
+  const tokens = readFileSync(new URL("../integration/visual-tokens.scss", import.meta.url), "utf8");
+  for (const declaration of [
+    "--plasmon-icon-desktop-frame: 48px", "--plasmon-icon-desktop-art: 42px",
+    "--plasmon-icon-grid-frame: 44px", "--plasmon-icon-grid-art: 38px",
+    "--plasmon-icon-list-frame: 26px", "--plasmon-icon-list-art: 22px",
+    "--plasmon-icon-start-frame: 32px", "--plasmon-icon-start-art: 28px",
+    "--plasmon-icon-search-frame: 30px", "--plasmon-icon-search-art: 26px",
+    "--plasmon-icon-taskbar-frame: 30px", "--plasmon-icon-taskbar-art: 26px",
+    "--plasmon-icon-titlebar-frame: 18px", "--plasmon-icon-titlebar-art: 16px",
+    "--plasmon-icon-context-frame: 20px", "--plasmon-icon-context-art: 16px",
+    "--plasmon-icon-properties-frame: 56px", "--plasmon-icon-properties-art: 46px",
+  ]) expect(tokens).toContain(declaration);
 });
 
 test("native artwork and thumbnails use contain instead of crop-to-fill", () => {
@@ -50,12 +66,14 @@ test("shortcut composition preserves the caller-resolved target identity", () =>
   expect(shortcut.target).toBe(target);
 });
 
-test("required initial visual assets are present in the shared catalogs", () => {
+test("required visual assets are present without inventing DOS or emulator system apps", () => {
   expect(Object.keys(FILE_TYPE_ICON_ASSETS).sort()).toEqual([
-    "atom", "audio", "file", "folder", "image", "markdown", "text", "video",
+    "atom", "audio", "dos-changes", "emulator-save-state", "file", "folder", "game-save", "image", "jsdos", "markdown", "rom-game", "text", "video",
   ]);
   expect(Object.keys(SYSTEM_ICON_ASSETS).sort()).toEqual([
     "application", "browser", "file-manager", "photos", "properties", "recycle-bin", "search", "settings", "start",
   ]);
+  expect("dos" in SYSTEM_ICON_ASSETS).toBe(false);
+  expect("emulator" in SYSTEM_ICON_ASSETS).toBe(false);
   expect(SHORTCUT_OVERLAY_ASSET.endsWith("/shortcut-overlay.svg")).toBe(true);
 });

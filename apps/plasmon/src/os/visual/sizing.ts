@@ -9,21 +9,25 @@ export type IconContext =
   | "context-menu"
   | "properties";
 
-export interface IconContextSize {
-  frame: number;
-  artwork: number;
+export interface IconContextSizeTokens {
+  frame: string;
+  artwork: string;
 }
 
-export const ICON_CONTEXT_SIZES: Readonly<Record<IconContext, IconContextSize>> = Object.freeze({
-  desktop: Object.freeze({ frame: 48, artwork: 42 }),
-  "file-grid": Object.freeze({ frame: 44, artwork: 38 }),
-  "file-list": Object.freeze({ frame: 26, artwork: 22 }),
-  start: Object.freeze({ frame: 32, artwork: 28 }),
-  search: Object.freeze({ frame: 30, artwork: 26 }),
-  taskbar: Object.freeze({ frame: 30, artwork: 26 }),
-  titlebar: Object.freeze({ frame: 18, artwork: 16 }),
-  "context-menu": Object.freeze({ frame: 20, artwork: 16 }),
-  properties: Object.freeze({ frame: 56, artwork: 46 }),
+/**
+ * Contexts map to semantic CSS tokens; the actual numeric sizes live only in
+ * integration/visual-tokens.scss so component code cannot drift from them.
+ */
+export const ICON_CONTEXT_SIZE_TOKENS: Readonly<Record<IconContext, IconContextSizeTokens>> = Object.freeze({
+  desktop: Object.freeze({ frame: "--plasmon-icon-desktop-frame", artwork: "--plasmon-icon-desktop-art" }),
+  "file-grid": Object.freeze({ frame: "--plasmon-icon-grid-frame", artwork: "--plasmon-icon-grid-art" }),
+  "file-list": Object.freeze({ frame: "--plasmon-icon-list-frame", artwork: "--plasmon-icon-list-art" }),
+  start: Object.freeze({ frame: "--plasmon-icon-start-frame", artwork: "--plasmon-icon-start-art" }),
+  search: Object.freeze({ frame: "--plasmon-icon-search-frame", artwork: "--plasmon-icon-search-art" }),
+  taskbar: Object.freeze({ frame: "--plasmon-icon-taskbar-frame", artwork: "--plasmon-icon-taskbar-art" }),
+  titlebar: Object.freeze({ frame: "--plasmon-icon-titlebar-frame", artwork: "--plasmon-icon-titlebar-art" }),
+  "context-menu": Object.freeze({ frame: "--plasmon-icon-context-frame", artwork: "--plasmon-icon-context-art" }),
+  properties: Object.freeze({ frame: "--plasmon-icon-properties-frame", artwork: "--plasmon-icon-properties-art" }),
 });
 
 export type IconContextCssVariables = {
@@ -32,9 +36,9 @@ export type IconContextCssVariables = {
 };
 
 export function iconContextCssVariables(context: IconContext): IconContextCssVariables {
-  const size = ICON_CONTEXT_SIZES[context];
+  const tokens = ICON_CONTEXT_SIZE_TOKENS[context];
   return {
-    "--plasmon-icon-frame-size": `${size.frame}px`,
-    "--plasmon-icon-art-size": `${size.artwork}px`,
+    "--plasmon-icon-frame-size": `var(${tokens.frame})`,
+    "--plasmon-icon-art-size": `var(${tokens.artwork})`,
   };
 }
