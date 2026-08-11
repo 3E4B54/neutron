@@ -1,11 +1,9 @@
 import {
-  memo,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type ChangeEvent as ReactChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -21,10 +19,10 @@ import type {
   OpenService,
   ProcessController,
 } from "../contracts/index.ts";
+import { allocateDesktopPositions } from "../desktop/layout.ts";
 import {
   FileOperationClipboard,
   RefreshGate,
-  basenameSelectionRange,
   captureMarqueeRectangles,
   clearSelection,
   decideEntryPointerSelection,
@@ -35,7 +33,6 @@ import {
   moveNodesToDirectory,
   normalizeRect,
   openNodeWithAssociations,
-  pasteClipboard,
   reconcileSelection,
   renameNode,
   selectAll,
@@ -43,12 +40,17 @@ import {
   type RectLike,
   type SelectionState,
 } from "./model.ts";
+import { pasteClipboardCollisionAware } from "./clipboard.ts";
 import {
   createDocument,
   importFileIntoFs,
   type NewDocumentKind,
 } from "./create-import.ts";
 import { finishEntryDragGesture } from "./drag.ts";
+import { ErrorBanner } from "./ErrorBanner.tsx";
+import { FileEntry } from "./FileEntry.tsx";
+import { fileManagerKeyboardCommand, isEditingKeyboardTarget } from "./keyboard.ts";
+import type { InlineRenameState } from "./rename.ts";
 import { OpenWithPanel, PropertiesPanel } from "./properties.tsx";
 import "./file-manager.scss";
 
@@ -84,122 +86,11 @@ export interface FileManagerProps {
 }
 
 type ContextMenuState = { x: number; y: number; nodeId: NodeId | null } | null;
-type RenameState = { nodeId: NodeId; value: string; error: string | null; busy: boolean } | null;
 type MarqueeVisual = { left: number; top: number; width: number; height: number } | null;
 
-interface EntryProps {
-  node: FsNode;
-  selected: boolean;
-  focused: boolean;
-  presentation: FileManagerPresentation;
-  position?: DesktopPosition;
-  rename: RenameState;
-  setRef: (element: HTMLDivElement | null) => void;
-  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onDoubleClick: () => void;
-  onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void;
-  onRenameChange: (value: string) => void;
-  onRenameCommit: () => void;
-  onRenameCancel: () => void;
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
-
-function iconFor(node: FsNode): string {
-  if (node.kind === "directory") return "▰";
-  if (node.kind === "atom") return "◈";
-  if (node.kind === "shortcut") return "↗";
-  const lower = node.name.toLowerCase();
-  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "M↓";
-  if (lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".mov")) return "▶";
-  return "□";
-}
-
-function formatCompactSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-const FileEntry = memo(function FileEntry({
-  node,
-  selected,
-  focused,
-  presentation,
-  position,
-  rename,
-  setRef,
-  onPointerDown,
-  onPointerMove,
-  onPointerUp,
-  onPointerCancel,
-  onDoubleClick,
-  onContextMenu,
-  onRenameChange,
-  onRenameCommit,
-  onRenameCancel,
-}: EntryProps) {
-  const isRenaming = rename?.nodeId === node.id;
-  const style: CSSProperties | undefined = presentation === "desktop" && position
-    ? { left: position.x, top: position.y }
-    : undefined;
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!isRenaming || !inputRef.current) return;
-    inputRef.current.focus();
-    const [start, end] = basenameSelectionRange(rename.value);
-    inputRef.current.setSelectionRange(start, end);
-  }, [isRenaming, rename?.value]);
-
-  return (
-    <div
-      ref={setRef}
-      className={`fm-entry fm-entry--${presentation}${selected ? " is-selected" : ""}${focused ? " is-focused" : ""}`}
-      style={style}
-      role="option"
-      aria-selected={selected}
-      data-fm-node-id={node.id}
-      data-fm-kind={node.kind}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
-    >
-      <span className="fm-entry__icon" aria-hidden="true">{iconFor(node)}</span>
-      <span className="fm-entry__selection-mark" aria-hidden="true">{selected ? "✓" : ""}</span>
-      <span className="fm-entry__name">
-        {isRenaming ? (
-          <>
-            <input
-              ref={inputRef}
-              value={rename.value}
-              aria-label={`Rename ${node.name}`}
-              disabled={rename.busy}
-              onPointerDown={(event: ReactPointerEvent<HTMLInputElement>) => event.stopPropagation()}
-              onChange={(event: ReactChangeEvent<HTMLInputElement>) => onRenameChange(event.target.value)}
-              onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
-                if (event.key === "Enter") { event.preventDefault(); onRenameCommit(); }
-                if (event.key === "Escape") { event.preventDefault(); onRenameCancel(); }
-              }}
-            />
-            {rename.error ? <span className="fm-inline-error" role="alert">{rename.error}</span> : null}
-          </>
-        ) : node.name}
-      </span>
-      {presentation === "details" ? (
-        <>
-          <span className="fm-entry__type">{node.kind === "directory" ? "Folder" : node.mime ?? node.kind}</span>
-          <span className="fm-entry__size">{node.kind === "directory" ? "—" : formatCompactSize(node.size)}</span>
-          <span className="fm-entry__modified">{new Date(node.modifiedAt).toLocaleString()}</span>
-        </>
-      ) : null}
-    </div>
-  );
-});
 
 export function FileManager({
   directoryId,
@@ -224,17 +115,17 @@ export function FileManager({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-  const [rename, setRename] = useState<RenameState>(null);
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("New Folder");
-  const [newFolderError, setNewFolderError] = useState<string | null>(null);
+  const [rename, setRename] = useState<InlineRenameState | null>(null);
   const [openWithNode, setOpenWithNode] = useState<FsNode | null>(null);
   const [propertiesNode, setPropertiesNode] = useState<FsNode | null>(null);
   const [marquee, setMarquee] = useState<MarqueeVisual>(null);
+
   const rootRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const entriesRef = useRef(new Map<NodeId, HTMLDivElement>());
   const refreshGateRef = useRef(new RefreshGate());
+  const renameSessionRef = useRef(0);
+  const renameCommitRef = useRef<NodeId | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const dragPendingRef = useRef({ dx: 0, dy: 0 });
   const dragRef = useRef<{
@@ -273,7 +164,7 @@ export function FileManager({
       setError(null);
     } catch (cause: unknown) {
       if (!refreshGateRef.current.isCurrent(generation)) return;
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       if (refreshGateRef.current.isCurrent(generation)) setLoading(false);
     }
@@ -296,6 +187,10 @@ export function FileManager({
     return query ? nodes.filter((node) => node.name.toLocaleLowerCase().includes(query)) : nodes;
   }, [filterQuery, nodes]);
   const orderedIds = useMemo(() => visibleNodes.map((node) => node.id), [visibleNodes]);
+  const desktopRenderPositions = useMemo(
+    () => presentation === "desktop" ? allocateDesktopPositions(positions ?? {}, visibleNodes) : {},
+    [positions, presentation, visibleNodes],
+  );
 
   useEffect(() => {
     onSnapshot?.({ nodes: visibleNodes, selectedIds: selection.ids });
@@ -306,43 +201,80 @@ export function FileManager({
     return nodes.filter((node) => ids.has(node.id));
   }, [nodes, selection.ids]);
 
-  const reportError = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause));
+  const beginInlineRename = (node: FsNode) => {
+    renameSessionRef.current += 1;
+    renameCommitRef.current = null;
+    setRename({
+      nodeId: node.id,
+      value: node.name,
+      initialName: node.name,
+      session: renameSessionRef.current,
+      error: null,
+      busy: false,
+    });
+  };
 
   const openNode = useCallback(async (node: FsNode) => {
     setContextMenu(null);
     try {
       if (node.kind === "directory") {
-        if (onOpenDirectory) {
-          await onOpenDirectory(node);
-          return;
+        if (onOpenDirectory) await onOpenDirectory(node);
+        else {
+          if (!process) throw new Error("Explorer process service is unavailable");
+          const id = await process.open("native:explorer", { nodeId: node.id });
+          if (!id) throw new Error("Explorer is not registered yet");
         }
-        if (!process) throw new Error("Explorer process service is unavailable");
-        const id = await process.open("native:explorer", { nodeId: node.id });
-        if (!id) throw new Error("Explorer is not registered yet");
-        return;
+      } else {
+        if (!associations || !openService) throw new Error("File association/open service is unavailable");
+        await openNodeWithAssociations(fs, associations, openService, node.id);
       }
-      if (!associations || !openService) throw new Error("File association/open service is unavailable");
-      await openNodeWithAssociations(fs, associations, openService, node.id);
+      setError(null);
     } catch (cause: unknown) {
-      reportError(cause);
+      setError(errorMessage(cause));
     }
   }, [associations, fs, onOpenDirectory, openService, process]);
 
   const startRename = (node: FsNode) => {
     setContextMenu(null);
-    setRename({ nodeId: node.id, value: node.name, error: null, busy: false });
+    beginInlineRename(node);
   };
 
   const commitRename = async () => {
-    if (!rename) return;
+    if (!rename || rename.busy || renameCommitRef.current === rename.nodeId) return;
     const state = rename;
+    if (state.value === state.initialName) {
+      setRename(null);
+      setError(null);
+      return;
+    }
+    renameCommitRef.current = state.nodeId;
     setRename({ ...state, busy: true, error: null });
     try {
       await renameNode(fs, state.nodeId, state.value);
       setRename(null);
+      setError(null);
       await refresh();
     } catch (cause: unknown) {
-      setRename({ ...state, busy: false, error: cause instanceof Error ? cause.message : String(cause) });
+      renameCommitRef.current = null;
+      setRename({ ...state, busy: false, error: errorMessage(cause) });
+    }
+  };
+
+  const cancelRename = () => {
+    renameCommitRef.current = null;
+    setRename(null);
+  };
+
+  const createNewFolder = async () => {
+    setContextMenu(null);
+    try {
+      const created = await fs.mkdir(directoryId, "New Folder");
+      setError(null);
+      await refresh();
+      setSelection({ ids: new Set([created.id]), anchor: created.id, focus: created.id });
+      beginInlineRename(created);
+    } catch (cause: unknown) {
+      setError(errorMessage(cause));
     }
   };
 
@@ -356,32 +288,32 @@ export function FileManager({
       await deleteNodes(fs, items);
       setSelection(clearSelection());
       setContextMenu(null);
+      setError(null);
       await refresh();
     } catch (cause: unknown) {
-      reportError(cause);
+      setError(errorMessage(cause));
     }
   };
 
   const removeSelected = async () => removeNodes(selectedNodes());
 
-  const paste = async () => {
-    try {
-      await pasteClipboard(fs, directoryId, clipboard);
-      await refresh();
-    } catch (cause: unknown) {
-      reportError(cause);
-    }
+  const copySelection = (ids: Iterable<NodeId> = selection.ids) => {
+    clipboard.copy(ids);
+    setError(null);
   };
 
-  const commitNewFolder = async () => {
-    setNewFolderError(null);
+  const cutSelection = (ids: Iterable<NodeId> = selection.ids) => {
+    clipboard.cut(ids);
+    setError(null);
+  };
+
+  const paste = async () => {
     try {
-      await fs.mkdir(directoryId, newFolderName.trim());
-      setCreatingFolder(false);
-      setNewFolderName("New Folder");
+      await pasteClipboardCollisionAware(fs, directoryId, clipboard);
+      setError(null);
       await refresh();
     } catch (cause: unknown) {
-      setNewFolderError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     }
   };
 
@@ -389,12 +321,12 @@ export function FileManager({
     setContextMenu(null);
     try {
       const created = await createDocument(fs, directoryId, kind);
+      setError(null);
       await refresh();
       setSelection({ ids: new Set([created.id]), anchor: created.id, focus: created.id });
-      setRename({ nodeId: created.id, value: created.name, error: null, busy: false });
-      setError(null);
+      beginInlineRename(created);
     } catch (cause: unknown) {
-      reportError(cause);
+      setError(errorMessage(cause));
     }
   };
 
@@ -407,7 +339,7 @@ export function FileManager({
       try {
         imported.push(await importFileIntoFs(fs, directoryId, file));
       } catch (cause: unknown) {
-        failures.push(`${file.name}: ${cause instanceof Error ? cause.message : String(cause)}`);
+        failures.push(`${file.name}: ${errorMessage(cause)}`);
       }
     }
     await refresh();
@@ -437,11 +369,10 @@ export function FileManager({
     if (!active) return;
     for (const id of active.ids) {
       const element = entriesRef.current.get(id);
-      if (element) {
-        element.style.transform = "";
-        element.style.pointerEvents = "";
-        element.classList.remove("is-dragging");
-      }
+      if (!element) continue;
+      element.style.transform = "";
+      element.style.pointerEvents = "";
+      element.classList.remove("is-dragging");
     }
   };
 
@@ -499,9 +430,7 @@ export function FileManager({
     clearDragVisual();
     dragRef.current = null;
     dragPendingRef.current = { dx: 0, dy: 0 };
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (!outcome.shouldDrop) {
       setSelection(outcome.selection);
       return;
@@ -515,15 +444,17 @@ export function FileManager({
     try {
       if (target?.kind === "directory" && !ids.includes(target.id)) {
         await moveNodesToDirectory(fs, source, target);
+        setError(null);
         await refresh();
         return;
       }
       if (presentation === "desktop" && onDesktopReposition && rootRef.current) {
         const rect = rootRef.current.getBoundingClientRect();
         await onDesktopReposition(ids, { dx, dy }, { width: rect.width, height: rect.height });
+        setError(null);
       }
     } catch (cause: unknown) {
-      reportError(cause);
+      setError(errorMessage(cause));
     }
   };
 
@@ -536,9 +467,7 @@ export function FileManager({
     clearDragVisual();
     dragRef.current = null;
     dragPendingRef.current = { dx: 0, dy: 0 };
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     setSelection(outcome.selection);
   };
 
@@ -603,41 +532,24 @@ export function FileManager({
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).matches("input,textarea,select")) return;
-    const command = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
-    if (command && key === "a") {
+    if (isEditingKeyboardTarget(event.target)) return;
+    const commandModifier = event.ctrlKey || event.metaKey;
+    const command = fileManagerKeyboardCommand(event.key, commandModifier);
+    if (command) {
       event.preventDefault();
-      setSelection(selectAll(orderedIds));
+      if (command === "selectAll") setSelection(selectAll(orderedIds));
+      else if (command === "copy") copySelection();
+      else if (command === "cut") cutSelection();
+      else if (command === "paste") void paste();
+      else if (command === "delete") void removeSelected();
+      else if (command === "rename") {
+        const id = selection.focus ?? selection.ids.values().next().value as NodeId | undefined;
+        const node = id ? nodes.find((entry) => entry.id === id) : undefined;
+        if (node) startRename(node);
+      }
       return;
     }
-    if (command && key === "c") {
-      event.preventDefault();
-      clipboard.copy(selection.ids);
-      return;
-    }
-    if (command && key === "x") {
-      event.preventDefault();
-      clipboard.cut(selection.ids);
-      return;
-    }
-    if (command && key === "v") {
-      event.preventDefault();
-      void paste();
-      return;
-    }
-    if (event.key === "Delete") {
-      event.preventDefault();
-      void removeSelected();
-      return;
-    }
-    if (event.key === "F2") {
-      event.preventDefault();
-      const id = selection.focus ?? selection.ids.values().next().value as NodeId | undefined;
-      const node = id ? nodes.find((entry) => entry.id === id) : undefined;
-      if (node) startRename(node);
-      return;
-    }
+
     if (event.key === "Enter") {
       event.preventDefault();
       const id = selection.focus ?? selection.ids.values().next().value as NodeId | undefined;
@@ -647,7 +559,7 @@ export function FileManager({
     }
     if (event.key === "Escape") {
       event.preventDefault();
-      if (rename) setRename(null);
+      if (rename) cancelRename();
       else if (contextMenu || openWithNode || propertiesNode) {
         setContextMenu(null); setOpenWithNode(null); setPropertiesNode(null);
       } else setSelection(clearSelection());
@@ -659,7 +571,7 @@ export function FileManager({
       const index = currentId ? Math.max(0, orderedIds.indexOf(currentId)) : 0;
       const delta = event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 1;
       const nextId = orderedIds[Math.max(0, Math.min(orderedIds.length - 1, index + delta))];
-      if (nextId) setSelection(selectNode(selection, orderedIds, nextId, { range: event.shiftKey, additive: command }));
+      if (nextId) setSelection(selectNode(selection, orderedIds, nextId, { range: event.shiftKey, additive: commandModifier }));
     }
   };
 
@@ -667,9 +579,7 @@ export function FileManager({
   const canOpenWith = Boolean(contextNode && contextNode.kind !== "directory" && associations && openService);
 
   const menuAction = (action: "open" | "openWith" | "cut" | "copy" | "rename" | "delete" | "properties" | "newFolder" | "newText" | "newMarkdown" | "import" | "paste") => {
-    if (action === "newFolder") {
-      setContextMenu(null); setCreatingFolder(true); setNewFolderName("New Folder"); setNewFolderError(null); return;
-    }
+    if (action === "newFolder") { void createNewFolder(); return; }
     if (action === "newText") { void createNewDocument("text"); return; }
     if (action === "newMarkdown") { void createNewDocument("markdown"); return; }
     if (action === "import") { triggerImport(); return; }
@@ -677,8 +587,8 @@ export function FileManager({
     if (!contextNode) return;
     if (action === "open") { void openNode(contextNode); return; }
     if (action === "openWith") { setContextMenu(null); if (canOpenWith) setOpenWithNode(contextNode); return; }
-    if (action === "cut") { clipboard.cut(selection.ids.has(contextNode.id) ? selection.ids : [contextNode.id]); setContextMenu(null); return; }
-    if (action === "copy") { clipboard.copy(selection.ids.has(contextNode.id) ? selection.ids : [contextNode.id]); setContextMenu(null); return; }
+    if (action === "cut") { cutSelection(selection.ids.has(contextNode.id) ? selection.ids : [contextNode.id]); setContextMenu(null); return; }
+    if (action === "copy") { copySelection(selection.ids.has(contextNode.id) ? selection.ids : [contextNode.id]); setContextMenu(null); return; }
     if (action === "rename") { startRename(contextNode); return; }
     if (action === "delete") {
       const items = selection.ids.has(contextNode.id) ? selectedNodes() : [contextNode];
@@ -730,21 +640,19 @@ export function FileManager({
 
       {presentation !== "desktop" ? (
         <div className="fm-commandbar" role="toolbar" aria-label="File commands">
-          <button type="button" onClick={() => { setCreatingFolder(true); setNewFolderName("New Folder"); setNewFolderError(null); }}>New Folder</button>
+          <button type="button" onClick={() => void createNewFolder()}>New Folder</button>
           <button type="button" onClick={() => void createNewDocument("text")}>New Text Document</button>
           <button type="button" onClick={() => void createNewDocument("markdown")}>New Markdown Document</button>
           <button type="button" onClick={triggerImport}>Import Files…</button>
-          <button type="button" onClick={() => clipboard.copy(selection.ids)} disabled={selection.ids.size === 0}>Copy</button>
-          <button type="button" onClick={() => clipboard.cut(selection.ids)} disabled={selection.ids.size === 0}>Cut</button>
+          <button type="button" onClick={() => copySelection()} disabled={selection.ids.size === 0}>Copy</button>
+          <button type="button" onClick={() => cutSelection()} disabled={selection.ids.size === 0}>Cut</button>
           <button type="button" onClick={() => void paste()} disabled={!clipboard.snapshot()}>Paste</button>
           <button type="button" onClick={() => void removeSelected()} disabled={selection.ids.size === 0}>Delete</button>
           <button type="button" onClick={() => void refresh()}>Refresh</button>
         </div>
       ) : null}
 
-      {error ? (
-        <div className="fm-error-banner" role="alert"><span>{error}</span><button type="button" onClick={() => void refresh()}>Retry</button></div>
-      ) : null}
+      {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} onRetry={() => void refresh()} /> : null}
       {loading && nodes.length === 0 ? <p className="fm-empty">Loading…</p> : null}
 
       {presentation === "details" ? (
@@ -752,33 +660,15 @@ export function FileManager({
       ) : null}
 
       <div className="fm-entries">
-        {creatingFolder ? (
-          <div className={`fm-entry fm-entry--${presentation} fm-entry--new-folder`}>
-            <span className="fm-entry__icon" aria-hidden="true">▰</span>
-            <span className="fm-entry__name">
-              <input
-                autoFocus
-                value={newFolderName}
-                aria-label="New folder name"
-                onChange={(event: ReactChangeEvent<HTMLInputElement>) => { setNewFolderName(event.target.value); setNewFolderError(null); }}
-                onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
-                  if (event.key === "Enter") { event.preventDefault(); void commitNewFolder(); }
-                  if (event.key === "Escape") { event.preventDefault(); setCreatingFolder(false); setNewFolderError(null); }
-                }}
-              />
-              {newFolderError ? <span className="fm-inline-error" role="alert">{newFolderError}</span> : null}
-            </span>
-          </div>
-        ) : null}
-
-        {visibleNodes.map((node, index) => (
+        {visibleNodes.map((node) => (
           <FileEntry
             key={node.id}
+            fs={fs}
             node={node}
             selected={selection.ids.has(node.id)}
             focused={selection.focus === node.id}
             presentation={presentation}
-            {...(presentation === "desktop" ? { position: positions?.[node.id] ?? { x: 16 + Math.floor(index / 6) * 104, y: 16 + (index % 6) * 104 } } : {})}
+            {...(presentation === "desktop" ? { position: desktopRenderPositions[node.id] } : {})}
             rename={rename}
             setRef={(element) => {
               if (element) entriesRef.current.set(node.id, element);
@@ -796,12 +686,12 @@ export function FileManager({
             }}
             onRenameChange={(value) => setRename((current) => current ? { ...current, value, error: null } : null)}
             onRenameCommit={() => void commitRename()}
-            onRenameCancel={() => setRename(null)}
+            onRenameCancel={cancelRename}
           />
         ))}
       </div>
 
-      {!loading && visibleNodes.length === 0 && !creatingFolder ? <p className="fm-empty">This folder is empty.</p> : null}
+      {!loading && visibleNodes.length === 0 ? <p className="fm-empty">This folder is empty.</p> : null}
       {marquee ? <div className="fm-marquee" aria-hidden="true" style={marquee} /> : null}
 
       {contextMenu ? (
