@@ -116,7 +116,7 @@ export const FileEntry = memo(function FileEntry({
       rename.initialName,
       node.kind === "directory",
     );
-  }, [isRenaming, node.kind, rename?.initialName, rename?.session]);
+  }, [isRenaming, rename?.initialName, rename?.session]);
 
   useEffect(() => {
     let active = true;
