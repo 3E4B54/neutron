@@ -26,7 +26,6 @@ import {
   captureMarqueeRectangles,
   clearSelection,
   decideEntryPointerSelection,
-  deleteNodes,
   emptySelection,
   isFsEventRelevant,
   marqueeSelection,
@@ -43,14 +42,19 @@ import {
 import { pasteClipboardCollisionAware } from "./clipboard.ts";
 import {
   createDocument,
+  createGeneratedFolder,
   importFileIntoFs,
   type NewDocumentKind,
 } from "./create-import.ts";
+import { deleteFilesystemNodes } from "./delete.ts";
+import { downloadFsNode } from "./download.ts";
+import { directoryDropTargetId } from "./drop-target.ts";
 import { finishEntryDragGesture } from "./drag.ts";
 import { ErrorBanner } from "./ErrorBanner.tsx";
 import { FileEntry } from "./FileEntry.tsx";
 import { fileManagerKeyboardCommand, isEditingKeyboardTarget } from "./keyboard.ts";
 import type { InlineRenameState } from "./rename.ts";
+import { readSharedShortcut } from "./shortcut.ts";
 import { OpenWithPanel, PropertiesPanel } from "./properties.tsx";
 import "./file-manager.scss";
 
@@ -119,6 +123,7 @@ export function FileManager({
   const [openWithNode, setOpenWithNode] = useState<FsNode | null>(null);
   const [propertiesNode, setPropertiesNode] = useState<FsNode | null>(null);
   const [marquee, setMarquee] = useState<MarqueeVisual>(null);
+  const [dropTargetId, setDropTargetId] = useState<NodeId | null>(null);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -128,6 +133,7 @@ export function FileManager({
   const renameCommitRef = useRef<NodeId | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const dragPendingRef = useRef({ dx: 0, dy: 0 });
+  const dropTargetRef = useRef<NodeId | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -225,6 +231,9 @@ export function FileManager({
           if (!id) throw new Error("Explorer is not registered yet");
         }
       } else {
+        if (readSharedShortcut(node)) {
+          throw new Error("Shortcut launch dispatch is owned by Shell; FileManager preserves the shortcut resource without dereferencing its target");
+        }
         if (!associations || !openService) throw new Error("File association/open service is unavailable");
         await openNodeWithAssociations(fs, associations, openService, node.id);
       }
@@ -268,7 +277,7 @@ export function FileManager({
   const createNewFolder = async () => {
     setContextMenu(null);
     try {
-      const created = await fs.mkdir(directoryId, "New Folder");
+      const created = await createGeneratedFolder(fs, directoryId);
       setError(null);
       await refresh();
       setSelection({ ids: new Set([created.id]), anchor: created.id, focus: created.id });
@@ -280,18 +289,17 @@ export function FileManager({
 
   const removeNodes = async (items: readonly FsNode[]) => {
     if (items.length === 0) return;
-    const permitted = confirmDelete
-      ? await confirmDelete(items)
-      : typeof window === "undefined" || window.confirm(`Delete ${items.length === 1 ? items[0]?.name ?? "this item" : `${items.length} items`}?`);
+    const permitted = confirmDelete ? await confirmDelete(items) : true;
     if (!permitted) return;
     try {
-      await deleteNodes(fs, items);
+      await deleteFilesystemNodes(fs, items);
       setSelection(clearSelection());
       setContextMenu(null);
       setError(null);
       await refresh();
     } catch (cause: unknown) {
       setError(errorMessage(cause));
+      await refresh();
     }
   };
 
@@ -355,6 +363,24 @@ export function FileManager({
     fileInputRef.current?.click();
   };
 
+  const downloadNode = async (node: FsNode) => {
+    setContextMenu(null);
+    try {
+      await downloadFsNode(fs, node);
+      setError(null);
+    } catch (cause: unknown) {
+      setError(errorMessage(cause));
+    }
+  };
+
+  const setActiveDropTarget = (id: NodeId | null) => {
+    if (dropTargetRef.current === id) return;
+    dropTargetRef.current = id;
+    setDropTargetId(id);
+  };
+
+  const clearDropTarget = () => setActiveDropTarget(null);
+
   const applyDragTransform = (dx: number, dy: number) => {
     const active = dragRef.current;
     if (!active) return;
@@ -376,9 +402,17 @@ export function FileManager({
     }
   };
 
+  const dragTargetAtPoint = (clientX: number, clientY: number): NodeId | null => {
+    const active = dragRef.current;
+    if (!active?.moved) return null;
+    const underPointer = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-fm-node-id]");
+    return directoryDropTargetId(nodes, active.ids, underPointer?.dataset.fmNodeId);
+  };
+
   const handleEntryPointerDown = (node: FsNode, event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || rename?.nodeId === node.id) return;
     setContextMenu(null);
+    clearDropTarget();
     rootRef.current?.focus({ preventScroll: true });
     const decision = decideEntryPointerSelection(selection, orderedIds, node.id, {
       additive: event.ctrlKey || event.metaKey,
@@ -412,6 +446,7 @@ export function FileManager({
         }
       }
     }
+    setActiveDropTarget(dragTargetAtPoint(event.clientX, event.clientY));
     dragPendingRef.current = { dx, dy };
     if (dragFrameRef.current !== null) return;
     dragFrameRef.current = requestAnimationFrame(() => {
@@ -425,8 +460,10 @@ export function FileManager({
     if (!active || active.pointerId !== event.pointerId) return;
     const { dx, dy } = dragPendingRef.current;
     const outcome = finishEntryDragGesture(active, selection, false);
+    const targetId = dragTargetAtPoint(event.clientX, event.clientY);
     if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current);
     dragFrameRef.current = null;
+    clearDropTarget();
     clearDragVisual();
     dragRef.current = null;
     dragPendingRef.current = { dx: 0, dy: 0 };
@@ -437,12 +474,10 @@ export function FileManager({
     }
 
     const ids = [...outcome.ids];
-    const underPointer = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-fm-node-id]");
-    const targetId = underPointer?.dataset.fmNodeId;
     const target = targetId ? nodes.find((node) => node.id === targetId) : undefined;
     const source = nodes.filter((node) => ids.includes(node.id));
     try {
-      if (target?.kind === "directory" && !ids.includes(target.id)) {
+      if (target?.kind === "directory") {
         await moveNodesToDirectory(fs, source, target);
         setError(null);
         await refresh();
@@ -464,6 +499,7 @@ export function FileManager({
     const outcome = finishEntryDragGesture(active, selection, true);
     if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current);
     dragFrameRef.current = null;
+    clearDropTarget();
     clearDragVisual();
     dragRef.current = null;
     dragPendingRef.current = { dx: 0, dy: 0 };
@@ -576,9 +612,9 @@ export function FileManager({
   };
 
   const contextNode = contextMenu?.nodeId ? nodes.find((node) => node.id === contextMenu.nodeId) ?? null : null;
-  const canOpenWith = Boolean(contextNode && contextNode.kind !== "directory" && associations && openService);
+  const canOpenWith = Boolean(contextNode && contextNode.kind !== "directory" && !readSharedShortcut(contextNode) && associations && openService);
 
-  const menuAction = (action: "open" | "openWith" | "cut" | "copy" | "rename" | "delete" | "properties" | "newFolder" | "newText" | "newMarkdown" | "import" | "paste") => {
+  const menuAction = (action: "open" | "openWith" | "download" | "cut" | "copy" | "rename" | "delete" | "properties" | "newFolder" | "newText" | "newMarkdown" | "import" | "paste") => {
     if (action === "newFolder") { void createNewFolder(); return; }
     if (action === "newText") { void createNewDocument("text"); return; }
     if (action === "newMarkdown") { void createNewDocument("markdown"); return; }
@@ -587,6 +623,7 @@ export function FileManager({
     if (!contextNode) return;
     if (action === "open") { void openNode(contextNode); return; }
     if (action === "openWith") { setContextMenu(null); if (canOpenWith) setOpenWithNode(contextNode); return; }
+    if (action === "download") { void downloadNode(contextNode); return; }
     if (action === "cut") { cutSelection(selection.ids.has(contextNode.id) ? selection.ids : [contextNode.id]); setContextMenu(null); return; }
     if (action === "copy") { copySelection(selection.ids.has(contextNode.id) ? selection.ids : [contextNode.id]); setContextMenu(null); return; }
     if (action === "rename") { startRename(contextNode); return; }
@@ -611,7 +648,7 @@ export function FileManager({
       role="listbox"
       aria-label="Files"
       aria-multiselectable="true"
-      onKeyDown={handleKeyDown}
+      onKeyDownCapture={handleKeyDown}
       onPointerDown={handleBackgroundPointerDown}
       onPointerMove={handleBackgroundPointerMove}
       onPointerUp={finishMarquee}
@@ -667,6 +704,7 @@ export function FileManager({
             node={node}
             selected={selection.ids.has(node.id)}
             focused={selection.focus === node.id}
+            dropTarget={dropTargetId === node.id}
             presentation={presentation}
             {...(presentation === "desktop" ? { position: desktopRenderPositions[node.id] } : {})}
             rename={rename}
@@ -680,7 +718,8 @@ export function FileManager({
             onPointerCancel={handleEntryPointerCancel}
             onDoubleClick={() => void openNode(node)}
             onContextMenu={(event) => {
-              event.preventDefault(); event.stopPropagation();
+              event.preventDefault();
+              event.stopPropagation();
               if (!selection.ids.has(node.id)) setSelection(selectNode(emptySelection(), orderedIds, node.id));
               setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
             }}
@@ -695,11 +734,17 @@ export function FileManager({
       {marquee ? <div className="fm-marquee" aria-hidden="true" style={marquee} /> : null}
 
       {contextMenu ? (
-        <div className="fm-context-menu" role="menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+        <div
+          className="fm-context-menu"
+          role="menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onContextMenu={(event: ReactMouseEvent<HTMLDivElement>) => event.preventDefault()}
+        >
           {contextNode ? (
             <>
               <button type="button" role="menuitem" onClick={() => menuAction("open")}>Open</button>
               {contextNode.kind !== "directory" ? <button type="button" role="menuitem" disabled={!canOpenWith} title={canOpenWith ? undefined : "Association service unavailable"} onClick={() => menuAction("openWith")}>Open With…</button> : null}
+              {contextNode.kind === "file" ? <button type="button" role="menuitem" onClick={() => menuAction("download")}>Download</button> : null}
               <div className="fm-menu-separator" role="separator" />
               <button type="button" role="menuitem" onClick={() => menuAction("cut")}>Cut</button>
               <button type="button" role="menuitem" onClick={() => menuAction("copy")}>Copy</button>
