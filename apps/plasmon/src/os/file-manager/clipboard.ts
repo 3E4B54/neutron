@@ -1,29 +1,22 @@
 import type { FsNode, FsService, NodeId } from "../contracts/index.ts";
 import { FileOperationClipboard } from "./model.ts";
+import {
+  collisionFreeName,
+  normalizedSiblingName,
+  parseNameFamily,
+  splitNameExtension,
+} from "./naming.ts";
 
-export function normalizedCollisionName(name: string): string {
-  return name.normalize("NFC").toLowerCase();
-}
-
-export function splitCopyName(name: string, isDirectory: boolean): { stem: string; extension: string } {
-  if (isDirectory) return { stem: name, extension: "" };
-  const lastDot = name.lastIndexOf(".");
-  if (lastDot <= 0 || lastDot === name.length - 1) return { stem: name, extension: "" };
-  return { stem: name.slice(0, lastDot), extension: name.slice(lastDot) };
-}
+export const normalizedCollisionName = normalizedSiblingName;
+export const splitCopyName = splitNameExtension;
+export { parseNameFamily };
 
 export function collisionFreeCopyName(
   originalName: string,
   isDirectory: boolean,
   occupiedNames: ReadonlySet<string>,
 ): string {
-  if (!occupiedNames.has(normalizedCollisionName(originalName))) return originalName;
-  const { stem, extension } = splitCopyName(originalName, isDirectory);
-  for (let suffix = 1; suffix < Number.MAX_SAFE_INTEGER; suffix += 1) {
-    const candidate = `${stem} (${suffix})${extension}`;
-    if (!occupiedNames.has(normalizedCollisionName(candidate))) return candidate;
-  }
-  throw new Error(`Unable to allocate a copy name for ${originalName}`);
+  return collisionFreeName(originalName, isDirectory, occupiedNames);
 }
 
 export async function pasteClipboardCollisionAware(
