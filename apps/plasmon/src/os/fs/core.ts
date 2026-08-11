@@ -9,6 +9,7 @@ import type {
   OpenService,
   ProcessController,
 } from "../contracts/index.ts";
+import { reconcileCoreDesktopSeeds } from "./defaultSeeds.ts";
 import {
   NeutronProjectionService,
   TrashService,
@@ -82,6 +83,7 @@ export function createFilesystemCore(options: FilesystemCoreOptions): Filesystem
       ...(options.durableSeeds ? { durableSeeds: options.durableSeeds } : {}),
       ...(options.demoSeeds ? { demoSeeds: options.demoSeeds } : {}),
     });
+    await reconcileCoreDesktopSeeds(options.fs);
     let neutronProjectionError: string | null = null;
     try {
       await reconcileNeutron();
