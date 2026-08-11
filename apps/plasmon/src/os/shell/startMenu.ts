@@ -10,18 +10,19 @@ import type {
   OpenService,
   ProcessController,
 } from "../contracts/index.ts";
+import {
+  parseSharedShortcut,
+  shortcutMetadata as sharedShortcutMetadata,
+  type SharedShortcutTarget,
+} from "../fs/shortcut.ts";
 import { openFilesystemSearchResult } from "./searchOpening.ts";
 
-export const START_MENU_PATH = "/Start Menu";
+export const START_MENU_PATH = "/System/Start Menu";
 export const START_MENU_NAME = "Start Menu";
 export const START_SHORTCUT_METADATA_KEY = "plasmon.shortcut";
 export const START_SEEDED_IDENTITIES_KEY = "plasmon.shell.start.seeded.v1";
 
-export type StartShortcutTarget =
-  | { kind: "native"; handlerId: string }
-  | { kind: "element"; elementId: string; tileId?: string; view?: string }
-  | { kind: "node"; nodeId: string }
-  | { kind: "url"; url: string };
+export type StartShortcutTarget = SharedShortcutTarget;
 
 export interface StartShortcut {
   node: FsNode;
@@ -43,45 +44,8 @@ export interface StartLaunchServices {
   openService?: OpenService | undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
 export function parseStartShortcutTarget(value: unknown): StartShortcutTarget | null {
-  if (!isRecord(value) || value.format !== "plasmon.shortcut" || value.version !== 1 || !isRecord(value.target)) return null;
-  const target = value.target;
-  switch (target.kind) {
-    case "native": {
-      const handlerId = optionalString(target.handlerId);
-      return handlerId ? { kind: "native", handlerId } : null;
-    }
-    case "element": {
-      const elementId = optionalString(target.elementId);
-      if (!elementId) return null;
-      const tileId = optionalString(target.tileId);
-      const view = optionalString(target.view);
-      return {
-        kind: "element",
-        elementId,
-        ...(tileId ? { tileId } : {}),
-        ...(view ? { view } : {}),
-      };
-    }
-    case "node": {
-      const nodeId = optionalString(target.nodeId);
-      return nodeId ? { kind: "node", nodeId } : null;
-    }
-    case "url": {
-      const url = optionalString(target.url);
-      return url ? { kind: "url", url } : null;
-    }
-    default:
-      return null;
-  }
+  return parseSharedShortcut(value)?.target ?? null;
 }
 
 export function parseStartShortcut(node: FsNode): StartShortcut | null {
@@ -100,11 +64,7 @@ export function startShortcutTargetIdentity(target: StartShortcutTarget): string
 }
 
 function shortcutMetadata(target: StartShortcutTarget): JsonValue {
-  return {
-    format: "plasmon.shortcut",
-    version: 1,
-    target: { ...target },
-  };
+  return sharedShortcutMetadata(target)[START_SHORTCUT_METADATA_KEY] ?? null;
 }
 
 function stringList(value: JsonValue | undefined): Set<string> {
@@ -130,7 +90,10 @@ async function ensureStartRoot(fs: FsService): Promise<FsNode> {
   }
   const root = await fs.resolvePath("/");
   if (!root || root.kind !== "directory") throw new Error("Filesystem root is unavailable");
-  return fs.mkdir(root.id, START_MENU_NAME);
+  let system = await fs.resolvePath("/System");
+  if (!system) system = await fs.mkdir(root.id, "System");
+  if (system.kind !== "directory") throw new Error("/System exists but is not a directory");
+  return fs.mkdir(system.id, START_MENU_NAME);
 }
 
 async function ensureChildDirectory(fs: FsService, parent: FsNode, name: string): Promise<FsNode> {
