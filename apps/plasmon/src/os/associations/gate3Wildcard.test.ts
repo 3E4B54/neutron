@@ -63,11 +63,11 @@ test("text/plain specific handler precedes the */* alternate", async () => {
   ]);
 });
 
-test("application/octet-stream exposes the */* alternate", async () => {
+test("application/octet-stream exposes the */* alternate after its specific handler", async () => {
   const registry = new HandlerAssociationRegistry();
-  registry.registerHandler(handler("native:text"));
-  registry.registerRule({ id: "text:wildcard", handlerId: "native:text", mimeTypes: ["*/*"], priority: -1_000_000 });
+  registerSpecificAndWildcard(registry, "native:binary", "application/octet-stream");
   expect((await registry.resolve(node("blob.bin", "application/octet-stream"))).map(({ id }) => id)).toEqual([
+    "native:binary",
     "native:text",
   ]);
 });
