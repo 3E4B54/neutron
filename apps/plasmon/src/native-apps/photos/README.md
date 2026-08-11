@@ -1,3 +1,15 @@
-# Native Photos
+# Photos
 
-`native:photos` reads image bytes only through `FsService`, creates a browser Blob/object URL, and delegates pan/zoom behavior to `@panzoom/panzoom`. Object URLs and Panzoom instances are released on target changes/unmount. Supported sibling images can be navigated with the arrow keys without introducing a second media library or filesystem.
+Photos is the native image viewer for browser-supported image resources.
+
+`media.ts` classifies supported image MIME/extensions and manages object-URL
+leases. The viewer navigates image siblings while skipping non-image entries.
+`fullscreen.ts` treats browser fullscreen as an optional capability: rejection
+or policy denial falls back to the expanded in-window view without an uncaught
+error.
+
+Images should preserve source aspect ratio and use the shared visual
+presentation rules.
+
+Tests: `media.test.ts`, `fullscreen.test.ts`, plus packaged navigation/fullscreen
+checks where browser policy matters.
