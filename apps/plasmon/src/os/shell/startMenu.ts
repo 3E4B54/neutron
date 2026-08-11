@@ -146,7 +146,7 @@ async function ensureChildDirectory(fs: FsService, parent: FsNode, name: string)
 async function uniqueChildName(fs: FsService, parentId: string, preferred: string): Promise<string> {
   const used = new Set((await fs.list(parentId, { includeHidden: true, sort: "name" })).map((node) => node.name));
   if (!used.has(preferred)) return preferred;
-  for (let index = 2; index < 10_000; index += 1) {
+  for (let index = 1; index < 10_000; index += 1) {
     const candidate = `${preferred} (${index})`;
     if (!used.has(candidate)) return candidate;
   }
