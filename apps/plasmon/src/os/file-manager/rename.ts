@@ -15,6 +15,10 @@ export interface RenameInputLike {
   setSelectionRange(start: number, end: number): void;
 }
 
+export function renameSelectionRange(name: string, isDirectory: boolean): readonly [number, number] {
+  return isDirectory ? [0, name.length] : basenameSelectionRange(name);
+}
+
 /**
  * Owns the one-time browser selection step for an inline rename session.
  * Updating the controlled input value must never retrigger basename selection.
@@ -22,11 +26,16 @@ export interface RenameInputLike {
 export class RenameSelectionController {
   private initializedSession: number | null = null;
 
-  initialize(session: number, input: RenameInputLike, initialName: string): boolean {
+  initialize(
+    session: number,
+    input: RenameInputLike,
+    initialName: string,
+    isDirectory = false,
+  ): boolean {
     if (this.initializedSession === session) return false;
     this.initializedSession = session;
     input.focus({ preventScroll: true });
-    const [start, end] = basenameSelectionRange(initialName);
+    const [start, end] = renameSelectionRange(initialName, isDirectory);
     input.setSelectionRange(start, end);
     return true;
   }
