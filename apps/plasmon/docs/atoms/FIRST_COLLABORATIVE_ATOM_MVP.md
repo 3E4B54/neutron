@@ -1,12 +1,18 @@
 # First Collaborative Plasmon Atom — Hackathon MVP Scope
 
-Status: **SCOPE CONTRACTION FOLLOW-UP — DESIGN ONLY**
+Status: **SCOPE CONTRACTION FOLLOW-UP — DESIGN ONLY — VANILLA NEUTRON MUST GATE**
 
 Parent architecture: `FIRST_COLLABORATIVE_ATOM_DESIGN.md` at `d842fd93d6ea080e8170caae26c5ccc78d65647a` remains approved and authoritative for the broader architecture/research direction.
 
-This document does **not** replace or substantially revise that design. It narrows the first implementation target to answer one product question:
+This document does **not** replace or substantially revise that design. It narrows the first implementation target and corrects the acceptance environment after Coordinator A/C review.
 
-> What is the smallest Review Atom that proves the Plasmon Atom abstraction and improves Plasmon GUI review without becoming Jira, Scrum software, or Google Docs?
+> **The hackathon MUST gate is a completely normal Review `.neutron` application running productively on stock/vanilla Neutron. Plasmon + MTN live sharing is a HIGH-value stretch demonstration, not a prerequisite for the base app.**
+
+The product question is therefore:
+
+> What is the smallest normal Neutron Review application that proves one Element can own multiple logical Atoms, keeps those Atoms richer than their source files, and is immediately useful for Plasmon GUI review without becoming Jira, Scrum software, Google Docs, or a custom-kernel-only demo?
+
+---
 
 ## 1. Scope decision
 
@@ -16,12 +22,20 @@ It does **not** need Yjs or another CRDT for version 1.
 
 It does **not** need text-range comments, live cursor presence, per-user text undo, arbitrary concurrent source editing, dependency-aware selective history surgery, sophisticated checkpoint retention, or a generalized collaboration framework.
 
+It also does **not** require Plasmon, MTN, a shared URL, cross-AppScope leases, authenticated multi-user live sharing, or custom-kernel behavior for the MUST acceptance gate.
+
 The recommended first implementation is:
 
 ```text
+normal Review.neutron app on vanilla Neutron
+        +
+normal File > Open through Neutron Files
+        +
 provider-owned structured Review state
         +
-typed authenticated commands
+multiple logical AtomIds inside one Review installation
+        +
+typed commands
         +
 append-only meaningful activity/events
         +
@@ -32,42 +46,175 @@ owner restore to a prior revision
 Markdown/TODO import and export
 ```
 
-That is sufficient to prove the architectural chain that matters:
+That is sufficient to prove the base architectural chain:
 
 ```text
 Element
-  -> multiple logical Atoms
-  -> one live Atom shared through MTN
-  -> several authenticated humans operate on it
-  -> AI operates on the same structured Atom
-  -> independent evidence is preserved
+  -> one normal physical Review installation
+  -> multiple logical Review Atoms
+  -> source file is not the Atom
+  -> structured Review state is richer than Markdown
+  -> human + agent clients operate through typed Review commands
   -> meaningful history and recovery work
 ```
 
-This is the hackathon target.
+The custom Plasmon/MTN stretch path then proves the second chain:
+
+```text
+same Review.neutron
+  -> shared Review Atom URL
+  -> Plasmon bootstrap/install/open UX
+  -> MTN 0.2 live authorization
+  -> authenticated humans + AI operate on one live Atom
+```
+
+The first chain is **MUST**. The second is **HIGH / hackathon stretch**.
 
 ---
 
-## 2. What one MVP Atom is
+## 2. Vanilla Neutron is the primary acceptance environment
 
-One Atom remains exactly the logical object defined by the approved architecture:
+Primary acceptance path:
 
-> **One Review Atom is one independently shareable live review workspace.**
+```text
+install/open Review.neutron
+  -> File > Open
+  -> select/open Markdown/TODO source through normal Neutron Files access
+  -> Review imports or reopens a logical Review Atom
+  -> user reviews/tests/comments/coordinates
+  -> Review persists richer Atom state independently of source Markdown
+  -> user can export readable Markdown/TODO
+```
 
-For the hackathon, that workspace contains only what is needed for GUI review coordination:
+No Plasmon Desktop or MTN component is necessary to complete this path.
 
-- stable review items imported from a Markdown/TODO template or created later;
-- a title and optional descriptive Markdown/text for each item;
-- each human participant's independent test result;
-- lightweight coordinator/work metadata;
-- item comments/replies;
-- meaningful recent activity;
-- durable revisions sufficient for owner restore;
-- source/import/export metadata.
+The Review package should behave like an ordinary Neutron app first. Plasmon should later make that same application easier to discover, install, open, and share; Plasmon must not be what makes Review functional in the first place.
 
-It does **not** make the complete Markdown source a simultaneously editable Google-Docs-like surface.
+### 2.1 Spreadsheet precedent
 
-A single physical Review Element installation must still be capable of owning multiple logical Review Atoms:
+The existing `apps/spreadsheet` application establishes the vanilla conventions that matter here:
+
+- it is a normal `.neutron` application with a persistent background resident;
+- its tile offers ordinary **New/Open** behavior;
+- **File > Open** operates on a Files path rather than a special shell-only object loader;
+- the resident reads bytes through the normal Neutron Files app-tool boundary;
+- the first file operation goes through normal Neutron consent rather than bypassing that security boundary;
+- non-native sources such as CSV/XLSX are imported into richer application state rather than treated as lossless writable native state;
+- source provenance is tracked separately from the current application model;
+- mutations use a workbook identity/revision plus command IDs to reject stale writes;
+- the manifest uses a persistent background and `persistent_browser_storage` on vanilla Neutron.
+
+Relevant implementation references:
+
+```text
+apps/spreadsheet/README.md
+apps/spreadsheet/neutron.json
+apps/spreadsheet/src/index.tsx
+apps/spreadsheet/src/session.ts
+apps/spreadsheet/src/file_ports.ts
+apps/spreadsheet/src/neutron_files_port.ts
+apps/spreadsheet/src/recovery.ts
+```
+
+Review should borrow these conventions where they fit. It should **not** clone Spreadsheet's workbook-specific native-file model merely because Spreadsheet has `.nsheet`.
+
+Spreadsheet needs `.nsheet` because its full workbook must have a lossless writable file representation. Review's MVP has a different goal: its canonical Atom state can be owned by the Review application's persistent provider/background store, while Markdown/TODO remains a readable source/projection.
+
+### 2.2 File > Open semantics for Review
+
+Review's File > Open is source-oriented:
+
+```text
+File > Open
+  -> ordinary Neutron Files read
+  -> Markdown/TODO bytes
+  -> parse into stable ReviewItemIds
+  -> create a new logical Review Atom
+```
+
+The import records source provenance such as:
+
+```text
+path
+media type
+source etag/hash if available
+import timestamp
+```
+
+The source path/hash helps humans understand where the Review came from; it is **not** Atom identity.
+
+If the selected source path is already linked to exactly one known Review Atom in the current installation, Review may offer/reopen that existing Atom rather than silently duplicate it. If there are multiple matching historical imports, or the source changed externally, the app should ask the user whether to open an existing Review or import a new Review. It should not silently merge external Markdown changes into canonical Atom state for V1.
+
+A separate small **Recent Reviews / Open Review** view may reopen Atom records already owned by Review without requiring the original Markdown file to exist.
+
+### 2.3 Source file is not the Atom
+
+After import:
+
+```text
+/todo.md
+   !=
+Review Atom 01J...
+```
+
+The Atom remains usable if `/todo.md` is later renamed, changed, or deleted.
+
+The source file contains portable review/template text. The Atom additionally contains:
+
+- stable item IDs;
+- human evidence;
+- Desired/Effort/Owner/Work state;
+- dependency/blocker references;
+- comments;
+- activity;
+- durable revisions;
+- restore history.
+
+This is one of the primary MUST proofs.
+
+### 2.4 Simplest vanilla persistence model
+
+The simplest sensible V1 model is:
+
+```text
+Review persistent background/provider storage
+  -> Atom catalog keyed by AtomId
+  -> current structured state for each Atom
+  -> append-only meaningful events
+  -> durable revisions/snapshots
+  -> source provenance
+```
+
+Use the normal Neutron persistent-background/browser-storage capability already demonstrated by Spreadsheet rather than requiring Plasmon-owned storage or a custom kernel path.
+
+For the hackathon, "durable" means the Review Atom and its revisions survive ordinary tile close/reopen and app-session lifecycle expected from the declared persistent storage capability. Cross-device replication is not a MUST requirement.
+
+A future implementation may move or mirror this state into stronger app-backend storage without changing logical Atom identity.
+
+### 2.5 No special `.atom` file format for MUST
+
+Do **not** require a `.atom`, `.review`, or `.nreview` native file solely to make the architecture feel object-oriented.
+
+The MVP already has a natural split:
+
+```text
+canonical rich state -> Review-owned persistent Atom store
+portable source/report -> Markdown/TODO in Files
+```
+
+A lossless portable Atom archive may become HIGH/ADVANCED if users need backup, migration, handoff between vanilla installations, or offline transport of full comments/history. That is a concrete future reason for a native/archive format; the MUST gate does not yet provide one.
+
+---
+
+## 3. What one MVP Atom is
+
+One Atom remains the logical object defined by the approved architecture:
+
+> **One Review Atom is one independently addressable review workspace owned by the Review Element.**
+
+For vanilla V1, "independently addressable" does not require MTN sharing. It means the Review app can create, list, open, revise, restore, and export Atom A separately from Atom B even though both live inside the same physical Review installation.
+
+Example:
 
 ```text
 Review Element installation
@@ -76,11 +223,22 @@ Review Element installation
   └─ Atom C: Later regression review
 ```
 
-Proving this logical separation from the physical app instance is a primary MVP objective.
+Each Atom contains only what is needed for GUI review coordination:
+
+- stable review items imported from a Markdown/TODO template or created later;
+- title and optional descriptive Markdown/text per item;
+- independent participant/test evidence;
+- lightweight coordinator/work metadata;
+- item comments/replies;
+- meaningful recent activity;
+- durable revisions sufficient for whole-Atom restore;
+- source/import/export metadata.
+
+It does **not** make the complete Markdown source a simultaneously editable Google-Docs-like surface.
 
 ---
 
-## 3. Product goal: a dog-food review board, not project management
+## 4. Product goal: a dog-food review board, not project management
 
 A typical Review item may look like:
 
@@ -115,7 +273,7 @@ Brian saying `NOT WORKING` must remain intact when a coordinator sets the item t
 The tool should make it easy to answer:
 
 ```text
-What is broken for multiple reviewers?
+What is broken?
 What has not been tested?
 What needs polish?
 What MUST items are still unresolved?
@@ -123,8 +281,6 @@ What is ready for Agent 2?
 What needs retesting?
 What changed recently?
 ```
-
-That is enough coordination for the current Plasmon GUI review.
 
 The Review Element should explicitly **not** add:
 
@@ -141,48 +297,55 @@ A "sprint" can simply be a saved or temporary query/view over existing Review fi
 
 ---
 
-## 4. Pressure-test: is Yjs/CRDT required?
+## 5. Pressure-test: is Yjs/CRDT required?
 
 ### Decision: no, not for version 1
 
 Yjs remains a strong future option if Review later becomes a genuinely collaborative document editor, as documented in the approved architecture.
 
-However, the hackathon's concurrent actions are naturally independent structured writes:
+The V1 operations are naturally structured writes:
+
+```text
+Brian sets his result on item #72
+AI adds a comment
+Brian changes Desired to MUST
+Agent 2 becomes Owner
+Work state becomes NEEDS RETEST
+```
+
+In the future live multi-user stretch:
 
 ```text
 Alice sets her result on item #72
 Bob sets his result on item #72
 Carol comments on item #72
 AI sets work state to NEEDS RETEST
-Brian changes Desired to MUST
 ```
 
-These do not require a text CRDT.
-
-The provider can serialize typed commands while preserving independent state. Two users updating different fields do not overwrite each other because the data model already gives those fields distinct identities.
+These do not require a text CRDT because the schema already gives independent records stable identities.
 
 For example:
 
 ```text
-review result key = (itemId, participantPrincipal)
+review result key = (itemId, participant/actor key)
 comment key       = commentId
 coordinator data  = itemId + coordinator fields
 ```
 
-A conflict only exists when two authorized actors update the **same coordinator field** or the **same mutable item description**. For MVP, ordinary optimistic concurrency is sufficient:
+A conflict only exists when two callers update the **same coordinator field** or the **same mutable item description**. Ordinary optimistic revision checks are sufficient:
 
 ```text
-command carries baseRevision
-provider accepts when safe
-or returns current revision/conflict
+command carries expected/base revision
+provider accepts when current
+or returns a revision conflict
 client reloads and retries intentionally
 ```
 
-This is dramatically simpler than importing a CRDT runtime and still avoids silent lost updates.
+This follows the same general stale-write discipline already demonstrated by Spreadsheet without importing a CRDT runtime.
 
 ### What is lost by deferring Yjs?
 
-The MVP will not provide:
+V1 will not provide:
 
 - simultaneous character-by-character editing of the same description;
 - offline merge of arbitrary text edits;
@@ -194,7 +357,7 @@ None is required to validate the first real Atom.
 
 ### Re-entry criterion for Yjs
 
-Add Yjs or another CRDT only when a concrete product requirement appears such as:
+Add Yjs or another CRDT only when a concrete requirement appears such as:
 
 > Two or more people must simultaneously edit substantial free-form document content and ordinary revision-conflict handling is materially harming the workflow.
 
@@ -202,9 +365,9 @@ Do not add it merely because the broader Atom architecture can support sophistic
 
 ---
 
-## 5. Canonical MVP state
+## 6. Canonical MVP state
 
-The MVP canonical state is a provider-owned structured Review document/database, not Markdown text.
+The canonical state is a provider-owned structured Review database, not Markdown text.
 
 Conceptual schema only:
 
@@ -213,7 +376,7 @@ type AtomId = string;
 type ReviewItemId = string;
 type CommentId = string;
 type RevisionId = string;
-type PrincipalId = string;
+type ActorKey = string;
 
 type TestResult =
   | "not_tested"
@@ -260,15 +423,15 @@ interface ReviewItem {
   title: string;
   descriptionMarkdown?: string;
 
-  // Human evidence: independent per participant.
-  results: Record<PrincipalId, ParticipantResult>;
+  // Human/test evidence: independent from coordinator state.
+  results: Record<ActorKey, ParticipantResult>;
 
   // Review-specific coordination only.
   coordination: {
-    desired: Desired;             // default null / unset
-    effort: Effort;               // default null / unset
-    owner?: PrincipalId | string; // human or named agent reference
-    workState: WorkState;         // default untriaged
+    desired: Desired;            // default null / unset
+    effort: Effort;              // default null / unset
+    owner?: ActorKey | string;   // optional human or named agent reference
+    workState: WorkState;        // default untriaged
     blockedBy?: ReviewItemId[];
     dependsOn?: ReviewItemId[];
   };
@@ -277,7 +440,7 @@ interface ReviewItem {
 }
 
 interface ParticipantResult {
-  participant: PrincipalId;
+  actor: ActorKey;
   result: TestResult;
   note?: string;
   updatedAtNs: string;
@@ -287,28 +450,31 @@ interface ParticipantResult {
 interface Comment {
   commentId: CommentId;
   itemId: ReviewItemId;
-  author: PrincipalId;
-  actorType: "human" | "ai" | "system";
+  actor: ActorKey;
+  actorType?: "human" | "ai" | "system";
+  displayName?: string;
   body: string;
   createdAtNs: string;
   replyTo?: CommentId;
 }
 ```
 
-### 5.1 New requirements must remain untriaged by default
+`ActorKey`, `actorType`, and `displayName` are application-domain concepts in the vanilla app unless a stronger platform identity is available. They must not be mistaken for MTN-authenticated identity.
 
-When a human or AI adds a new Review item, the defaults are deliberately:
+### 6.1 New requirements remain untriaged by default
+
+When a human or AI adds a new Review item, defaults are deliberately:
 
 ```text
-Desired:   unset
-Effort:    unset
-Owner:     unset
+Desired:    unset
+Effort:     unset
+Owner:      unset
 Work state: Untriaged
 ```
 
 A newly discovered requirement does **not** automatically become `MUST`, enter the current work queue, or acquire an owner.
 
-This preserves a meaningful distinction between:
+This preserves the distinction between:
 
 ```text
 "we discovered this"
@@ -320,9 +486,7 @@ and:
 "we decided this is current priority"
 ```
 
-### 5.2 Test evidence remains separate
-
-A participant's evidence is never inferred from coordinator metadata.
+### 6.2 Test evidence remains separate
 
 Valid state:
 
@@ -334,25 +498,27 @@ Effort:         Small
 Owner:          Agent 2
 ```
 
-Likewise setting `Work state: DONE` does not rewrite all human results to `WORKING`. Retesting remains evidence-producing activity.
+Setting `Work state: DONE` does not rewrite human/test results to `WORKING`. Retesting remains evidence-producing activity.
 
 ---
 
-## 6. Typed commands instead of generalized collaboration
+## 7. Typed commands instead of generalized collaboration
 
-The MVP provider exposes narrow Review operations.
+The Review provider/background exposes narrow Review operations.
 
 Conceptually:
 
 ```text
+atom.list
 atom.get
-atom.listMine
+atom.createFromMarkdown
+atom.open
 
 review.listItems
 review.getItem
 review.createItem
 review.updateItemText
-review.setMyResult
+review.setResult
 review.setCoordination
 
 comment.list
@@ -367,55 +533,54 @@ history.restoreRevision
 export.markdown
 ```
 
-The provider derives the actor from the authenticated MTN context. A client cannot claim another participant identity in `setMyResult`.
+The exact vanilla tool names are Review-specific and need not become generic Atom contracts.
 
-### 6.1 Human concurrency
+### 7.1 Vanilla human + agent behavior
 
-Typed operations make the common concurrent case naturally safe:
+The human tile and Neutron agent tools should operate on the same resident/provider state and revisioned command engine, following the useful Spreadsheet pattern.
 
-```text
-Alice -> setMyResult(#72, working)
-Bob   -> setMyResult(#72, not_working)
-```
+That proves an AI/agent can structurally inspect and operate on a Review Atom without DOM scraping even before MTN live sharing exists.
 
-These touch different participant records.
-
-Comments append rather than overwrite.
-
-Coordinator metadata updates can use the current Atom revision or a small field-level expected-value check to detect actual same-field conflicts.
-
-### 6.2 AI uses the same state, not the GUI
-
-The AI consumes the same typed Review API and MTN authorization model.
-
-Minimum useful AI reads:
+Minimum useful agent reads:
 
 ```text
+list/open Atoms
 list items
-read participant results
-filter disagreement
+read results
 filter not working
 filter needs polish
 filter not tested
-read coordinator metadata
+read Desired/Effort/Owner/Work state
+read dependencies/blockers
 read comments
 read recent activity
+read revision history
 ```
 
-Minimum useful AI writes, when granted:
+Minimum useful agent writes:
 
 ```text
 add comment
 create review item
 set coordinator/work metadata
-optionally set its own test result
+optionally record an agent's own result/evidence
 ```
 
-No DOM scraping is canonical.
+### 7.2 Same-field concurrency
+
+Use an expected/base revision and idempotent command ID, following the existing Neutron Spreadsheet precedent.
+
+For V1:
+
+```text
+command(expectedRevision, commandId, operation)
+```
+
+If the Atom advanced incompatibly, return a revision conflict and reload. Do not silently last-write-wins a stale edit.
 
 ---
 
-## 7. Comments: item-level only for MVP
+## 8. Comments: item-level only for MVP
 
 MVP comments attach to a stable `ReviewItemId`.
 
@@ -423,11 +588,11 @@ That solves the actual review need:
 
 ```text
 #72 Text editor opens Monaco
-  Alice: focus is incorrect after opening
+  Brian: focus is incorrect after opening
   AI: likely regression from Open With path
 ```
 
-Replies may be represented with a simple `replyTo` relationship or flat ordered comments if that is materially faster to implement.
+Replies may use a simple `replyTo` relationship or flat ordered comments if that is materially faster.
 
 The MVP does **not** require:
 
@@ -437,34 +602,33 @@ The MVP does **not** require:
 - rich annotation layers;
 - generalized comment protocol shared by every Atom type.
 
-Those remain HIGH/ADVANCED capabilities from the approved architecture.
-
 ---
 
-## 8. Activity and history: simplify aggressively
+## 9. Activity and history: simplify aggressively
 
-The Review tool needs to show meaningful recent activity such as:
+The tool should show meaningful recent activity such as:
 
 ```text
 15:42 Brian       marked #72 NOT WORKING
-15:43 Alice       commented on #72
+15:43 Brian       commented on #72
 15:45 AI Agent    set #72 work state to NEEDS DESIGN
 15:51 Brian       set #72 Desired to MUST
 ```
 
 This does not require a Git-like history engine.
 
-### 8.1 Append-only meaningful events
+### 9.1 Append-only meaningful events
 
-Each accepted mutation appends a small provider-authored event:
+Each accepted mutation appends a provider-authored event:
 
 ```ts
 interface ActivityEvent {
   eventId: string;
   revisionId: RevisionId;
   atomId: AtomId;
-  actor: PrincipalId;
-  actorType: "human" | "ai" | "system";
+  actor: ActorKey;
+  actorType?: "human" | "ai" | "system";
+  displayName?: string;
   occurredAtNs: string;
   operation: string;
   itemId?: ReviewItemId;
@@ -472,28 +636,26 @@ interface ActivityEvent {
 }
 ```
 
-The event stream is for attribution/activity and can contain enough structured before/after information to render useful changes.
+For vanilla Neutron, actor labels/type are whatever Review can truthfully derive or has configured. They are not automatically cryptographic/authentication claims.
 
-It must not contain bearer tokens.
+For the MTN stretch, the authoritative security identity rule is stricter and is defined in section 13.
 
-### 8.2 One durable revision per accepted mutation or transaction
+### 9.2 Durable revision per accepted transaction
 
-For the hackathon, simplicity beats storage optimization.
+For hackathon-sized Review Atoms, simplicity beats storage optimization.
 
-After each accepted provider transaction, create a durable revision that can reconstruct the full Atom state.
-
-Conceptually:
+After each accepted provider transaction, create a durable revision that can reconstruct the full Atom state:
 
 ```text
-R100 -> state after Alice result
-R101 -> state after Bob result
-R102 -> state after AI comment
+R100 -> state after result update
+R101 -> state after comment
+R102 -> state after AI coordinator update
 R103 -> state after Desired=MUST
 ```
 
-Implementation may store full snapshots or snapshot-plus-delta internally, but that storage optimization is not an MVP architecture requirement.
+Implementation may store full snapshots or snapshot-plus-delta internally. That storage optimization is not a V1 architecture requirement.
 
-The contract only needs the behavior:
+Required behavior is only:
 
 ```text
 list revisions
@@ -501,9 +663,9 @@ inspect revision
 restore revision
 ```
 
-### 8.3 Owner restore instead of generalized selective revert
+### 9.3 Whole-Atom restore instead of generalized selective revert
 
-The MVP recovery mechanism is:
+The recovery mechanism is:
 
 > **Restore the whole Atom to revision R.**
 
@@ -512,9 +674,9 @@ Restore creates a **new current revision** whose contents equal the selected his
 Example:
 
 ```text
-R103 D accidentally destroys several items
-R104 more activity occurs
-R105 Brian restores state from R102
+R103 mistaken destructive change
+R104 later mutation
+R105 owner restores state from R102
 ```
 
 History remains visible:
@@ -527,7 +689,7 @@ R105 restored Atom from R102
 
 The provider never rewrites or deletes prior history.
 
-### 8.4 Why generalized event-level revert is not MUST
+### 9.4 Why generalized event-level revert is not MUST
 
 Selective dependency-aware revert requires substantially more machinery:
 
@@ -537,13 +699,11 @@ Selective dependency-aware revert requires substantially more machinery:
 - previews;
 - partial rollback behavior.
 
-The dog-food MVP can recover safely with whole-Atom restore because Review Atoms are small and human-readable.
+Review Atoms are small and human-readable, so whole-Atom restore is sufficient for V1.
 
-Selective revert is HIGH after MVP if real usage demonstrates that whole-Atom restore loses too much unrelated later work.
+### 9.5 No sophisticated retention design yet
 
-### 8.5 No sophisticated checkpoint-retention design yet
-
-For hackathon-sized Review Atoms, retain all revisions or a plainly generous bounded count.
+For hackathon data volume, retain all revisions or a plainly generous bounded count.
 
 Do not build:
 
@@ -557,9 +717,9 @@ Measure actual data volume first.
 
 ---
 
-## 9. Markdown/TODO import and export
+## 10. Markdown/TODO import and export
 
-Markdown remains a portable representation, not the canonical collaboration database.
+Markdown remains a portable representation, not the canonical Review database.
 
 ### Import
 
@@ -579,13 +739,13 @@ item B -> Download works
 item C -> Shortcut execution works
 ```
 
-The imported Markdown checkbox value does not become shared participant evidence. It may be treated as source/template information only.
+The imported Markdown checkbox value does not become shared participant evidence. It is source/template information only unless the Review import policy explicitly maps it to a separate source-status field.
 
 ### Export
 
 Export produces readable Markdown/TODO output.
 
-A simple export may include coordinator summaries in ordinary text while keeping the result readable without Plasmon, for example:
+A simple export may include coordinator summaries:
 
 ```markdown
 - [ ] Text editor opens Monaco
@@ -596,100 +756,59 @@ A simple export may include coordinator summaries in ordinary text while keeping
   - Results: 1 working, 1 not working, 1 needs polish
 ```
 
-Participant details/comments can optionally be emitted beneath items or into a second report section.
+Participant details/comments can optionally be emitted beneath items or into a report section.
 
 The exact export style is Review-specific. It does not need to round-trip every historical event into Markdown.
 
 ### Source relationship
 
-For V1, import creates an Atom-owned copy. It does not live-edit the original file.
+Import creates an Atom-owned working object. It does not live-edit the source file.
 
-Applying/exporting back to a source path can be explicit later in the MVP if inexpensive, but two-way live filesystem synchronization is not required.
+For MUST, **Export** or **Export As** writes a new readable Markdown/TODO snapshot through ordinary Neutron Files behavior.
 
----
-
-## 10. Sharing and MTN: minimum live path
-
-Do not change MTN 0.2.
-
-The approved architecture's key conclusion remains: the Review Atom is a live revision-free authorization resource, not a snapshot URL.
-
-Minimal share flow:
-
-```text
-owner creates logical Review Atom
-  -> issue MTN grant for Atom resource
-  -> produce share URL
-  -> recipient opens URL
-  -> safe inspect determines required Review Element / rights
-  -> exact recipient AppScope redeems
-  -> live MTN lease
-  -> recipient performs lease-bound Review provider calls
-```
-
-The Atom's current revision is application state, not MTN resource identity.
-
-MTN remains authoritative for:
-
-- AppScope;
-- ownership/liveness;
-- grants;
-- bearer capabilities;
-- leases;
-- revocation;
-- delegation;
-- authorization epochs;
-- authenticated cross-AppScope calls.
-
-Review does not duplicate those facts.
+Explicit apply-back to the original source with etag/hash conflict checking is HIGH after MVP. Two-way live filesystem synchronization is ADVANCED and not required.
 
 ---
 
-## 11. Absolute minimum generic Atom/Sharing contract
+## 11. Absolute minimum generic Atom contract for the vanilla MUST gate
 
-The hackathon should resist turning Review-specific fields into generic platform abstractions.
+The vanilla MUST gate should **not** force Plasmon to freeze a large new generic Atom API merely to implement Review.
 
-The minimum **generic Atom** concepts needed are approximately:
-
-```text
-AtomId              stable logical ID distinct from app_instance_id
-AtomType            application/resource protocol type
-ElementId           application/package identity
-create Atom         create logical object inside an Element provider
-list/describe Atom  discover/open owned logical objects
-open Atom            route Atom to its Element/provider
-```
-
-The minimum **generic live Sharing** concepts needed are:
+The minimum architectural invariants are:
 
 ```text
-share Atom/resource
-  -> issue MTN grant for stable revision-free resource identity
-
-open shared resource
-  -> safe inspect
-  -> resolve/install required consumer Element
-  -> redeem with exact consumer AppScope
-  -> retain live MTN lease
-
-call shared resource
-  -> lease-bound typed provider operation
-
-revoke share
-  -> MTN revoke
+AtomId     stable logical identity
+AtomType   application-defined logical type
+ElementId  package/application identity
 ```
 
-The generic layer must preserve these separations:
+and:
 
 ```text
 AtomId
 != ElementId
-!= physical app_instance_id/AppScope
-!= grant/bearer token
+!= physical app instance/AppScope
+!= source path
+!= source bytes
 != revision
 ```
 
-### 11.1 What must remain Review-specific
+Review must demonstrate internally that one Element installation can create/list/open multiple AtomIds.
+
+The **behavior** required is:
+
+```text
+create logical Atom
+list logical Atoms
+open logical Atom
+read current state
+mutate through typed commands
+export
+```
+
+These can initially be Review-owned provider/tool operations. A generic platform API does not need to be frozen before the vanilla app is useful.
+
+### 11.1 What remains Review-specific
 
 The generic Atom platform does **not** need to understand:
 
@@ -702,102 +821,60 @@ The generic Atom platform does **not** need to understand:
 - comments;
 - revision presentation;
 - Markdown/TODO import/export rules;
-- consensus queries;
+- consensus/query views;
 - AI review queries;
 - sprint-like filtered views.
 
-Those belong to the Review Element's typed resource protocol.
+Those belong to the Review Element.
 
-### 11.2 No generalized collaboration abstraction in the hackathon contract
+### 11.2 No generic Sharing contract is required for MUST
 
-Do not freeze generic platform concepts such as:
+Because MTN live sharing is HIGH / stretch, the vanilla acceptance gate does not require a generic Sharing contract at all.
 
-```text
-CollaborativeDocument
-CommentThread
-PresenceSession
-CRDTOperation
-UndoManager
-TaskPriority
-WorkflowState
-Sprint
-```
-
-The Review MVP does not need them, and other Atom types may define collaboration very differently.
+This is an intentional contraction.
 
 ---
 
-## 12. Permissions needed for MVP
+## 12. MUST for hackathon — vanilla Neutron
 
-Keep permissions similarly narrow and Review-specific where possible.
+These are necessary to prove the base Atom abstraction and make the dog-food tool useful.
 
-Conceptual rights:
+### Packaging/runtime
 
-```text
-atom.read
-review.set_own_result
-review.comment
-review.add_item
-review.edit_item
-review.coordinate
-history.read
-history.restore
-atom.export
-share.manage
-```
+- Package and install as a normal `Review.neutron` application.
+- Run productively on stock/vanilla Neutron with no Plasmon/MTN dependency.
+- Use normal Neutron app conventions and capabilities rather than custom-kernel behavior.
+- Use a persistent background/provider surface suitable for canonical Review state.
 
-Convenient grant templates may be:
+### File/open behavior
 
-```text
-Owner
-Reviewer
-Coordinator
-Viewer
-AI collaborator
-```
+- **File > Open** reads Markdown/TODO through ordinary Neutron Files access.
+- First import creates a logical Review Atom with a stable AtomId.
+- Reopen existing local Review Atoms from the Review-owned catalog without requiring the source file.
+- Source file/path is provenance, not Atom identity.
+- No special `.atom`/`.review` native file is required.
 
-but rights remain the meaningful authorization surface.
-
-The important domain invariant remains:
-
-```text
-review.set_own_result
-    -> provider derives participant from authenticated MTN actor
-```
-
-A reviewer cannot submit "set Alice's result" simply by changing a request field.
-
-AI receives only the rights needed for its task. `history.restore` and `share.manage` should not be default AI rights.
-
----
-
-## 13. MUST for hackathon
-
-These features are necessary to prove the Atom abstraction and make the dog-food tool useful.
-
-### Platform/Atom proof
+### Atom proof
 
 - **Multiple logical Review Atoms inside one physical Review Element installation.**
-- Stable logical `AtomId` distinct from physical app instance/AppScope.
-- Create/open/list/describe enough to operate those Atoms.
-- One live Review Atom shareable through MTN 0.2.
-- Shared URL -> safe inspect -> exact consumer AppScope redemption -> lease-bound live provider calls.
-- MTN-backed revocation.
+- Stable logical `AtomId` distinct from the physical installation/AppScope.
+- Create/list/open enough to operate those Atoms independently.
+- Stable `ReviewItemId`s that survive ordinary item text/coordinator changes.
 
 ### Review data model
 
-- Import Markdown/TODO into stable `ReviewItemId`s.
-- Add a new review item.
+- Import Markdown/TODO into stable Review items.
+- Add a new Review item.
 - New items default to:
 
 ```text
-Desired: unset
-Effort: unset
-Owner: unset
+Desired:    unset
+Effort:     unset
+Owner:      unset
 Work state: Untriaged
 ```
 
-- Participant results:
+- Test evidence values:
 
 ```text
 NOT TESTED
@@ -806,8 +883,7 @@ NOT WORKING
 NEEDS POLISH
 ```
 
-- Results stored independently per authenticated participant.
-- Simple aggregate counts/filters without overwriting individual evidence.
+- Evidence is stored independently per actor/participant record rather than in one shared checkbox.
 - Review-specific coordinator metadata:
 
 ```text
@@ -826,58 +902,227 @@ Work state:
 optional dependency/blocker item references
 ```
 
-- Human evidence and coordinator metadata remain separate dimensions.
+- Test evidence and coordinator metadata remain separate dimensions.
 
-### Collaboration
+### Comments and agent operation
 
-- Item-level comments that append rather than overwrite.
-- Authenticated actor attribution.
-- Provider-owned structured state and typed commands.
-- Basic optimistic revision/conflict protection for same-field edits.
-- No arbitrary collaborative Markdown editing.
-
-### AI
-
-- Structured read API for items, results, coordinator fields, comments, aggregates/filters, and recent activity.
-- AI can comment when authorized.
-- AI can set coordinator metadata when authorized.
-- AI mutations appear in the same activity/history as human mutations.
+- Item-level comments append rather than overwrite.
+- Human tile and agent tools operate on the same structured Review state.
+- AI/agent can structurally read Review state without DOM scraping.
+- AI/agent can comment and update separate coordinator metadata through typed Review commands when the local Review policy permits.
+- Basic expected-revision conflict protection prevents stale same-field mutation from silently winning.
 
 ### Activity/recovery
 
-- Recent meaningful activity feed.
-- Durable revisions sufficient to inspect historical state.
-- Owner can restore the entire Atom to a historical revision.
+- Meaningful recent activity feed.
+- Durable revisions sufficient to inspect historical Atom state.
+- Owner/local authoritative Review user can restore the entire Atom to a historical revision.
 - Restore creates a new revision and preserves old history.
 - No generalized selective-revert engine.
 
 ### Portability
 
-- Export current Atom to readable Markdown/TODO form.
+- Export current Atom to readable Markdown/TODO form through normal Files behavior.
 
-If these work, the hackathon has proved the architectural thesis.
+### Explicitly not required for MUST
+
+- MTN;
+- Plasmon Desktop;
+- shared URLs;
+- cross-AppScope leases;
+- authenticated multi-user live sharing;
+- custom-kernel behavior;
+- Yjs/CRDT;
+- special Atom native file format.
+
+If these work on vanilla Neutron, the first hackathon gate passes.
+
+---
+
+## 13. HIGH / hackathon stretch — Plasmon + frozen MTN 0.2
+
+The high-value stretch demo uses the **same Review.neutron** rather than a second Plasmon-only application:
+
+```text
+shared Review Atom URL
+  -> custom Plasmon/MTN environment
+  -> find/install Review Element if necessary
+  -> redeem authorized Atom
+  -> expose/open the Atom with minimal user work
+  -> authenticated humans + AI operate on the same live Atom
+```
+
+The demo should make the contrast visible:
+
+```text
+vanilla Neutron:
+  normal File > Open / local Review Atom workflow works
+
+Plasmon + MTN:
+  shared live Atom opens with dramatically less setup
+  and authenticated cross-user operation becomes possible
+```
+
+Do **not** assume MTN 0.3 is required. The working assumption is that frozen MTN 0.2 may be sufficient, with Plasmon owning the bootstrap/discovery/install/open UX around it.
+
+### 13.1 MTN 0.2 rights are frozen and coarse
+
+The MTN 0.2 rights are exactly:
+
+```text
+#read
+#write
+#reshare
+```
+
+Do **not** invent or document Review-domain operations as MTN rights.
+
+The following are **not** MTN rights:
+
+```text
+review.set_own_result
+review.coordinate
+comment.add
+history.restore
+```
+
+They are Review-domain operations/policies executed under the applicable MTN authority.
+
+Conceptually:
+
+```text
+MTN #read
+  -> may authorize reading/querying the shared Review resource
+
+MTN #write
+  -> may authorize Review mutation calls
+  -> Review still applies its own domain invariants/policy
+
+MTN #reshare
+  -> may authorize resharing/delegation behavior
+```
+
+Review may impose narrower application semantics beneath `#write`. For example, a `setMyResult` command can require that the target evidence slot correspond to the authenticated caller, and an owner-restore command can require Review-domain ownership/policy. Those checks do not create new MTN rights.
+
+No MTN 0.2 change is required.
+
+### 13.2 Authoritative attribution
+
+For MTN-authorized provider calls:
+
+> **`AuthorizationContext.subject` is the authoritative authenticated principal.**
+
+Review must use that subject whenever a security-relevant mutation or attribution depends on who the caller is.
+
+Review may additionally record application metadata such as:
+
+```text
+actorType: human | ai
+friendly display name
+tool/agent name
+integration label
+```
+
+but those fields are application-domain metadata unless independently authenticated.
+
+They must never supersede, replace, or contradict `AuthorizationContext.subject`.
+
+Correct shape conceptually:
+
+```text
+security identity:
+  subject = AuthorizationContext.subject
+
+optional presentation/domain metadata:
+  actorType = ai
+  displayName = "Agent 2"
+```
+
+not:
+
+```text
+client says actorType/name
+  -> therefore client chooses authenticated identity
+```
+
+### 13.3 Minimal live Sharing path
+
+Do not change MTN 0.2.
+
+The approved architecture's key conclusion remains: the Review Atom is a live revision-free authorization resource, not a snapshot URL.
+
+Minimal stretch flow:
+
+```text
+owner has logical Review Atom
+  -> Plasmon maps Atom to stable revision-free MTN resource
+  -> issue MTN grant
+  -> produce share URL
+  -> recipient opens URL
+  -> Plasmon safely discovers enough to find/install Review
+  -> exact recipient AppScope redeems
+  -> live MTN lease
+  -> recipient performs lease-bound Review provider calls
+```
+
+The Atom's current Review revision is application state, not MTN resource identity.
+
+### 13.4 Absolute minimum generic Sharing integration
+
+Only the HIGH/stretch path needs a generic Sharing bridge:
+
+```text
+stable Atom/resource identity
+resolve required/compatible Element
+redeem authorization for exact consumer AppScope
+retain/use live lease for provider calls
+revoke through MTN
+```
+
+The generic layer must preserve:
+
+```text
+AtomId
+!= ElementId
+!= physical app_instance_id/AppScope
+!= grant/bearer token
+!= Review revision
+```
+
+Plasmon owns bootstrap UX around frozen MTN semantics; Review owns Review-domain behavior.
+
+### 13.5 High-value stretch features
+
+- Shared Review Atom URL.
+- Plasmon finds/installs Review Element when absent.
+- Minimal-click redemption/open.
+- Authenticated multi-human operation on one live Atom.
+- AI principal/integration operates on same live resource.
+- Independent human evidence remains separate.
+- MTN revocation stops future authorized operations.
+- `AuthorizationContext.subject` appears as authoritative actor identity in activity/history.
+- Optional Review-domain display metadata distinguishes humans/AI for UX without weakening subject authority.
 
 ---
 
 ## 14. HIGH after MVP
 
-These are likely valuable soon, but should not delay the first proof.
+These are likely valuable soon, but should not delay the vanilla MUST proof.
 
-- Edit richer Markdown descriptions with better same-field conflict UX.
+- The Plasmon + MTN 0.2 live-share stretch in section 13 if it misses the hackathon base gate.
+- Explicit apply-back to source Markdown with source etag/hash conflict checks.
+- Lossless Atom backup/archive format if migration/backup becomes necessary.
+- Better same-field conflict UI for item descriptions/coordinator fields.
 - Comment resolution/reopen and richer reply threading.
-- Item/block-level stable anchors beyond the item itself.
-- Explicit source-file apply-back with source-hash conflict checks.
-- Saved filters/views, including a simple "sprint" view over Desired/Owner/Work state.
-- Assigned-reviewer lists and clearer "not tested" coverage views.
+- Saved filters/views, including a simple "sprint" query over Desired/Owner/Work state.
+- Assigned-reviewer lists and clearer `NOT TESTED` coverage views.
 - Test/retest cycles preserving old evidence while requesting fresh evidence.
 - Selective event/item revert if whole-Atom restore proves too coarse.
 - Better revision diff UI.
 - Activity filtering by actor/item/time.
-- Optional online/viewing presence implemented simply, without requiring CRDT presence.
-- Delegated/reshared MTN flows and improved share administration UX.
 - Alternative compatible Element routing after Atom protocol/type contracts mature.
 
-Yjs should remain in this tier until real collaborative free-form text editing becomes a demonstrated need.
+Yjs remains out until real collaborative free-form editing becomes a demonstrated requirement.
 
 ---
 
@@ -894,59 +1139,70 @@ These capabilities show how sophisticated future Atoms can become but are intent
 - Historical branching/merge-like workflows.
 - Sophisticated checkpoint compaction/retention.
 - Rich document blocks and generalized annotations.
-- Cross-Atom dependencies.
+- Cross-Atom dependencies beyond lightweight Review blocker references.
 - Compatible Elements selected through a Powerbox-like chooser.
 - Owner-compute versus recipient-compute execution choices.
 - Portable full Atom archives with migrations between compatible Elements.
 - General Atom collaboration protocols if multiple unrelated Elements demonstrate common requirements.
+- Live two-way filesystem synchronization.
 
-These remain compatible with the approved architecture. They are simply not evidence the hackathon needs to collect yet.
+These remain compatible with `FIRST_COLLABORATIVE_ATOM_DESIGN.md`. They are simply not evidence the hackathon needs yet.
 
 ---
 
 ## 16. Minimal sequence flows
 
-### Create Atom from TODO
+### 16.1 Vanilla: create Atom from TODO
 
 ```text
-Owner
-  -> Review Element: create from todo.md
-  -> Review provider: allocate logical AtomId
+User opens Review.neutron
+  -> File > Open
+  -> Review requests normal Files access
+  -> read /todo.md
   -> parse TODOs into stable ReviewItemIds
-  -> persist structured state
+  -> allocate logical AtomId
+  -> persist Atom in Review background/provider catalog
   -> create revision R1
   -> open Atom
 ```
 
-### Human joins and records evidence
+### 16.2 Vanilla: reopen without source file
 
 ```text
-Alice opens share URL
-  -> safe MTN inspect
-  -> Review Element available/installed
-  -> redeem with Alice's exact AppScope
-  -> live lease
-  -> review.setMyResult(#72, NOT_WORKING)
-  -> provider derives Alice identity
-  -> revision R12 + activity event
+User opens Review.neutron later
+  -> Recent Reviews / Open Review
+  -> choose AtomId 01J...
+  -> provider loads canonical structured state
+  -> source file does not need to exist
 ```
 
-### AI coordinates without overwriting evidence
+### 16.3 Vanilla: human records evidence
 
 ```text
-AI reads #72
-  Brian: NOT_WORKING
-  Alice: NOT_WORKING
+Brian marks #72 NOT WORKING
+  -> typed Review mutation
+  -> expected revision checked
+  -> Brian's evidence record updated
+  -> revision R12
+  -> meaningful activity event
+```
 
-AI, with review.coordinate:
-  -> set Work state = NEEDS_DESIGN
-  -> set Desired = MUST
+### 16.4 Vanilla: agent coordinates without DOM scraping
+
+```text
+AI/agent tool reads Atom
+  -> sees #72 NOT WORKING
+  -> sees Desired unset, Work state Untriaged
+
+agent command:
   -> add comment
+  -> set Work state = NEEDS DESIGN
+  -> optionally set Desired = MUST if local policy permits
 
-Brian/Alice evidence remains unchanged.
+Brian's evidence remains unchanged
 ```
 
-### Owner recovers from a mistake
+### 16.5 Vanilla: owner recovers from mistake
 
 ```text
 R40 good state
@@ -956,70 +1212,135 @@ R42 more changes
 Owner selects "Restore R40"
   -> provider writes current state equivalent to R40
   -> creates new revision R43
-  -> activity says "Brian restored Atom from R40"
+  -> activity says "restored Atom from R40"
 
-R41/R42 remain in history.
+R41/R42 remain in history
 ```
 
-### Revoke participant
+### 16.6 Stretch: shared URL
 
 ```text
-Owner revokes grant in MTN
-  -> future Alice provider call fails authorization
-  -> Alice's prior evidence/comments remain part of Atom history
+Alice opens shared Review Atom URL
+  -> Plasmon bootstrap identifies/fetches Review Element as needed
+  -> exact Alice consumer AppScope redeems via MTN 0.2
+  -> live lease
+  -> Review provider receives MTN-authorized call
+  -> AuthorizationContext.subject = Alice principal
+  -> Review applies domain operation under #read/#write authority
+```
+
+### 16.7 Stretch: AI mutation attribution
+
+```text
+AI principal calls Review under MTN #write
+  -> MTN authenticates AuthorizationContext.subject
+  -> Review records subject as authoritative actor principal
+  -> Review may also display actorType=ai / friendly agent label
+  -> typed coordinator/comment mutation accepted if Review policy allows
+  -> activity event + revision
 ```
 
 ---
 
-## 17. Why this is still a real Atom proof
+## 17. Acceptance summary
 
-Removing CRDT editing does **not** weaken the central architectural experiment.
+### MUST / hackathon base
 
-The difficult platform questions are still exercised:
+Prove on **stock vanilla Neutron**:
 
 ```text
-Can one Element own multiple independent logical resources?
-Can one of those resources be shared live without becoming a file download?
-Can MTN authorize several people against that one resource?
-Can the application preserve independent actor-specific state?
-Can an AI use the same resource without DOM automation?
-Can revocation stop future access?
-Can history/recovery exist without redefining Atom identity as a revision?
-Can Markdown remain portable without being the Atom itself?
+Review.neutron installs and opens normally
+  -> File > Open Markdown/TODO
+  -> source becomes a logical Review Atom
+  -> source != Atom
+  -> one Review installation owns multiple AtomIds
+  -> stable ReviewItemIds
+  -> independent evidence
+  -> Desired/Effort/Owner/Work state
+  -> comments
+  -> human + agent structured operations
+  -> activity
+  -> durable revisions
+  -> whole-Atom restore
+  -> Markdown/TODO export
 ```
 
-If the answer is yes, Plasmon has demonstrated a real Atom.
+### HIGH / stretch
 
-A CRDT would prove that a Review Atom can also be a sophisticated collaborative editor. That is a useful later capability, not the foundational proof.
+Demonstrate with the same app in custom Plasmon/MTN environment:
+
+```text
+shared URL
+  -> find/install Review
+  -> redeem/open live Atom
+  -> authenticated humans + AI
+  -> MTN 0.2 #read/#write/#reshare only
+  -> AuthorizationContext.subject authoritative
+  -> revocation enforced
+```
+
+### ADVANCED
+
+Only after product evidence requires it:
+
+```text
+CRDT document collaboration
+fine-grained anchors/presence/undo
+selective dependency-aware revert
+complex retention/branching
+full generic collaboration abstractions
+```
 
 ---
 
 ## 18. Final recommendation
 
-Build the first Review Atom as a **small structured multi-user review resource**, not a document editor and not a project-management platform.
+Build the first Review Atom as a **small, normal vanilla-Neutron structured review application**.
 
-The hackathon architecture should be:
+The base architecture should be:
 
 ```text
-Review Element
+Review.neutron
+  -> normal Neutron tile + persistent background/provider
+  -> normal Files access
+
+Review Element installation
   -> many logical AtomIds
 
 Review Atom
   -> stable ReviewItem records
-  -> independent participant evidence
+  -> independent test evidence
   -> lightweight Review-specific coordination fields
   -> item comments
-  -> typed human/AI operations
+  -> typed human/agent operations
   -> append-only meaningful activity
   -> durable revisions + whole-Atom restore
   -> Markdown import/export
-
-MTN 0.2
-  -> live authorization, lease, revocation, delegation
 ```
+
+No MTN or Plasmon dependency is required for that base application.
+
+Then, as a HIGH-value hackathon stretch, let Plasmon + frozen MTN 0.2 improve the same app:
+
+```text
+same Review.neutron
+  -> live shared Atom URL
+  -> bootstrap/find/install/open
+  -> #read / #write / #reshare authorization
+  -> AuthorizationContext.subject as authoritative principal
+  -> authenticated humans + AI operate on the same live Atom
+```
+
+No MTN 0.2 expansion is required.
 
 Specifically defer Yjs/CRDT collaboration until actual usage demonstrates a requirement for simultaneous free-form text editing.
 
-This contracted MVP keeps the important architectural result from `FIRST_COLLABORATIVE_ATOM_DESIGN.md` while making the first implementation small enough to dog-food immediately:
+The contracted proof is therefore:
 
-> **Element -> multiple logical Atoms -> MTN live share -> human + AI operate on one Atom.**
+```text
+MUST:
+Element -> multiple logical Atoms -> useful on vanilla Neutron
+
+HIGH / stretch:
+same Atom model -> Plasmon + MTN live share -> authenticated human + AI collaboration
+```
