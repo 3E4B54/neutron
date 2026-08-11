@@ -39,8 +39,8 @@ export interface StartLaunchServices {
   fs: FsService;
   process: ProcessController;
   neutron: NeutronBridge;
-  associations?: AssociationRegistry;
-  openService?: OpenService;
+  associations?: AssociationRegistry | undefined;
+  openService?: OpenService | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
