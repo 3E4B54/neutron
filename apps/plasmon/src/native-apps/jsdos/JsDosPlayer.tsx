@@ -53,6 +53,7 @@ export default function JsDosPlayer({ target, fs }: NativeAppComponentProps) {
         onEvent: (event) => {
           if (disposed) return;
           if (event === "ci-ready" || event === "bnd-play") {
+            root.dataset.jsdosReady = "true";
             setState("ready");
             root.focus({ preventScroll: true });
           }
@@ -70,6 +71,7 @@ export default function JsDosPlayer({ target, fs }: NativeAppComponentProps) {
 
     return () => {
       disposed = true;
+      if (rootRef.current) delete rootRef.current.dataset.jsdosReady;
       const player = playerRef.current;
       playerRef.current = null;
       if (player) {
