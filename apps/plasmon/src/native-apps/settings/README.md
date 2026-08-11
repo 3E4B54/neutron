@@ -1,3 +1,17 @@
-# Native Settings
+# Settings
 
-Settings has no private backend. It summarizes the injected `FsService`, describes the association capabilities actually exposed by the current contract, and exposes optional callback seams for Shell-owned theme/taskbar state. Backup and sharing are explicitly presented as unavailable rather than simulated.
+Settings is the Plasmon-native settings surface.
+
+The current model computes storage information by walking the existing
+filesystem; it does not introduce a second storage backend. Feature seams are
+passed as callbacks/services so Settings does not import Shell implementation
+internals.
+
+Unavailable features such as backup/sharing must be shown as unavailable rather
+than simulated.
+
+Future filesystem presentation preferences such as “Show hidden files” should
+persist through the appropriate shared FsService/shell preference boundary, not
+localStorage or a Settings-private database.
+
+Tests: `model.test.ts` plus packaged settings interactions.
