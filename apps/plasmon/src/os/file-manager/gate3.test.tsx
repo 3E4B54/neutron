@@ -202,7 +202,7 @@ test("generated folder and document names progress without user-visible collisio
 
 test("copy naming recognizes existing numeric families and preserves extensions", async () => {
   const occupied = new Set(["a.md", "a (1).md"].map(normalizedCollisionName));
-  expect(collisionFreeCopyName("a.md", false, occupied)).toBe("a (1).md");
+  expect(collisionFreeCopyName("a.md", false, occupied)).toBe("a (2).md");
   expect(collisionFreeCopyName("a (1).md", false, occupied)).toBe("a (2).md");
   expect(collisionFreeCopyName("Folder (1)", true, new Set(["folder (1)"].map(normalizedCollisionName)))).toBe("Folder (2)");
   expect(collisionFreeCopyName(".env", false, new Set([".env"].map(normalizedCollisionName)))).toBe(".env (1)");
