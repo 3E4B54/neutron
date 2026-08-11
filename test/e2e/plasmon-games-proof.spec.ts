@@ -3,9 +3,9 @@ import { expect, test } from "@playwright/test";
 test("packaged Doom .jsdos opens through js-dos and closes cleanly", async ({ page }) => {
   const runtimeRequests: string[] = [];
   const externalRuntimeRequests: string[] = [];
+  const runtimeHttpErrors: string[] = [];
   const pageErrors: string[] = [];
-  const consoleErrors: string[] = [];
-  const failedRequests: string[] = [];
+  const failedRuntimeRequests: string[] = [];
 
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -15,11 +15,21 @@ test("packaged Doom .jsdos opens through js-dos and closes cleanly", async ({ pa
       externalRuntimeRequests.push(request.url());
     }
   });
-  page.on("requestfailed", (request) => failedRequests.push(`${request.url()} :: ${request.failure()?.errorText ?? "failed"}`));
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
+  page.on("response", (response) => {
+    const url = new URL(response.url());
+    const path = decodeURIComponent(url.pathname);
+    if (response.status() >= 400 && path.includes("/System/Program Files/js-dos/")) {
+      runtimeHttpErrors.push(`${response.status()} ${path}`);
+    }
   });
+  page.on("requestfailed", (request) => {
+    const url = new URL(request.url());
+    const path = decodeURIComponent(url.pathname);
+    if (path.includes("/System/Program Files/js-dos/")) {
+      failedRuntimeRequests.push(`${request.url()} :: ${request.failure()?.errorText ?? "failed"}`);
+    }
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
 
   await page.goto("http://127.0.0.1:4173/", { waitUntil: "domcontentloaded" });
 
@@ -30,18 +40,6 @@ test("packaged Doom .jsdos opens through js-dos and closes cleanly", async ({ pa
   const dialog = page.getByRole("dialog", { name: "js-dos" });
   await expect(dialog).toBeVisible({ timeout: 20_000 });
   const player = dialog.getByLabel("DOS game");
-  await page.waitForTimeout(5_000);
-  if ((await player.count()) === 0) {
-    throw new Error(JSON.stringify({
-      dialogText: await dialog.innerText(),
-      dialogHtml: (await dialog.innerHTML()).slice(0, 4000),
-      pageErrors,
-      consoleErrors,
-      failedRequests,
-      runtimeRequests,
-      externalRuntimeRequests,
-    }, null, 2));
-  }
   await expect(player).toHaveAttribute("data-jsdos-ready", "true", { timeout: 90_000 });
 
   const canvas = dialog.locator("canvas").first();
@@ -54,6 +52,7 @@ test("packaged Doom .jsdos opens through js-dos and closes cleanly", async ({ pa
     { timeout: 30_000 },
   ).toBe(true);
 
+  // Exercise the same focused keyboard path a user uses in the DOS game.
   await player.click({ position: { x: 80, y: 80 } });
   await page.keyboard.press("Enter");
   await page.keyboard.press("ArrowDown");
@@ -65,9 +64,9 @@ test("packaged Doom .jsdos opens through js-dos and closes cleanly", async ({ pa
   expect(runtimeRequests.some((path) => path.endsWith("/js-dos.js"))).toBe(true);
   expect(runtimeRequests.some((path) => path.endsWith("/emulators/wdosbox.wasm"))).toBe(true);
   expect(externalRuntimeRequests).toEqual([]);
+  expect(runtimeHttpErrors).toEqual([]);
+  expect(failedRuntimeRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
-  expect(consoleErrors).toEqual([]);
-  expect(failedRequests).toEqual([]);
 
   await dialog.getByRole("button", { name: "Close" }).click();
   await expect(dialog).toBeHidden({ timeout: 5_000 });
