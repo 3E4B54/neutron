@@ -17,7 +17,7 @@ function goodMetafile(): BuildMetafileLike {
           "node_modules/dompurify/dist/purify.es.mjs": {},
         },
       },
-      "dist/web/main.bundle.css": { inputs: {} },
+      "dist/web/main.bundle.css": { inputs: { "node_modules/monaco-editor/esm/vs/editor/editor.all.css": {} } },
       "dist/web/monaco-workers/editor.worker.js": { inputs: {} },
       "dist/web/monaco-workers/json.worker.js": { inputs: {} },
       "dist/web/monaco-workers/css.worker.js": { inputs: {} },
@@ -32,6 +32,12 @@ test("package guard requires mature Text/Markdown engines and Monaco workers", (
   const broken = goodMetafile();
   delete broken.outputs["dist/web/main.js"]!.inputs!["src/native-apps/text/MonacoEditorSurface.tsx"];
   expect(() => assertMatureNativeAppBundle(broken)).toThrow("MonacoEditorSurface");
+});
+
+test("package guard rejects a stylesheet without Monaco engine CSS", () => {
+  const broken = goodMetafile();
+  broken.outputs["dist/web/main.bundle.css"]!.inputs = { "src/style.scss": {} };
+  expect(() => assertMatureNativeAppBundle(broken)).toThrow("Monaco editor CSS");
 });
 
 test("package guard rejects missing Monaco worker output", () => {

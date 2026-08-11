@@ -47,6 +47,13 @@ export function assertMatureNativeAppBundle(metafile: BuildMetafileLike): void {
     }
   }
 
+  const css = outputs.find(([path]) => normalized(path).endsWith("/dist/web/main.bundle.css"));
+  if (!css) throw new Error("Native app package build did not emit dist/web/main.bundle.css");
+  const cssInputs = Object.keys(css[1].inputs ?? {});
+  if (!cssInputs.some((path) => normalized(path).includes("/node_modules/monaco-editor/"))) {
+    throw new Error("Native app package stylesheet is missing Monaco editor CSS");
+  }
+
   const allInputs = outputs.flatMap(([, output]) => Object.keys(output.inputs ?? {}));
   for (const fragment of REQUIRED_ENGINE_INPUT_FRAGMENTS) {
     if (!allInputs.some((path) => normalized(path).includes(fragment))) {
