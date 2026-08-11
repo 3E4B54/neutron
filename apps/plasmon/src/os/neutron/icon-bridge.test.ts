@@ -13,8 +13,8 @@ function api(overrides: Partial<VanillaNeutronApi> = {}): VanillaNeutronApi {
   };
 }
 
-describe("descriptor-driven Neutron icon resolution", () => {
-  test("uses a safe declared tile icon and preserves tray/tiles/running metadata", async () => {
+describe("descriptor-first Neutron icon resolution", () => {
+  test("safe declared tile icon is passed internally and existing metadata is preserved", async () => {
     const workingIcon = "https://safe-package-origin/app/mail/static/icon.svg";
     const resolutions: Array<[string, string | undefined]> = [];
     const bridge = new VanillaNeutronBridge({
@@ -59,42 +59,68 @@ describe("descriptor-driven Neutron icon resolution", () => {
     expect(resolutions).toEqual([["mail", "static/icon.svg"]]);
   });
 
-  test("unsafe or missing descriptor icons do not invoke resolution", async () => {
-    let resolutions = 0;
+  test("missing descriptor icon invokes bounded compatibility resolution and caches success", async () => {
+    let describes = 0;
+    const resolutions: Array<[string, string | undefined]> = [];
     const bridge = new VanillaNeutronBridge({
       lifecycleTargets: {},
-      resolveIcon: async () => {
-        resolutions += 1;
-        return "should-not-be-used";
+      resolveIcon: async (appId, declaredPath) => {
+        resolutions.push([appId, declaredPath]);
+        return "resolved:compat-svg";
       },
       api: api({
-        listApps: async () => ({
-          apps: [
-            { id: "external", description: "External" },
-            { id: "missing", description: "Missing" },
-          ],
-        }),
-        describeApp: async (appId) => appId === "external"
-          ? {
-              id: "external",
-              name: "External",
-              tiles: [{ id: "main", title: "External", icon: "https://evil.example/icon.svg" }],
-            }
-          : {
-              id: "missing",
-              name: "Missing",
-              tiles: [{ id: "main", title: "Missing" }],
-            },
+        listApps: async () => ({ apps: [{ id: "files", description: "Files" }] }),
+        describeApp: async () => {
+          describes += 1;
+          return {
+            id: "files",
+            name: "Files",
+            tiles: [{ id: "main", title: "Files" }],
+          };
+        },
       }),
     });
 
-    const elements = await bridge.loadElements();
-    expect(elements).toHaveLength(2);
-    expect(elements.every((element) => element.icon === undefined)).toBe(true);
-    expect(resolutions).toBe(0);
+    expect((await bridge.loadElements())[0]?.icon).toBe("resolved:compat-svg");
+    expect((await bridge.loadElements())[0]?.icon).toBe("resolved:compat-svg");
+    expect((await bridge.loadElements())[0]?.icon).toBe("resolved:compat-svg");
+    expect(describes).toBe(1);
+    expect(resolutions).toEqual([["files", undefined]]);
   });
 
-  test("broken icon resolution preserves that Element and isolates other Elements", async () => {
+  test("unsafe descriptor metadata never reaches icon resolution as an arbitrary URL", async () => {
+    const declaredPaths: Array<string | undefined> = [];
+    const bridge = new VanillaNeutronBridge({
+      lifecycleTargets: {},
+      resolveIcon: async (_appId, declaredPath) => {
+        declaredPaths.push(declaredPath);
+        return undefined;
+      },
+      api: api({
+        listApps: async () => ({ apps: [{ id: "external", description: "External" }] }),
+        describeApp: async () => ({
+          id: "external",
+          name: "External",
+          icon: "https://evil.example/app.svg",
+          tiles: [{
+            id: "main",
+            title: "External",
+            icon: "javascript:alert(1)",
+          }],
+          tray: {
+            title: "External tray",
+            icon: "//evil.example/tray.svg",
+          },
+        }),
+      }),
+    });
+
+    const element = (await bridge.loadElements())[0];
+    expect(element?.icon).toBeUndefined();
+    expect(declaredPaths).toEqual([undefined]);
+  });
+
+  test("broken compatibility resolution preserves that Element and isolates other Elements", async () => {
     const bridge = new VanillaNeutronBridge({
       lifecycleTargets: {},
       resolveIcon: async (appId) => {
@@ -111,7 +137,7 @@ describe("descriptor-driven Neutron icon resolution", () => {
         describeApp: async (appId) => ({
           id: appId,
           name: appId === "broken" ? "Broken" : "Good",
-          tiles: [{ id: "main", title: appId, icon: "static/icon.svg" }],
+          tiles: [{ id: "main", title: appId }],
         }),
       }),
     });
@@ -137,13 +163,44 @@ describe("descriptor-driven Neutron icon resolution", () => {
 });
 
 describe("Neutron metadata/icon cache", () => {
-  test("successful icon resolution and descriptor metadata are reused on unchanged reload", async () => {
+  test("failed or missing compatibility discovery is cached and not retried", async () => {
     let describes = 0;
     let resolutions = 0;
     const bridge = new VanillaNeutronBridge({
       lifecycleTargets: {},
-      resolveIcon: async () => {
+      resolveIcon: async (_appId, declaredPath) => {
         resolutions += 1;
+        expect(declaredPath).toBeUndefined();
+        return undefined;
+      },
+      api: api({
+        listApps: async () => ({ apps: [{ id: "files", description: "Files" }] }),
+        describeApp: async () => {
+          describes += 1;
+          return {
+            id: "files",
+            name: "Files",
+            tiles: [{ id: "main", title: "Files" }],
+          };
+        },
+      }),
+    });
+
+    expect((await bridge.loadElements())[0]?.icon).toBeUndefined();
+    expect((await bridge.loadElements())[0]?.icon).toBeUndefined();
+    expect((await bridge.loadElements())[0]?.icon).toBeUndefined();
+    expect(describes).toBe(1);
+    expect(resolutions).toBe(1);
+  });
+
+  test("successful declared icon resolution is cached and unchanged reload performs no new resolution", async () => {
+    let describes = 0;
+    let resolutions = 0;
+    const bridge = new VanillaNeutronBridge({
+      lifecycleTargets: {},
+      resolveIcon: async (_appId, declaredPath) => {
+        resolutions += 1;
+        expect(declaredPath).toBe("static/icon.svg");
         return "resolved:files";
       },
       api: api({
@@ -166,63 +223,7 @@ describe("Neutron metadata/icon cache", () => {
     expect(resolutions).toBe(1);
   });
 
-  test("failed icon resolution is cached and not retried", async () => {
-    let describes = 0;
-    let resolutions = 0;
-    const bridge = new VanillaNeutronBridge({
-      lifecycleTargets: {},
-      resolveIcon: async () => {
-        resolutions += 1;
-        throw new Error("not found");
-      },
-      api: api({
-        listApps: async () => ({ apps: [{ id: "files", description: "Files" }] }),
-        describeApp: async () => {
-          describes += 1;
-          return {
-            id: "files",
-            name: "Files",
-            tiles: [{ id: "main", title: "Files", icon: "static/icon.svg" }],
-          };
-        },
-      }),
-    });
-
-    expect((await bridge.loadElements())[0]?.icon).toBeUndefined();
-    expect((await bridge.loadElements())[0]?.icon).toBeUndefined();
-    expect(describes).toBe(1);
-    expect(resolutions).toBe(1);
-  });
-
-  test("missing icon metadata is cached without any resolution attempt", async () => {
-    let describes = 0;
-    let resolutions = 0;
-    const bridge = new VanillaNeutronBridge({
-      lifecycleTargets: {},
-      resolveIcon: async () => {
-        resolutions += 1;
-        return "unexpected";
-      },
-      api: api({
-        listApps: async () => ({ apps: [{ id: "files", description: "Files" }] }),
-        describeApp: async () => {
-          describes += 1;
-          return {
-            id: "files",
-            name: "Files",
-            tiles: [{ id: "main", title: "Files" }],
-          };
-        },
-      }),
-    });
-
-    await bridge.loadElements();
-    await bridge.loadElements();
-    expect(describes).toBe(1);
-    expect(resolutions).toBe(0);
-  });
-
-  test("runtime refresh changes only running state and does not redo descriptor/icon discovery", async () => {
+  test("runtime refresh changes only running state and performs zero new icon discovery", async () => {
     let describes = 0;
     let resolutions = 0;
     let live = false;
@@ -239,7 +240,7 @@ describe("Neutron metadata/icon cache", () => {
           return {
             id: "files",
             name: "Files",
-            tiles: [{ id: "main", title: "Files", icon: "static/icon.svg" }],
+            tiles: [{ id: "main", title: "Files" }],
           };
         },
         listEndpoints: async () => ({
@@ -249,14 +250,21 @@ describe("Neutron metadata/icon cache", () => {
     });
 
     expect((await bridge.loadElements())[0]?.running).toBe("no");
+    expect(describes).toBe(1);
+    expect(resolutions).toBe(1);
+
     live = true;
     await bridge.refreshRuntimeState();
+    await bridge.refreshRuntimeState();
+    expect(describes).toBe(1);
+    expect(resolutions).toBe(1);
+
     expect((await bridge.loadElements())[0]?.running).toBe("yes");
     expect(describes).toBe(1);
     expect(resolutions).toBe(1);
   });
 
-  test("a real apps.list description change invalidates cached metadata", async () => {
+  test("a real apps.list description change invalidates cached descriptor/icon metadata", async () => {
     let discoveryDescription = "Files v1";
     let describes = 0;
     let resolutions = 0;
@@ -277,7 +285,7 @@ describe("Neutron metadata/icon cache", () => {
             name: "Files",
             description: discoveryDescription,
             version: describes,
-            tiles: [{ id: "main", title: "Files", icon: "static/icon.svg" }],
+            tiles: [{ id: "main", title: "Files" }],
           };
         },
       }),
