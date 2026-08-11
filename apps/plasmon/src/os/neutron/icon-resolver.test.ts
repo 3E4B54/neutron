@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  declaredElementIconPath,
   elementIconCandidates,
   firstLoadableIconCandidate,
   resolveElementIcon,
+  safePackageIconPath,
 } from "./icon-resolver.ts";
 
 const CANISTER_ID = "rrkah-fqaaa-aaaaa-aaaaq-cai";
@@ -13,21 +15,64 @@ const prefixed = (path: string): string =>
 const unprefixed = (path: string): string =>
   `https://${CANISTER_ID}.icp0.io/app/files/${path}`;
 
-test("icon candidate generation preserves safe format and origin priority", () => {
-  expect(elementIconCandidates("files", NEUTRON_HREF)).toEqual([
+describe("descriptor icon path policy", () => {
+  test("accepts bounded package-local paths", () => {
+    expect(safePackageIconPath("static/icon.svg")).toBe("static/icon.svg");
+    expect(safePackageIconPath("assets/icons/app mark.webp")).toBe(
+      "assets/icons/app mark.webp",
+    );
+  });
+
+  test("rejects external, scheme-relative, unsafe-scheme and escaping paths", () => {
+    for (const value of [
+      "https://example.com/icon.svg",
+      "//example.com/icon.svg",
+      "data:image/svg+xml,test",
+      "javascript:alert(1)",
+      "/static/icon.svg",
+      "../icon.svg",
+      "static/../icon.svg",
+      "static\\icon.svg",
+      "static/icon.svg?x=1",
+      "static/icon.svg#fragment",
+      "static/%2e%2e/icon.svg",
+    ]) {
+      expect(safePackageIconPath(value)).toBeUndefined();
+    }
+  });
+
+  test("retains declared icon metadata internally without trusting arbitrary URLs", () => {
+    expect(declaredElementIconPath({
+      id: "files",
+      icon: "https://untrusted.example/app.png",
+      tiles: [
+        { id: "main", title: "Files", icon: "static/icon.svg" },
+      ],
+      tray: { title: "Files", icon: "static/tray.svg" },
+    }, "files")).toBe("static/icon.svg");
+
+    expect(declaredElementIconPath({
+      id: "files",
+      tiles: [{ id: "main", title: "Files" }],
+      tray: { title: "Files", icon: "static/tray.svg" },
+    }, "files")).toBe("static/tray.svg");
+
+    expect(declaredElementIconPath({
+      id: "other",
+      tiles: [{ id: "main", title: "Other", icon: "static/icon.svg" }],
+    }, "files")).toBeUndefined();
+  });
+});
+
+test("one declared icon path produces only the two established safe origin forms", () => {
+  expect(elementIconCandidates("files", "static/icon.svg", NEUTRON_HREF)).toEqual([
     prefixed("static/icon.svg"),
-    prefixed("static/icon.png"),
-    prefixed("static/icon.webp"),
-    prefixed("static/icon.jpg"),
     unprefixed("static/icon.svg"),
-    unprefixed("static/icon.png"),
-    unprefixed("static/icon.webp"),
-    unprefixed("static/icon.jpg"),
   ]);
 });
 
 describe("verified icon selection", () => {
-  const candidates = ["A.svg", "A.png", "A.webp", "A.jpg"];
+  const candidates = ["A.svg", "A.png"];
 
   test("returns the first candidate when it loads", async () => {
     expect(await firstLoadableIconCandidate(
@@ -43,41 +88,43 @@ describe("verified icon selection", () => {
     )).toBe("A.png");
   });
 
-  test("preserves candidate priority across multiple failures", async () => {
-    expect(await firstLoadableIconCandidate(
-      candidates,
-      async (candidate) => candidate === "A.webp" || candidate === "A.jpg",
-    )).toBe("A.webp");
-  });
-
   test("returns undefined when every candidate fails", async () => {
     expect(await firstLoadableIconCandidate(candidates, async () => false)).toBeUndefined();
   });
 
-  test("a stalled candidate is bounded and cannot hang resolution", async () => {
+  test("a stalled first candidate is bounded and cannot hang resolution", async () => {
     const stalled = new Promise<boolean>(() => {});
     expect(await firstLoadableIconCandidate(
-      ["A.svg", "A.png"],
+      candidates,
       (candidate) => candidate === "A.svg" ? stalled : true,
       10,
     )).toBe("A.png");
   });
 });
 
-test("resolveElementIcon probes generated candidates instead of trusting index zero", async () => {
-  const candidates = elementIconCandidates("files", NEUTRON_HREF);
-  const working = candidates[5];
-  if (!working) throw new Error("expected unprefixed PNG candidate");
-
-  expect(await resolveElementIcon("files", NEUTRON_HREF, {
-    probe: async (candidate) => candidate === working,
-    timeoutMs: 50,
-  })).toBe(working);
+test("missing descriptor icon metadata performs zero probes", async () => {
+  let probes = 0;
+  expect(await resolveElementIcon("files", undefined, NEUTRON_HREF, {
+    probe: async () => {
+      probes += 1;
+      return true;
+    },
+  })).toBeUndefined();
+  expect(probes).toBe(0);
 });
 
-test("icon resolution is inert without a Neutron app URL", async () => {
-  expect(elementIconCandidates("files", "https://example.com/desktop")).toEqual([]);
-  expect(await resolveElementIcon("files", "https://example.com/desktop", {
-    probe: async () => true,
-  })).toBeUndefined();
+test("declared icon resolution probes only its safe origin forms", async () => {
+  const candidates = elementIconCandidates("files", "static/icon.svg", NEUTRON_HREF);
+  const working = candidates[1];
+  if (!working) throw new Error("expected unprefixed declared icon candidate");
+  const probed: string[] = [];
+
+  expect(await resolveElementIcon("files", "static/icon.svg", NEUTRON_HREF, {
+    probe: async (candidate) => {
+      probed.push(candidate);
+      return candidate === working;
+    },
+    timeoutMs: 50,
+  })).toBe(working);
+  expect(probed).toEqual(candidates);
 });
