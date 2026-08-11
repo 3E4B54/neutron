@@ -11,7 +11,6 @@ import type {
 } from "../contracts/index.ts";
 import { reconcileCoreDesktopSeeds } from "./defaultSeeds.ts";
 import {
-  NeutronProjectionService,
   TrashService,
   bootstrapFilesystem,
   type BootstrapFilesystemResult,
@@ -20,6 +19,7 @@ import {
 } from "./managed.ts";
 import { FilesystemOpenDispatcher } from "./openDispatcher.ts";
 import { ProtectedManagedFsService } from "./protectedService.ts";
+import { StableNeutronProjectionService } from "./stableProjection.ts";
 
 export interface FilesystemCoreOptions {
   fs: FsService & FsEventSource;
@@ -49,7 +49,7 @@ export interface FilesystemCoreServices {
   ready: Promise<FilesystemCoreInitialization>;
   trash: FilesystemTrashService;
   open: FilesystemOpenDispatcher;
-  projections: NeutronProjectionService;
+  projections: StableNeutronProjectionService;
   reconcileNeutron(): Promise<void>;
   dispose(): void;
 }
@@ -66,7 +66,7 @@ function message(error: unknown): string {
  */
 export function createFilesystemCore(options: FilesystemCoreOptions): FilesystemCoreServices {
   const managed = new ProtectedManagedFsService(options.fs);
-  const projections = new NeutronProjectionService(options.fs);
+  const projections = new StableNeutronProjectionService(options.fs);
   const privilegedTrash = new TrashService(options.fs);
   let disposed = false;
   let stopNeutron: () => void = () => undefined;
