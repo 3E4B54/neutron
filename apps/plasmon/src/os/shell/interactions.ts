@@ -8,6 +8,10 @@ export function shouldDismissShellFlyout(open: boolean, hit: ShellDismissHit): b
   return open && !hit.insideFlyout && !hit.insideToggle && !hit.insideContextMenu;
 }
 
+export function shouldDismissAfterResultActivation(succeeded: boolean): boolean {
+  return succeeded;
+}
+
 export type ShellContextMenuPolicy = "none" | "generic" | "native-task" | "element-task";
 
 export interface ShellContextMenuHit {
