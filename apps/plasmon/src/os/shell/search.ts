@@ -51,6 +51,15 @@ export interface StartShortcutSearchResult {
   target: StartShortcutTarget;
 }
 
+export interface DirectorySearchResult {
+  kind: "directory";
+  id: string;
+  category: "documents";
+  title: string;
+  subtitle: "Folder";
+  node: FsNode;
+}
+
 export interface FileSearchResult {
   kind: "file";
   id: string;
@@ -60,7 +69,7 @@ export interface FileSearchResult {
   node: FsNode;
 }
 
-export type ShellSearchResult = NativeAppSearchResult | ElementSearchResult | StartShortcutSearchResult | FileSearchResult;
+export type ShellSearchResult = NativeAppSearchResult | ElementSearchResult | StartShortcutSearchResult | DirectorySearchResult | FileSearchResult;
 
 export interface SearchBatch {
   results: ShellSearchResult[];
@@ -224,6 +233,7 @@ export async function searchFilesystem(
 ): Promise<Pick<SearchBatch, "results" | "warnings" | "truncated">> {
   const maxNodes = Math.max(1, options.maxNodes ?? 5_000);
   const maxWarnings = Math.max(0, options.maxWarnings ?? 8);
+  const hasQuery = query.trim().length > 0;
   checkAbort(options.signal);
 
   const root = await fs.resolvePath("/");
@@ -234,6 +244,7 @@ export async function searchFilesystem(
   const queue: FsNode[] = [root];
   const visited = new Set<string>();
   const appShortcuts: StartShortcutSearchResult[] = [];
+  const directories: DirectorySearchResult[] = [];
   const files: FileSearchResult[] = [];
   const warnings: string[] = [];
   let examined = 0;
@@ -261,6 +272,16 @@ export async function searchFilesystem(
       examined += 1;
       if (node.kind === "directory") {
         if (!visited.has(node.id)) queue.push(node);
+        if (hasQuery && matches(searchableNodeText(node), query)) {
+          directories.push({
+            kind: "directory",
+            id: `directory:${node.id}`,
+            category: "documents",
+            title: node.name,
+            subtitle: "Folder",
+            node,
+          });
+        }
         continue;
       }
 
@@ -294,8 +315,9 @@ export async function searchFilesystem(
   const recent = <T extends { node: FsNode }>(left: T, right: T) =>
     right.node.modifiedAt - left.node.modifiedAt || left.node.name.localeCompare(right.node.name);
   appShortcuts.sort(recent);
+  directories.sort(recent);
   files.sort(recent);
-  return { results: [...appShortcuts, ...files], warnings, truncated: queue.length > 0 };
+  return { results: [...appShortcuts, ...directories, ...files], warnings, truncated: queue.length > 0 };
 }
 
 function applyResultLimits(results: readonly ShellSearchResult[]): { results: ShellSearchResult[]; truncated: boolean } {
