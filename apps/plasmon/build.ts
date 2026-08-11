@@ -1,13 +1,16 @@
 import esbuild from "esbuild";
 import copyStaticFiles from "esbuild-copy-static-files";
 import { sassPlugin } from "esbuild-sass-plugin";
-import { readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { BuildOptions } from "esbuild";
+import { assertMatureNativeAppBundle, cacheBustEntryAssets } from "./src/native-apps/packaging.ts";
 
 const mainOutfile = "./dist/web/main.js";
 const bundledCss = "./dist/web/main.bundle.css";
 const outputCss = "./dist/web/main.css";
+const outputIndex = "./dist/web/index.html";
 const args = process.argv.slice(2);
 const devMode = args[0] === "dev";
 
@@ -26,6 +29,20 @@ async function stripRemoteDiagnostics(): Promise<void> {
 async function mergeApplicationStyles(): Promise<void> {
   const generated = await readFile(bundledCss, "utf8");
   await writeFile(outputCss, generated);
+}
+
+async function fingerprintEntryAssets(): Promise<void> {
+  const [javascript, css, index] = await Promise.all([
+    readFile(mainOutfile),
+    readFile(outputCss),
+    readFile(outputIndex, "utf8"),
+  ]);
+  const fingerprint = createHash("sha256")
+    .update(javascript)
+    .update(css)
+    .digest("hex")
+    .slice(0, 16);
+  await writeFile(outputIndex, cacheBustEntryAssets(index, fingerprint));
 }
 
 const config: BuildOptions = {
@@ -49,6 +66,7 @@ const config: BuildOptions = {
   loader: { ".ts": "ts", ".tsx": "tsx", ".ttf": "file" },
   outExtension: { ".css": ".bundle.css" },
   platform: "browser",
+  metafile: true,
   plugins: [
     sassPlugin(),
     copyStaticFiles({
@@ -64,13 +82,18 @@ const config: BuildOptions = {
       setup(build) {
         build.onEnd(async (result) => {
           if (result.errors.length !== 0) return;
+          if (!result.metafile) throw new Error("Plasmon build requires an esbuild metafile");
+          assertMatureNativeAppBundle(result.metafile);
           await mergeApplicationStyles();
           if (!devMode) await stripRemoteDiagnostics();
+          await fingerprintEntryAssets();
         });
       },
     },
   ],
 };
+
+await rm("./dist/web", { recursive: true, force: true });
 
 if (args[0] === "watch") {
   const ctx = await esbuild.context(config);

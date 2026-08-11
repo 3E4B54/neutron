@@ -4,8 +4,8 @@ import type {
   HandlerDefinition,
   NativeAppDefinition,
 } from "../os/contracts/index.ts";
-import type { TextEditorProps } from "./text/TextEditor.tsx";
-import type { MarkdownEditorProps } from "./markdown/MarkdownEditor.tsx";
+import TextEditor, { type TextEditorProps } from "./text/TextEditor.tsx";
+import MarkdownEditor, { type MarkdownEditorProps } from "./markdown/MarkdownEditor.tsx";
 import type { PhotosProps } from "./photos/Photos.tsx";
 import type { VideoPlayerProps } from "./video/VideoPlayer.tsx";
 import type { BrowserProps } from "./browser/Browser.tsx";
@@ -30,6 +30,7 @@ export const externalUrlHandler: HandlerDefinition = { id: "external:url", kind:
 export const textAssociationRules: AssociationRule[] = [
   { id: "native:text:txt", handlerId: "native:text", extensions: [".txt"], mimeTypes: ["text/plain"], priority: 200 },
   { id: "native:text:source", handlerId: "native:text", extensions: [".json", ".js", ".ts", ".tsx", ".jsx", ".css", ".html", ".htm", ".xml", ".yaml", ".yml", ".toml", ".md", ".markdown"], mimeTypes: ["text/*", "application/json", "application/xml", "application/javascript"], priority: 40 },
+  { id: "text:wildcard", handlerId: "native:text", mimeTypes: ["*/*"], priority: -1_000_000 },
 ];
 export const markdownAssociationRules: AssociationRule[] = [
   { id: "native:markdown:markdown", handlerId: "native:markdown", extensions: [".md", ".markdown"], mimeTypes: ["text/markdown"], priority: 220 },
@@ -55,8 +56,14 @@ export const contentAppDefinitions = [textAppDefinition, markdownAppDefinition, 
 export const contentHandlerDefinitions = [textHandler, markdownHandler, photosHandler, videoHandler, browserHandler, settingsHandler, externalUrlHandler] as const;
 export const contentAssociationRules = [...textAssociationRules, ...markdownAssociationRules, ...photosAssociationRules, ...videoAssociationRules, ...browserAssociationRules] as const;
 
-export const loadTextComponent = () => import("./text/TextEditor.tsx");
-export const loadMarkdownComponent = () => import("./markdown/MarkdownEditor.tsx");
+/**
+ * Text and Markdown are deliberately bound to their imported mature components
+ * here rather than leaving their registration behind a second lazy module path.
+ * Monaco itself still loads through its own adapter, but the app registry cannot
+ * accidentally resolve a legacy editor module.
+ */
+export const loadTextComponent = async () => ({ default: TextEditor });
+export const loadMarkdownComponent = async () => ({ default: MarkdownEditor });
 export const loadPhotosComponent = () => import("./photos/Photos.tsx");
 export const loadVideoComponent = () => import("./video/VideoPlayer.tsx");
 export const loadBrowserComponent = () => import("./browser/Browser.tsx");

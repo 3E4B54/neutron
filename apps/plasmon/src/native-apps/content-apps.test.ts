@@ -1,11 +1,16 @@
 import { expect, test } from "bun:test";
 import { HandlerAssociationRegistry } from "../os/associations/registry.ts";
 import type { FsNode } from "../os/contracts/index.ts";
+import MarkdownEditor from "./markdown/MarkdownEditor.tsx";
+import TextEditor from "./text/TextEditor.tsx";
 import {
   browserAppDefinition,
   contentAssociationRules,
   contentAppDefinitions,
   contentHandlerDefinitions,
+  createContentAppLoaders,
+  loadMarkdownComponent,
+  loadTextComponent,
   markdownAppDefinition,
   photosAppDefinition,
   settingsAppDefinition,
@@ -35,10 +40,23 @@ test("native content metadata includes Photos and intended singleton choices", (
   expect(contentHandlerDefinitions.map((handler) => handler.id)).toContain("external:url");
 });
 
+test("Text and Markdown loaders resolve the current mature component modules", async () => {
+  expect((await loadTextComponent()).default).toBe(TextEditor);
+  expect((await loadMarkdownComponent()).default).toBe(MarkdownEditor);
+
+  const loaders = createContentAppLoaders();
+  expect([...loaders.keys()].filter((id) => id === "native:text")).toHaveLength(1);
+  expect([...loaders.keys()].filter((id) => id === "native:markdown")).toHaveLength(1);
+  expect((await loaders.get("native:text")!()).default).toBe(TextEditor);
+  expect((await loaders.get("native:markdown")!()).default).toBe(MarkdownEditor);
+});
+
 test("Photos is the default handler for supported image extensions and MIME", async () => {
   const associations = registry();
   for (const resource of [node("face.png", "image/png"), node("photo.JPG", "image/jpeg"), node("diagram.svg", "image/svg+xml")]) {
-    expect((await associations.getDefault(resource))?.id).toBe("native:photos");
+    const handlers = await associations.resolve(resource);
+    expect(handlers[0]?.id).toBe("native:photos");
+    expect(handlers.map((handler) => handler.id)).toContain("native:text");
   }
 });
 
@@ -46,6 +64,26 @@ test("Markdown remains preferred while Text remains a compatible Open With handl
   const handlers = await registry().resolve(node("README.md", "text/markdown"));
   expect(handlers[0]?.id).toBe("native:markdown");
   expect(handlers.map((handler) => handler.id)).toContain("native:text");
+});
+
+test("very-low-priority Text wildcard is alternate-only when specific handlers exist", async () => {
+  const associations = registry();
+  const videoHandlers = await associations.resolve(node("movie.mkv", "video/x-matroska"));
+  expect(videoHandlers[0]?.id).toBe("native:video");
+  expect(videoHandlers.map((handler) => handler.id)).toContain("native:text");
+
+  const binaryHandlers = await associations.resolve(node("payload.bin", "application/octet-stream"));
+  expect(binaryHandlers.map((handler) => handler.id)).toEqual(["native:text"]);
+});
+
+test("Text wildcard rule is MIME-only and intentionally lowest priority", () => {
+  const wildcard = contentAssociationRules.find((rule) => rule.id === "text:wildcard");
+  expect(wildcard).toEqual({
+    id: "text:wildcard",
+    handlerId: "native:text",
+    mimeTypes: ["*/*"],
+    priority: -1_000_000,
+  });
 });
 
 test("URL and video association IDs remain stable", () => {
