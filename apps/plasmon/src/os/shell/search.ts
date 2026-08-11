@@ -1,13 +1,27 @@
 import type {
   ExternalElement,
+  FsEventSource,
   FsNode,
   FsService,
   JsonValue,
   NativeAppDefinition,
 } from "../contracts/index.ts";
+import {
+  parseStartShortcut,
+  startShortcutTargetIdentity,
+  type StartShortcutTarget,
+} from "./startMenu.ts";
 
 export type SearchTab = "all" | "apps" | "documents" | "media" | "atoms";
 export type FileSearchCategory = Exclude<SearchTab, "all" | "apps">;
+
+export const SEARCH_TOTAL_LIMIT = 48;
+export const SEARCH_CATEGORY_LIMITS: Readonly<Record<Exclude<SearchTab, "all">, number>> = Object.freeze({
+  apps: 14,
+  documents: 12,
+  media: 12,
+  atoms: 10,
+});
 
 export interface NativeAppSearchResult {
   kind: "native-app";
@@ -27,6 +41,25 @@ export interface ElementSearchResult {
   element: ExternalElement;
 }
 
+export interface StartShortcutSearchResult {
+  kind: "start-shortcut";
+  id: string;
+  category: "apps";
+  title: string;
+  subtitle: string;
+  node: FsNode;
+  target: StartShortcutTarget;
+}
+
+export interface DirectorySearchResult {
+  kind: "directory";
+  id: string;
+  category: "documents";
+  title: string;
+  subtitle: "Folder";
+  node: FsNode;
+}
+
 export interface FileSearchResult {
   kind: "file";
   id: string;
@@ -36,7 +69,7 @@ export interface FileSearchResult {
   node: FsNode;
 }
 
-export type ShellSearchResult = NativeAppSearchResult | ElementSearchResult | FileSearchResult;
+export type ShellSearchResult = NativeAppSearchResult | ElementSearchResult | StartShortcutSearchResult | DirectorySearchResult | FileSearchResult;
 
 export interface SearchBatch {
   results: ShellSearchResult[];
@@ -48,6 +81,11 @@ export interface FilesystemSearchOptions {
   signal?: AbortSignal;
   maxNodes?: number;
   maxWarnings?: number;
+}
+
+export interface ShellSearchOptions extends FilesystemSearchOptions {
+  pinnedNative?: readonly string[];
+  pinnedElements?: readonly string[];
 }
 
 function abortError(): Error {
@@ -70,8 +108,8 @@ function extension(name: string): string {
 }
 
 const MEDIA_EXTENSIONS = new Set([
-  ".aac", ".avi", ".flac", ".gif", ".jpeg", ".jpg", ".m4a", ".m4v", ".mkv",
-  ".mov", ".mp3", ".mp4", ".ogg", ".opus", ".png", ".svg", ".wav", ".webm", ".webp",
+  ".aac", ".avi", ".bmp", ".flac", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".m4a", ".m4v", ".mkv",
+  ".mov", ".mp3", ".mp4", ".ogg", ".ogv", ".opus", ".png", ".svg", ".wav", ".webm", ".webp",
 ]);
 
 function atomRecord(node: FsNode): Record<string, JsonValue> | null {
@@ -125,46 +163,67 @@ function fileSubtitle(node: FsNode, category: FileSearchCategory): string {
     const atomType = typeof atom?.atomType === "string" ? atom.atomType : null;
     return [title, atomType, "Atom"].filter(Boolean).join(" · ");
   }
-  if (node.kind === "directory") return "Folder";
   if (node.mime) return node.mime;
   return category === "media" ? "Media" : "Document";
 }
 
+function shortcutSubtitle(target: StartShortcutTarget): string {
+  switch (target.kind) {
+    case "native": return `Start shortcut · ${target.handlerId}`;
+    case "element": return `Start shortcut · Neutron Element ${target.elementId}`;
+    case "node": return "Start shortcut · filesystem item";
+    case "url": return "Start shortcut · URL";
+  }
+}
+
 function matches(haystack: string, needle: string): boolean {
   const terms = normalize(needle).trim().split(/\s+/u).filter(Boolean);
-  return terms.length > 0 && terms.every((term) => haystack.includes(term));
+  return terms.length === 0 || terms.every((term) => haystack.includes(term));
+}
+
+function pinnedRank(id: string, pinned: readonly string[] | undefined): number {
+  if (!pinned) return Number.MAX_SAFE_INTEGER;
+  const index = pinned.indexOf(id);
+  return index < 0 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 export function searchApplicationEntries(
   nativeApps: readonly NativeAppDefinition[],
   elements: readonly ExternalElement[],
   query: string,
+  options: Pick<ShellSearchOptions, "pinnedNative" | "pinnedElements"> = {},
 ): ShellSearchResult[] {
-  if (!query.trim()) return [];
-  const results: ShellSearchResult[] = [];
-  for (const app of nativeApps) {
-    if (!matches(normalize(`${app.name}\n${app.id}\n${app.handlerId}`), query)) continue;
-    results.push({
+  const native = nativeApps
+    .filter((app) => matches(normalize(`${app.name}\n${app.id}\n${app.handlerId}`), query))
+    .sort((left, right) => {
+      const rank = pinnedRank(left.handlerId, options.pinnedNative) - pinnedRank(right.handlerId, options.pinnedNative);
+      return rank || left.name.localeCompare(right.name);
+    })
+    .map<NativeAppSearchResult>((app) => ({
       kind: "native-app",
       id: `native:${app.handlerId}`,
       category: "apps",
       title: app.name,
       subtitle: "Plasmon application",
       app,
-    });
-  }
-  for (const element of elements) {
-    if (!matches(normalize(`${element.name}\n${element.id}\n${element.description}`), query)) continue;
-    results.push({
+    }));
+
+  const neutron = elements
+    .filter((element) => matches(normalize(`${element.name}\n${element.id}\n${element.description}\n${element.running}`), query))
+    .sort((left, right) => {
+      const rank = pinnedRank(left.id, options.pinnedElements) - pinnedRank(right.id, options.pinnedElements);
+      return rank || left.name.localeCompare(right.name);
+    })
+    .map<ElementSearchResult>((element) => ({
       kind: "element",
       id: `element:${element.id}`,
       category: "apps",
       title: element.name,
-      subtitle: element.description || "Neutron Element",
+      subtitle: `${element.description || "Neutron Element"} · running ${element.running}`,
       element,
-    });
-  }
-  return results;
+    }));
+
+  return [...native, ...neutron];
 }
 
 export async function searchFilesystem(
@@ -172,9 +231,9 @@ export async function searchFilesystem(
   query: string,
   options: FilesystemSearchOptions = {},
 ): Promise<Pick<SearchBatch, "results" | "warnings" | "truncated">> {
-  if (!query.trim()) return { results: [], warnings: [], truncated: false };
   const maxNodes = Math.max(1, options.maxNodes ?? 5_000);
   const maxWarnings = Math.max(0, options.maxWarnings ?? 8);
+  const hasQuery = query.trim().length > 0;
   checkAbort(options.signal);
 
   const root = await fs.resolvePath("/");
@@ -184,7 +243,9 @@ export async function searchFilesystem(
 
   const queue: FsNode[] = [root];
   const visited = new Set<string>();
-  const results: ShellSearchResult[] = [];
+  const appShortcuts: StartShortcutSearchResult[] = [];
+  const directories: DirectorySearchResult[] = [];
+  const files: FileSearchResult[] = [];
   const warnings: string[] = [];
   let examined = 0;
 
@@ -209,10 +270,38 @@ export async function searchFilesystem(
     for (const node of children) {
       if (examined >= maxNodes) break;
       examined += 1;
-      if (node.kind === "directory" && !visited.has(node.id)) queue.push(node);
+      if (node.kind === "directory") {
+        if (!visited.has(node.id)) queue.push(node);
+        if (hasQuery && matches(searchableNodeText(node), query)) {
+          directories.push({
+            kind: "directory",
+            id: `directory:${node.id}`,
+            category: "documents",
+            title: node.name,
+            subtitle: "Folder",
+            node,
+          });
+        }
+        continue;
+      }
+
+      const shortcut = parseStartShortcut(node);
+      if (shortcut && matches(`${searchableNodeText(node)}\n${normalize(startShortcutTargetIdentity(shortcut.target))}`, query)) {
+        appShortcuts.push({
+          kind: "start-shortcut",
+          id: `shortcut:${node.id}`,
+          category: "apps",
+          title: node.name,
+          subtitle: shortcutSubtitle(shortcut.target),
+          node,
+          target: shortcut.target,
+        });
+        continue;
+      }
+
       if (!matches(searchableNodeText(node), query)) continue;
       const category = categorizeFsNode(node);
-      results.push({
+      files.push({
         kind: "file",
         id: `node:${node.id}`,
         category,
@@ -223,7 +312,28 @@ export async function searchFilesystem(
     }
   }
 
-  return { results, warnings, truncated: queue.length > 0 };
+  const recent = <T extends { node: FsNode }>(left: T, right: T) =>
+    right.node.modifiedAt - left.node.modifiedAt || left.node.name.localeCompare(right.node.name);
+  appShortcuts.sort(recent);
+  directories.sort(recent);
+  files.sort(recent);
+  return { results: [...appShortcuts, ...directories, ...files], warnings, truncated: queue.length > 0 };
+}
+
+function applyResultLimits(results: readonly ShellSearchResult[]): { results: ShellSearchResult[]; truncated: boolean } {
+  const output: ShellSearchResult[] = [];
+  let truncated = false;
+  for (const category of ["apps", "documents", "media", "atoms"] as const) {
+    const matchesCategory = results.filter((result) => result.category === category);
+    const limit = SEARCH_CATEGORY_LIMITS[category];
+    output.push(...matchesCategory.slice(0, limit));
+    if (matchesCategory.length > limit) truncated = true;
+  }
+  if (output.length > SEARCH_TOTAL_LIMIT) {
+    truncated = true;
+    return { results: output.slice(0, SEARCH_TOTAL_LIMIT), truncated };
+  }
+  return { results: output, truncated };
 }
 
 export async function searchShell(
@@ -231,16 +341,26 @@ export async function searchShell(
   nativeApps: readonly NativeAppDefinition[],
   elements: readonly ExternalElement[],
   query: string,
-  options: FilesystemSearchOptions = {},
+  options: ShellSearchOptions = {},
 ): Promise<SearchBatch> {
-  const apps = searchApplicationEntries(nativeApps, elements, query);
+  const apps = searchApplicationEntries(nativeApps, elements, query, options);
   const files = await searchFilesystem(fs, query, options);
-  return { results: [...apps, ...files.results], warnings: files.warnings, truncated: files.truncated };
+  const limited = applyResultLimits([...apps, ...files.results]);
+  return {
+    results: limited.results,
+    warnings: files.warnings,
+    truncated: files.truncated || limited.truncated,
+  };
 }
 
 export function filterSearchResults(results: readonly ShellSearchResult[], tab: SearchTab): ShellSearchResult[] {
   if (tab === "all") return [...results];
   return results.filter((result) => result.category === tab);
+}
+
+/** Small Shell-owned adapter so React only observes one invalidation callback. */
+export function subscribeSearchInvalidation(source: FsEventSource | undefined, invalidate: () => void): () => void {
+  return source?.subscribe(() => invalidate()) ?? (() => undefined);
 }
 
 export class LatestSearchController<T> {
