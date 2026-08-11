@@ -32,6 +32,12 @@ import {
   createContentAppLoaders,
 } from "../../native-apps/content-apps.ts";
 import {
+  createJsDosRuntimeLoader,
+  jsDosAssociationRules,
+  jsDosHandler,
+  jsDosRuntimeDefinition,
+} from "../../native-apps/jsdos/index.ts";
+import {
   createExplorerNativeLoader,
   explorerAppDefinition,
 } from "../../native-apps/explorer/index.ts";
@@ -128,6 +134,13 @@ function registerWave2Applications(
 ): void {
   for (const handler of contentHandlerDefinitions) associations.registerHandler(handler);
   for (const rule of contentAssociationRules) associations.registerRule(rule);
+
+  // js-dos is a normal association/runtime handler. The process-host definition
+  // below exists only because current OpenService routes local React hosts
+  // through NativeProcessController; it does not create a DOS.sys filesystem app.
+  associations.registerHandler(jsDosHandler);
+  for (const rule of jsDosAssociationRules) associations.registerRule(rule);
+  nativeApps.registerWithLoader(jsDosRuntimeDefinition, createJsDosRuntimeLoader());
 
   const contentLoaders = createContentAppLoaders();
   for (const definition of contentAppDefinitions) {

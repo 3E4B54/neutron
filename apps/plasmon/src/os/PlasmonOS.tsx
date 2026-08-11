@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ensureHackathonGameContent } from "../games/hackathon-content.ts";
 import { Desktop } from "./desktop/index.ts";
 import { NativeProcessHost } from "./process/index.ts";
 import { Shell } from "./shell/index.ts";
@@ -32,6 +33,12 @@ export function PlasmonOS({ services: provided }: PlasmonOSProps) {
     () => services.process.subscribe(() => setProcessRevision((value) => value + 1)),
     [services.process],
   );
+
+  useEffect(() => {
+    void ensureHackathonGameContent(services.fs).catch((error: unknown) => {
+      console.error("Unable to seed temporary hackathon game content:", error);
+    });
+  }, [services.fs]);
 
   const processById = useMemo(
     () => new Map(services.process.list().map((record) => [record.id, record] as const)),
