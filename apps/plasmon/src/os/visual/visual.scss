@@ -31,7 +31,6 @@
     border: 1px solid var(--plasmon-border-subtle);
     border-radius: var(--plasmon-radius-icon-frame);
     box-shadow: var(--plasmon-shadow-icon);
-    overflow: hidden;
   }
 
   .plasmon-icon-frame--thumbnail {
@@ -46,7 +45,6 @@
     border: 1px solid var(--plasmon-border-subtle);
     border-radius: calc(var(--plasmon-radius-icon-frame) - 2px);
     box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
-    overflow: hidden;
   }
 
   .plasmon-icon-art,
