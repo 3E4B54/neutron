@@ -17,6 +17,7 @@ import {
   renameKeyAction,
   type InlineRenameState,
 } from "./rename.ts";
+import { shortcutTypeLabel } from "./shortcut.ts";
 import { canLoadImageThumbnail, loadImageThumbnail, type LoadedImageThumbnail } from "./thumbnail.ts";
 import "./polish.scss";
 
@@ -28,6 +29,7 @@ export interface FileEntryProps {
   node: FsNode;
   selected: boolean;
   focused: boolean;
+  dropTarget?: boolean;
   presentation: FileEntryPresentation;
   position?: FileEntryPosition | undefined;
   rename: InlineRenameState | null;
@@ -55,10 +57,20 @@ function typeLabel(node: FsNode): string {
   if (visual === "markdown") return "Markdown document";
   if (visual === "image") return node.mime ?? "Image";
   if (visual === "video") return node.mime ?? "Video";
-  if (visual === "shortcut") return "Shortcut";
+  if (visual === "shortcut") return shortcutTypeLabel(node);
   if (visual === "atom") return "Plasmon Atom";
   if (visual === "text") return node.mime ?? "Text document";
   return node.mime ?? "File";
+}
+
+export function fileEntryClassName(
+  presentation: FileEntryPresentation,
+  selected: boolean,
+  focused: boolean,
+  renaming: boolean,
+  dropTarget: boolean,
+): string {
+  return `fm-entry fm-entry--${presentation}${selected ? " is-selected" : ""}${focused ? " is-focused" : ""}${renaming ? " is-renaming" : ""}${dropTarget ? " is-drop-target" : ""}`;
 }
 
 export const FileEntry = memo(function FileEntry({
@@ -66,6 +78,7 @@ export const FileEntry = memo(function FileEntry({
   node,
   selected,
   focused,
+  dropTarget = false,
   presentation,
   position,
   rename,
@@ -97,8 +110,13 @@ export const FileEntry = memo(function FileEntry({
       return;
     }
     suppressBlurCommitRef.current = false;
-    renameSelectionRef.current.initialize(rename.session, inputRef.current, rename.initialName);
-  }, [isRenaming, rename?.initialName, rename?.session]);
+    renameSelectionRef.current.initialize(
+      rename.session,
+      inputRef.current,
+      rename.initialName,
+      node.kind === "directory",
+    );
+  }, [isRenaming, node.kind, rename?.initialName, rename?.session]);
 
   useEffect(() => {
     let active = true;
@@ -152,9 +170,10 @@ export const FileEntry = memo(function FileEntry({
         entryRef.current = element;
         setRef(element);
       }}
-      className={`fm-entry fm-entry--${presentation}${selected ? " is-selected" : ""}${focused ? " is-focused" : ""}`}
+      className={fileEntryClassName(presentation, selected, focused, isRenaming, dropTarget)}
       style={style}
       role="option"
+      tabIndex={-1}
       aria-selected={selected}
       data-fm-node-id={node.id}
       data-fm-kind={node.kind}
@@ -169,7 +188,7 @@ export const FileEntry = memo(function FileEntry({
         {thumbnailUrl ? <img className="fm-entry__thumbnail" src={thumbnailUrl} alt="" draggable={false} /> : iconForFile(node)}
       </span>
       <span className="fm-entry__selection-mark" aria-hidden="true">{selected ? "✓" : ""}</span>
-      <span className="fm-entry__name">
+      <span className="fm-entry__name" title={!selected && !isRenaming ? node.name : undefined}>
         {isRenaming && rename ? (
           <>
             <input

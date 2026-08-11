@@ -1,4 +1,5 @@
 import type { FsNode, FsService, NodeId } from "../contracts/index.ts";
+import { collisionFreeName, normalizedSiblingName } from "./naming.ts";
 
 export type NewDocumentKind = "text" | "markdown";
 
@@ -7,14 +8,28 @@ const DOCUMENT_SPECS: Record<NewDocumentKind, { name: string; mime: string }> = 
   markdown: { name: "New Markdown Document.md", mime: "text/markdown" },
 };
 
-/** Creates a normal filesystem document; collision behavior remains FsService-owned. */
-export function createDocument(
+async function siblingNames(fs: FsService, directoryId: NodeId): Promise<Set<string>> {
+  return new Set((await fs.list(directoryId)).map((node) => normalizedSiblingName(node.name)));
+}
+
+export async function createGeneratedFolder(
+  fs: FsService,
+  directoryId: NodeId,
+  requestedName = "New Folder",
+): Promise<FsNode> {
+  const name = collisionFreeName(requestedName, true, await siblingNames(fs, directoryId));
+  return fs.mkdir(directoryId, name);
+}
+
+/** Creates a normal filesystem document with a collision-free generated name. */
+export async function createDocument(
   fs: FsService,
   directoryId: NodeId,
   kind: NewDocumentKind,
 ): Promise<FsNode> {
   const spec = DOCUMENT_SPECS[kind];
-  return fs.createFile(directoryId, spec.name, { mime: spec.mime });
+  const name = collisionFreeName(spec.name, false, await siblingNames(fs, directoryId));
+  return fs.createFile(directoryId, name, { mime: spec.mime });
 }
 
 export const IMPORT_CHUNK_BYTES = 256 * 1024;
