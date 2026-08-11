@@ -1,13 +1,9 @@
 import { appIndexUrl, canisterIdFromUrl } from "neutron-tools/src/runtime.js";
 
-const ICON_PATHS = [
-  "static/icon.svg",
-  "static/icon.png",
-  "static/icon.webp",
-  "static/icon.jpg",
-] as const;
-
 export const DEFAULT_ELEMENT_ICON_PROBE_TIMEOUT_MS = 1_500;
+
+const ICON_PATH_MAX_LENGTH = 512;
+const URI_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/u;
 
 export type ElementIconProbe = (candidate: string) => boolean | Promise<boolean>;
 
@@ -16,7 +12,84 @@ export interface ElementIconResolveOptions {
   timeoutMs?: number;
 }
 
-export function elementIconCandidates(appId: string, href?: string): string[] {
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * Descriptor icon metadata is untrusted. Accept only a bounded relative package
+ * path and reject URL/scheme syntax, traversal, query/fragment suffixes and
+ * encoded path tricks before it reaches Neutron's app URL helper.
+ */
+export function safePackageIconPath(value: unknown): string | undefined {
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || value.length > ICON_PATH_MAX_LENGTH
+    || value.trim() !== value
+    || /[\u0000-\u001f\u007f]/u.test(value)
+    || value.startsWith("/")
+    || value.includes("\\")
+    || value.includes("?")
+    || value.includes("#")
+    || value.includes("%")
+    || URI_SCHEME.test(value)
+  ) {
+    return undefined;
+  }
+
+  const segments = value.split("/");
+  if (
+    segments.some(
+      (segment) => segment.length === 0 || segment === "." || segment === "..",
+    )
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
+/**
+ * Preserve descriptor icon metadata only inside the bridge. The frozen
+ * ExternalElement/tile/tray contracts remain unchanged. Prefer an app-level
+ * declaration when present, then the first safe tile declaration, then tray.
+ */
+export function declaredElementIconPath(
+  value: unknown,
+  expectedAppId?: string,
+): string | undefined {
+  const app = record(value);
+  if (!app) return undefined;
+  if (expectedAppId !== undefined && app.id !== expectedAppId) return undefined;
+
+  const appIcon = safePackageIconPath(app.icon);
+  if (appIcon) return appIcon;
+
+  if (Array.isArray(app.tiles)) {
+    for (const entry of app.tiles) {
+      const tileIcon = safePackageIconPath(record(entry)?.icon);
+      if (tileIcon) return tileIcon;
+    }
+  }
+
+  return safePackageIconPath(record(app.tray)?.icon);
+}
+
+/**
+ * Resolve one declared package-local path through the two Neutron app-origin
+ * forms already supported by the runtime. This deliberately does not invent
+ * alternate extensions or other asset paths.
+ */
+export function elementIconCandidates(
+  appId: string,
+  declaredPath: string | undefined,
+  href?: string,
+): string[] {
+  const path = safePackageIconPath(declaredPath);
+  if (!path) return [];
+
   const sourceHref = href ?? (typeof window === "undefined" ? undefined : window.location.href);
   if (!sourceHref) return [];
 
@@ -37,21 +110,19 @@ export function elementIconCandidates(appId: string, href?: string): string[] {
   const candidates: string[] = [];
 
   for (const unprefixed of [false, true]) {
-    for (const path of ICON_PATHS) {
-      try {
-        candidates.push(
-          appIndexUrl({
-            canisterId,
-            appId,
-            path,
-            unprefixed,
-            local,
-            ...(localHost ? { localHost } : {}),
-          }),
-        );
-      } catch {
-        // Keep probing the remaining safe package-local candidates.
-      }
+    try {
+      candidates.push(
+        appIndexUrl({
+          canisterId,
+          appId,
+          path,
+          unprefixed,
+          local,
+          ...(localHost ? { localHost } : {}),
+        }),
+      );
+    } catch {
+      // One app-origin form can fail without preventing the other safe form.
     }
   }
 
@@ -86,9 +157,8 @@ async function probeWithTimeout(
 }
 
 /**
- * Start every probe concurrently. Resolve as soon as the highest-priority
- * candidate that can still win is known, without waiting for lower-priority
- * probes that cannot affect the result.
+ * Start the at-most-two safe origin probes concurrently. Resolve as soon as
+ * the highest-priority candidate that can still win is known.
  */
 export async function firstLoadableIconCandidate(
   candidates: readonly string[],
@@ -127,10 +197,8 @@ export async function firstLoadableIconCandidate(
 }
 
 /**
- * Image-element probing intentionally avoids fetch/CORS assumptions. The
- * browser is asked whether the same package-local URL that consumers render
- * can actually load. The outer candidate probe also enforces a timeout, while
- * this helper clears browser handlers when its own bounded probe completes.
+ * Browser Image probing avoids fetch/CORS assumptions. No probe is created at
+ * all when descriptor metadata supplies no safe package-local icon path.
  */
 export function probeBrowserImage(
   candidate: string,
@@ -157,16 +225,15 @@ export function probeBrowserImage(
   });
 }
 
-/**
- * Resolve exactly one verified package-local icon URL for the frozen
- * ExternalElement.icon contract. Arbitrary app metadata URLs are never read.
- */
+/** Resolve one verified descriptor-declared icon for ExternalElement.icon. */
 export async function resolveElementIcon(
   appId: string,
+  declaredPath?: string,
   href?: string,
   options: ElementIconResolveOptions = {},
 ): Promise<string | undefined> {
-  const candidates = elementIconCandidates(appId, href);
+  const candidates = elementIconCandidates(appId, declaredPath, href);
+  if (candidates.length === 0) return undefined;
   const timeout = normalizedTimeout(options.timeoutMs);
   const probe = options.probe
     ?? ((candidate: string) => probeBrowserImage(candidate, timeout));
