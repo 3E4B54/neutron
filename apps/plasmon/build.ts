@@ -6,22 +6,38 @@ import { fileURLToPath } from "node:url";
 import type { BuildOptions } from "esbuild";
 
 const mainOutfile = "./dist/web/main.js";
+const bundledCss = "./dist/web/main.bundle.css";
+const outputCss = "./dist/web/main.css";
 const args = process.argv.slice(2);
 const devMode = args[0] === "dev";
 
 async function stripRemoteDiagnostics(): Promise<void> {
   const source = await readFile(mainOutfile, "utf8");
   const sanitized = source.replaceAll("https://react.dev/errors/", "#react-error-");
-  if (sanitized !== source) {
-    await writeFile(mainOutfile, sanitized);
-  }
+  if (sanitized !== source) await writeFile(mainOutfile, sanitized);
+}
+
+/**
+ * Plasmon's application styles are imported by src/index.tsx. Monaco's ESM
+ * modules contribute additional CSS to the same esbuild output. esbuild emits
+ * that complete stylesheet as main.bundle.css; publish it as main.css because
+ * public/index.html references that stable package path.
+ */
+async function mergeApplicationStyles(): Promise<void> {
+  const generated = await readFile(bundledCss, "utf8");
+  await writeFile(outputCss, generated);
 }
 
 const config: BuildOptions = {
-  entryPoints: {
-    main: "./src/index.tsx",
-    service: "./src/os/fs/background.ts",
-  },
+  entryPoints: [
+    { in: "./src/index.tsx", out: "main" },
+    { in: "./src/os/fs/background.ts", out: "service" },
+    { in: "monaco-editor/esm/vs/editor/editor.worker.js", out: "monaco-workers/editor.worker" },
+    { in: "monaco-editor/esm/vs/language/json/json.worker.js", out: "monaco-workers/json.worker" },
+    { in: "monaco-editor/esm/vs/language/css/css.worker.js", out: "monaco-workers/css.worker" },
+    { in: "monaco-editor/esm/vs/language/html/html.worker.js", out: "monaco-workers/html.worker" },
+    { in: "monaco-editor/esm/vs/language/typescript/ts.worker.js", out: "monaco-workers/ts.worker" },
+  ],
   outdir: "./dist/web",
   entryNames: "[name]",
   bundle: true,
@@ -30,20 +46,11 @@ const config: BuildOptions = {
   external: [],
   format: "esm",
   jsx: "automatic",
-  loader: { ".ts": "ts", ".tsx": "tsx" },
+  loader: { ".ts": "ts", ".tsx": "tsx", ".ttf": "file" },
+  outExtension: { ".css": ".bundle.css" },
   platform: "browser",
   plugins: [
     sassPlugin(),
-    {
-      name: "neutron-self-contained-assets",
-      setup(build) {
-        build.onEnd(async (result) => {
-          if (!devMode && result.errors.length === 0) {
-            await stripRemoteDiagnostics();
-          }
-        });
-      },
-    },
     copyStaticFiles({
       src: "./public",
       dest: "./dist/web",
@@ -52,6 +59,16 @@ const config: BuildOptions = {
       preserveTimestamps: true,
       recursive: true,
     }),
+    {
+      name: "neutron-self-contained-assets",
+      setup(build) {
+        build.onEnd(async (result) => {
+          if (result.errors.length !== 0) return;
+          await mergeApplicationStyles();
+          if (!devMode) await stripRemoteDiagnostics();
+        });
+      },
+    },
   ],
 };
 
@@ -87,7 +104,8 @@ if (args[0] === "watch") {
 } else {
   try {
     await esbuild.build(config);
-  } catch {
-    process.exit(1);
+  } catch (error: unknown) {
+    console.error("Plasmon UI build failed:", error);
+    process.exitCode = 1;
   }
 }
