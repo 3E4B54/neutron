@@ -68,7 +68,7 @@ export function createFilesystemCore(options: FilesystemCoreOptions): Filesystem
   const projections = new NeutronProjectionService(options.fs);
   const privilegedTrash = new TrashService(options.fs);
   let disposed = false;
-  let stopNeutron = () => undefined;
+  let stopNeutron: () => void = () => undefined;
   let reconcileTail: Promise<void> = Promise.resolve();
 
   const reconcileNeutron = async (): Promise<void> => {
