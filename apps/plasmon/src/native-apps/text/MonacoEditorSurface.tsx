@@ -7,6 +7,11 @@ import {
 import { syncEditorModelValue } from "./editorModel.ts";
 import { installMonacoEnvironment } from "./monacoEnvironment.ts";
 
+export const MONACO_ENGINE_NAME = "Monaco";
+export function monacoEngineStatus(ready: boolean): string {
+  return ready ? `${MONACO_ENGINE_NAME} ready` : `Loading ${MONACO_ENGINE_NAME}…`;
+}
+
 export interface MonacoCursorState {
   line: number;
   column: number;
@@ -22,6 +27,7 @@ export interface MonacoEditorSurfaceProps {
   ariaLabel: string;
   onChange: (value: string) => void;
   onCursorChange?: (state: MonacoCursorState) => void;
+  onReadyChange?: (ready: boolean) => void;
 }
 
 type MonacoApi = typeof import("monaco-editor");
@@ -30,7 +36,17 @@ type MonacoModel = import("monaco-editor").editor.ITextModel;
 type MonacoDisposable = import("monaco-editor").IDisposable;
 
 /** Thin React lifecycle adapter around Monaco. The model is stable per resource. */
-export function MonacoEditorSurface({ modelKey, value, language, readOnly = false, visible = true, ariaLabel, onChange, onCursorChange }: MonacoEditorSurfaceProps) {
+export function MonacoEditorSurface({
+  modelKey,
+  value,
+  language,
+  readOnly = false,
+  visible = true,
+  ariaLabel,
+  onChange,
+  onCursorChange,
+  onReadyChange,
+}: MonacoEditorSurfaceProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<MonacoEditor | null>(null);
   const modelRef = useRef<MonacoModel | null>(null);
@@ -38,11 +54,13 @@ export function MonacoEditorSurface({ modelKey, value, language, readOnly = fals
   const applyingExternalValueRef = useRef(false);
   const onChangeRef = useRef(onChange);
   const onCursorChangeRef = useRef(onCursorChange);
+  const onReadyChangeRef = useRef(onReadyChange);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   useEffect(() => { onCursorChangeRef.current = onCursorChange; }, [onCursorChange]);
+  useEffect(() => { onReadyChangeRef.current = onReadyChange; }, [onReadyChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +69,7 @@ export function MonacoEditorSurface({ modelKey, value, language, readOnly = fals
     const disposables: MonacoDisposable[] = [];
     setLoading(true);
     setError(null);
+    onReadyChangeRef.current?.(false);
     installMonacoEnvironment();
 
     void import("monaco-editor")
@@ -71,6 +90,10 @@ export function MonacoEditorSurface({ modelKey, value, language, readOnly = fals
           lineHeight: 21,
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
           minimap: { enabled: false },
+          lineNumbers: "on",
+          glyphMargin: true,
+          folding: true,
+          renderLineHighlight: "line",
           padding: { top: 10, bottom: 10 },
           scrollBeyondLastLine: false,
           smoothScrolling: true,
@@ -93,18 +116,21 @@ export function MonacoEditorSurface({ modelKey, value, language, readOnly = fals
           }),
         );
         setLoading(false);
+        onReadyChangeRef.current?.(true);
         onCursorChangeRef.current?.({ line: 1, column: 1, selected: 0 });
         requestAnimationFrame(() => createdEditor.focus());
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
           setLoading(false);
+          onReadyChangeRef.current?.(false);
           setError(reason instanceof Error ? reason.message : String(reason));
         }
       });
 
     return () => {
       cancelled = true;
+      onReadyChangeRef.current?.(false);
       for (const disposable of disposables) disposable.dispose();
       editor?.dispose();
       model?.dispose();
@@ -135,7 +161,12 @@ export function MonacoEditorSurface({ modelKey, value, language, readOnly = fals
   }, [visible]);
 
   return (
-    <div style={styles.root} aria-label={ariaLabel}>
+    <div
+      style={styles.root}
+      aria-label={ariaLabel}
+      data-editor-engine="monaco"
+      data-editor-ready={loading || error ? "false" : "true"}
+    >
       <div ref={containerRef} style={styles.editor} />
       {loading && <div style={styles.overlay} role="status">Loading editor…</div>}
       {error && <div style={{ ...styles.overlay, ...styles.error }} role="alert">Monaco failed to load: {error}</div>}
