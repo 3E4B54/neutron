@@ -252,8 +252,13 @@ export class HandlerAssociationRegistry implements AssociationRegistry {
     const typeKeys = [...new Set(matches.flatMap((match) => match.typeKey ? [match.typeKey] : []))];
     const defaults = new Set<string>();
     await Promise.all(typeKeys.map(async (typeKey) => {
-      const handlerId = await this.defaults.get(typeKey);
-      if (handlerId) defaults.add(`${typeKey}\u0000${handlerId}`);
+      try {
+        const handlerId = await this.defaults.get(typeKey);
+        if (handlerId) defaults.add(`${typeKey}\u0000${handlerId}`);
+      } catch {
+        // Association defaults are optional preference data. Storage read failures
+        // must not prevent built-in handlers from resolving deterministically.
+      }
     }));
 
     matches.sort((a, b) => compareMatch(a, b, defaults));
