@@ -1,9 +1,8 @@
 import { PLASMON_MARK_ASSET, PLASMON_WALLPAPER_ASSET } from "./assets.ts";
-import "./visual.scss";
 
 export interface PlasmonWallpaperProps {
-  className?: string;
-  showIdentity?: boolean;
+  className?: string | undefined;
+  showIdentity?: boolean | undefined;
 }
 
 /**

@@ -8,7 +8,6 @@ import {
 } from "./assets.ts";
 import { ICON_IMAGE_OBJECT_FIT, THUMBNAIL_OBJECT_FIT, resolveImagePresentation } from "./presentation.ts";
 import { iconContextCssVariables, type IconContext } from "./sizing.ts";
-import "./visual.scss";
 
 export type IconFrameVariant = "standard" | "bare" | "thumbnail";
 

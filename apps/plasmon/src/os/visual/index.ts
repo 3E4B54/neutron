@@ -1,3 +1,5 @@
+import "./visual.scss";
+
 export * from "./assets.ts";
 export * from "./presentation.ts";
 export * from "./sizing.ts";
