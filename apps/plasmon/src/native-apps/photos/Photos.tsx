@@ -297,7 +297,7 @@ function buttonStyle(disabled: boolean): CSSProperties {
 }
 
 const styles: Record<string, CSSProperties> = {
-  root: { height: "100%", minHeight: 0, display: "flex", flexDirection: "column", background: "#141619", color: "#eef1f5", outline: "none" },
+  root: { position: "relative", height: "100%", minHeight: 0, display: "flex", flexDirection: "column", background: "#141619", color: "#eef1f5", outline: "none" },
   expandedExit: { position: "absolute", top: 10, right: 10, zIndex: 4, minHeight: 30, padding: "5px 10px", border: "1px solid #4a515d", borderRadius: 4, background: "#343a43", color: "#f1f3f6", font: "600 12px/1.2 system-ui, sans-serif", cursor: "pointer" },
   toolbar: { display: "flex", alignItems: "center", gap: 8, padding: 8, background: "#202329", borderBottom: "1px solid #373c45" },
   scale: { minWidth: 48, color: "#bbc2cc", textAlign: "center", font: "12px/1 system-ui, sans-serif" },

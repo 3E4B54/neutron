@@ -8,6 +8,7 @@ import {
   contentAssociationRules,
   contentAppDefinitions,
   contentHandlerDefinitions,
+  createContentAppLoaders,
   loadMarkdownComponent,
   loadTextComponent,
   markdownAppDefinition,
@@ -42,6 +43,12 @@ test("native content metadata includes Photos and intended singleton choices", (
 test("Text and Markdown loaders resolve the current mature component modules", async () => {
   expect((await loadTextComponent()).default).toBe(TextEditor);
   expect((await loadMarkdownComponent()).default).toBe(MarkdownEditor);
+
+  const loaders = createContentAppLoaders();
+  expect([...loaders.keys()].filter((id) => id === "native:text")).toHaveLength(1);
+  expect([...loaders.keys()].filter((id) => id === "native:markdown")).toHaveLength(1);
+  expect((await loaders.get("native:text")!()).default).toBe(TextEditor);
+  expect((await loaders.get("native:markdown")!()).default).toBe(MarkdownEditor);
 });
 
 test("Photos is the default handler for supported image extensions and MIME", async () => {
