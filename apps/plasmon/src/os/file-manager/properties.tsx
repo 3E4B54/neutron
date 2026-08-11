@@ -18,6 +18,13 @@ import {
   readAssociationProbe,
   renameNode,
 } from "./model.ts";
+import {
+  handleOpenWithDialogPointerDown,
+  openWithErrorMessage,
+  runOpenWithDialogAction,
+  selectOpenWithHandler,
+  type OpenWithDialogAction,
+} from "./openWithDialog.ts";
 
 export interface PropertiesInspection {
   node: FsNode;
@@ -118,37 +125,35 @@ export function OpenWithPanel({
         : next.defaultHandlerId ?? next.candidates[0]?.handler.id ?? null);
       setError(null);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(openWithErrorMessage(cause));
     }
   }, [fs, node.id, service]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const run = async (action: "open" | "default") => {
+  const run = async (action: OpenWithDialogAction) => {
     if (!selected) return;
     setBusy(true);
     setError(null);
     try {
-      const current = await fs.stat(node.id);
-      const probe = await readAssociationProbe(fs, current);
-      if (action === "open") {
-        await service.open(current, selected, probe);
-        onClose();
-      } else {
-        await service.setDefault(current, selected, probe);
-        await refresh();
-        onChanged?.();
-      }
+      await runOpenWithDialogAction({
+        fs,
+        nodeId: node.id,
+        service,
+        handlerId: selected,
+        action,
+        onClose,
+        ...(onChanged ? { onChanged } : {}),
+      });
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
+      setError(openWithErrorMessage(cause));
       setBusy(false);
     }
   };
 
   return (
     <div className="fm-modal-backdrop" role="presentation" onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.target === event.currentTarget) onClose();
+      handleOpenWithDialogPointerDown(event, onClose);
     }}>
       <section className="fm-dialog" role="dialog" aria-modal="true" aria-labelledby="fm-open-with-title">
         <header className="fm-dialog__header">
@@ -162,13 +167,17 @@ export function OpenWithPanel({
         ) : (
           <div className="fm-handler-list" role="radiogroup" aria-label="Compatible applications">
             {model.candidates.map(({ handler, isDefault }) => (
-              <label className="fm-handler" key={handler.id}>
+              <label
+                className={`fm-handler${selected === handler.id ? " is-selected" : ""}`}
+                key={handler.id}
+                onClick={() => selectOpenWithHandler(handler.id, setSelected)}
+              >
                 <input
                   type="radio"
                   name="open-with"
                   value={handler.id}
                   checked={selected === handler.id}
-                  onChange={() => setSelected(handler.id)}
+                  onChange={() => selectOpenWithHandler(handler.id, setSelected)}
                 />
                 <span className="fm-handler__icon" aria-hidden="true">{handler.kind === "neutron" ? "⚛" : "◆"}</span>
                 <span>
