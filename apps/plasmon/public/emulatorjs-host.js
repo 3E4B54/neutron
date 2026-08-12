@@ -51,7 +51,10 @@
       const gameName = typeof message.gameName === "string" && message.gameName
         ? message.gameName
         : "NES ROM";
-      const dataRoot = new URL("./System/Program Files/EmulatorJS/data/", window.location.href).href;
+      // Kernel executable app-host routes intentionally admit only URL-safe
+      // path segments. Program Files remains the packaged runtime authority,
+      // while this package-local mirror is the browser transport path.
+      const dataRoot = new URL("./runtime/emulatorjs/data/", window.location.href).href;
 
       gameUrl = URL.createObjectURL(new Blob([message.bytes], { type: "application/octet-stream" }));
       window.EJS_player = "#game";
@@ -73,7 +76,7 @@
 
       post("configured");
       const loader = document.createElement("script");
-      loader.src = new URL("./System/Program Files/EmulatorJS/data/loader.js", window.location.href).href;
+      loader.src = new URL("./runtime/emulatorjs/data/loader.js", window.location.href).href;
       loader.async = true;
       loader.dataset.plasmonRuntime = "emulatorjs";
       loader.addEventListener("error", () => fail("Unable to load packaged EmulatorJS runtime"), { once: true });
