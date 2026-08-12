@@ -29,10 +29,11 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   expect(fixtureResponse.ok(), "demo fixture should be served from the installed Plasmon package").toBe(true);
   expect((await fixtureResponse.body()).length).toBeGreaterThan(0);
 
-  // The fixture flag is startup configuration. Intercept only the initial
-  // installed Plasmon document request and redirect it before any unflagged
-  // Plasmon document can execute filesystem bootstrap. The redirected document
-  // still comes from the installed package and uses the normal product startup.
+  // The fixture flag is startup configuration. Keep every installed Plasmon
+  // main-document request flagged until the real application has completed
+  // bootstrap. Kernel app-host setup can issue more than one document navigation;
+  // releasing this route after only the first navigation would let a later
+  // unflagged document replace the fixture-enabled boot.
   const fixtureRoute = `**/app/${APP_ID}/**`;
   let fixtureRedirected = false;
   const redirectInitialPlasmonDocument = async (route: Route) => {
@@ -71,13 +72,15 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   await expect(page.locator('[data-tid="launcher"]')).toBeVisible();
   await page.locator(`[data-tid="launcher-tile-${APP_ID}-${TILE_ID}"]`).click();
   await fixtureNavigation;
-  await page.unroute(fixtureRoute, redirectInitialPlasmonDocument);
-  expect(fixtureRedirected, "the first installed Plasmon document should be redirected to the explicit fixture URL").toBe(true);
+  expect(fixtureRedirected, "the installed Plasmon document should be redirected to the explicit fixture URL").toBe(true);
 
   const frame = page.locator(`iframe[data-app-id="${APP_ID}"][data-tile-id="${TILE_ID}"]`).first();
   await expect(frame).toBeAttached();
   const app = page.frameLocator(`iframe[data-app-id="${APP_ID}"][data-tile-id="${TILE_ID}"]`).first();
   await expect(app.getByRole("navigation", { name: "Taskbar" })).toBeVisible({ timeout: 30_000 });
+  const activeAppUrl = new URL(await app.locator("html").evaluate(() => window.location.href));
+  expect(activeAppUrl.searchParams.get(FIXTURE_PARAM)).toBe(FIXTURE_VALUE);
+  await page.unroute(fixtureRoute, redirectInitialPlasmonDocument);
 
   // Enter the fixture through ordinary filesystem UI. Directory navigation is
   // FileManager-owned; the .jsdos activation itself delegates to the canonical
