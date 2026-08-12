@@ -5,7 +5,7 @@ test("packaged vanilla Neutron Review persists and round-trips Markdown through 
   await login(page);
   let harness = await openReview(page);
 
-  await harness.review.getByLabel("New review").fill("Packaged Review Gate");
+  await harness.review.getByRole("textbox", { name: "New review" }).fill("Packaged Review Gate");
   await harness.review.getByRole("button", { name: "Create Atom" }).click();
   await expect(harness.review.getByRole("heading", { name: "Packaged Review Gate" })).toBeVisible();
 
