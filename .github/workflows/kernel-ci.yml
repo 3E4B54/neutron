@@ -4,7 +4,11 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "apps/plasmon/**"
   pull_request:
+    paths-ignore:
+      - "apps/plasmon/**"
   workflow_dispatch:
 
 jobs:

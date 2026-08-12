@@ -96,6 +96,12 @@ nearest nested `AGENTS.md` before editing. The closest scoped instructions refin
 Plasmon implementation behavior; these repository-level production, migration,
 packaging, and release rules still apply.
 
+Also read `apps/plasmon/TESTING.md`. Ordinary Plasmon development uses
+`npm --workspace neutron-plasmon test` as the required fast Bun lane. Do not use
+repository-root `npm test` as the normal Plasmon edit/test loop. If an agent
+cannot run Bun locally, the pushed branch must use the dedicated Plasmon Fast CI
+workflow and report that result in its handoff.
+
 The Plasmon owner may impose a stricter development-time release-version freeze
 than this repository-wide release policy. When `apps/plasmon/AGENTS.md` freezes
 the manifest version, do not bump it merely to force local package activation;

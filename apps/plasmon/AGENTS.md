@@ -9,11 +9,12 @@ rules. A closer nested `AGENTS.md` further refines implementation behavior.
 ## Read first
 
 1. `apps/plasmon/README.md`.
-2. `apps/plasmon/src/README.md` for frontend/source-layout work.
-3. `apps/plasmon/src/os/AGENTS.md` for OS work.
-4. The nearest subsystem README and `AGENTS.md`.
-5. Relevant accepted documents under `apps/plasmon/docs/`.
-6. `/doc/` whenever behavior crosses the Neutron/Kernel boundary.
+2. `apps/plasmon/TESTING.md` for the canonical fast/package/browser test lanes and required handoff evidence.
+3. `apps/plasmon/src/README.md` for frontend/source-layout work.
+4. `apps/plasmon/src/os/AGENTS.md` for OS work.
+5. The nearest subsystem README and `AGENTS.md`.
+6. Relevant accepted documents under `apps/plasmon/docs/`.
+7. `/doc/` whenever behavior crosses the Neutron/Kernel boundary.
 
 ## Owner-frozen release version
 
@@ -56,9 +57,11 @@ Assign and implement fixes as coherent end-to-end product slices rather than
 tiny source-only patches. A sprint may contain hours of implementation work if
 that is what is required to make the visible workflow complete.
 
-For automatable user-visible regressions, add a packaged Playwright test (or the
-closest existing browser harness) before or with the fix. Unit tests remain
-useful, but a green unit suite does not supersede a failing packaged workflow.
+For automatable user-visible regressions, add browser coverage when the failure
+actually depends on browser/packaged behavior. Prefer deterministic Bun coverage
+for semantics that can be exercised through production models, services,
+controllers, or commands. Unit tests remain useful, but a green unit suite does
+not supersede a failing packaged workflow.
 
 ## Source-of-truth order
 
@@ -78,21 +81,39 @@ Surface material conflicts instead of silently picking the easiest behavior.
 - Do not key runtime behavior to demo/game names.
 - Keep durable defaults distinct from temporary demo/hackathon content.
 - Do not invent Kernel APIs or security behavior.
-- Update local documentation when durable ownership, invariants, or acceptance
-  behavior changes.
+- Put user-action semantics in production models/services/controllers/commands
+  when practical so the same behavior can be exercised headlessly and by React.
+  Do not create a second test-only implementation that mimics the UI.
+- Update local documentation when durable ownership, invariants, acceptance
+  behavior, or testing expectations change.
 
 ## Validation
 
-Run focused tests while iterating, then the relevant Plasmon test/package lane.
-For visible behavior, verify the installed packaged application. Browser-level
-tests should cover critical Desktop, FileManager, Start/Search, association,
-native-app, and game launch paths as they become automatable.
+The canonical directions are in `apps/plasmon/TESTING.md`.
 
-Typical package command:
+For ordinary implementation work, use focused Bun tests while iterating and then
+run this required fast lane before handoff:
 
 ```sh
-npm --workspace neutron-plasmon run package
+npm --workspace neutron-plasmon test
 ```
+
+That command is intentionally package-independent. Do **not** use repository-root
+`npm test` as the normal Plasmon edit/test loop.
+
+When package/build output is part of the unit of work, additionally run:
+
+```sh
+npm --workspace neutron-plasmon run test:package
+```
+
+If local Bun is unavailable, push the branch and use **Plasmon Fast CI**. An agent
+handoff must give the exact focused command/result, the fast-suite result (local
+or CI), and any package/browser/manual boundary that remains unverified.
+
+For visible behavior, packaged/manual acceptance still matters. Browser-level
+tests should stay concentrated on boundaries that require a real browser or
+installed package rather than duplicating deterministic OS semantics.
 
 ## Escalate instead of assuming
 

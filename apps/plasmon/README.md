@@ -52,14 +52,45 @@ Native applications and association-backed runtimes live under [`src/native-apps
 
 ## Development and verification
 
-From the repository root:
+Install repository dependencies once from the repository root:
 
 ```sh
 npm ci
-npm --workspace neutron-plasmon run package
 ```
 
-Run focused tests for the subsystem being changed as well as the repository's Plasmon integration tests. Product acceptance is based on the packaged application, not only source-level or mocked tests. A feature that is green in unit tests but not visible/functional in packaged Plasmon is not complete.
+The normal Plasmon edit/test loop is intentionally fast and package-independent:
+
+```sh
+npm --workspace neutron-plasmon test
+```
+
+That command runs Bun-based source and package-independent Plasmon integration tests. It does not package the Kernel, run Motoko tests, invoke Playwright, or build/package Plasmon.
+
+For a focused unit while iterating, run Bun from `apps/plasmon/`, for example:
+
+```sh
+bun test src/os/file-manager
+bun test src/os/fs
+bun test src/os/shell
+```
+
+When the change crosses Plasmon build/package output, run the separate package lane:
+
+```sh
+npm --workspace neutron-plasmon run test:package
+```
+
+For both fast and package lanes:
+
+```sh
+npm --workspace neutron-plasmon run test:all
+```
+
+Do not use repository-root `npm test` as the normal Plasmon development command; it runs unrelated Neutron workspaces. If Bun is unavailable locally, push the branch and use the dedicated **Plasmon Fast CI** workflow as the development feedback loop.
+
+See [`TESTING.md`](TESTING.md) for the canonical test matrix, headless-testing design rules, CI behavior, and required agent handoff evidence.
+
+Product acceptance is still based on the relevant boundary. A green fast suite does not prove installed HTTP assets, browser event propagation, packaged Neutron integration, or visual UX. Use package/browser/manual verification when those claims are part of the unit of work.
 
 The expected package is currently:
 
@@ -67,7 +98,7 @@ The expected package is currently:
 plasmon.v0.1.0.neutron
 ```
 
-For standalone UI development, use the app's development script. Standalone mode is a development surface; final behavior must also be verified inside packaged Neutron.
+For standalone UI development, use the app's development script. Standalone mode is a development surface; final behavior must also be verified inside packaged Neutron when the task depends on installed behavior.
 
 ## Current product boundaries
 
@@ -82,6 +113,7 @@ Live structured Atoms must support semantic mutation without requiring whole-Ato
 Start with:
 
 - [`AGENTS.md`](AGENTS.md) — scoped implementation rules for agents and contributors.
+- [`TESTING.md`](TESTING.md) — canonical fast/package/browser test protocol.
 - [`docs/README.md`](docs/README.md) — Plasmon architecture/design index.
 - [`src/os/README.md`](src/os/README.md) — OS architecture and subsystem map.
 - [`src/os/AGENTS.md`](src/os/AGENTS.md) — OS implementation invariants and validation rules.
