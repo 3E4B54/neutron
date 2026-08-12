@@ -95,7 +95,12 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   await expect(games).toBeVisible();
   await games.dblclick();
 
-  const demo = explorer.locator("[data-fm-node-id]", { hasText: "Plasmon Demo.jsdos" }).first();
+  // Explorer titles follow the active directory. Reacquire the same normal
+  // FileManager surface by its canonical Games title after navigation rather
+  // than continuing through the now-stale "This Plasmon" role locator.
+  const gamesExplorer = app.getByRole("dialog", { name: "Games" }).last();
+  await expect(gamesExplorer).toBeVisible({ timeout: 20_000 });
+  const demo = gamesExplorer.locator("[data-fm-node-id]", { hasText: "Plasmon Demo.jsdos" }).first();
   await expect(demo).toBeVisible({ timeout: 20_000 });
   await demo.dblclick();
 
