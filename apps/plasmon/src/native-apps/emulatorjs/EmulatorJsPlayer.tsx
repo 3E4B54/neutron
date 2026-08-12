@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { NativeAppComponentProps } from "../../os/process/runtime.ts";
 import {
   assertNesRom,
@@ -61,17 +61,32 @@ function populateRuntimeDocument(runtimeDocument: Document): void {
   runtimeDocument.close();
 }
 
+function createRuntimeFrame(container: HTMLDivElement): HTMLIFrameElement {
+  const frame = document.createElement("iframe");
+  frame.title = "NES game";
+  frame.setAttribute("aria-label", "NES game");
+  frame.style.position = "absolute";
+  frame.style.inset = "0";
+  frame.style.width = "100%";
+  frame.style.height = "100%";
+  frame.style.border = "0";
+  frame.style.background = "#000";
+  container.append(frame);
+  return frame;
+}
+
 /**
  * Association-backed NES host. The selected filesystem node is the only game
  * input; title-specific dispatch stays outside the runtime path.
  *
  * EmulatorJS exposes browser-global EJS_* configuration, so every Plasmon
- * process receives its own ordinary same-origin iframe. Plasmon populates that
- * child document directly, configures its contentWindow, and injects the real
- * packaged loader there. Only the ROM itself uses a Blob URL.
+ * process receives its own ordinary same-origin iframe. As in daedalOS's
+ * proven EmulatorJS boundary, the host creates and appends that iframe
+ * imperatively, then populates its document, configures its contentWindow, and
+ * injects the real packaged loader there. Only the ROM itself uses a Blob URL.
  */
 export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps) {
-  const frameRef = useRef<HTMLIFrameElement>(null);
+  const runtimeContainerRef = useRef<HTMLDivElement>(null);
   const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [rom, setRom] = useState<LoadedRom | null>(null);
   const [state, setState] = useState<PlayerState>("loading");
@@ -107,20 +122,29 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
     };
   }, [fs, target.nodeId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!rom) return;
 
-    const frame = frameRef.current;
-    const runtimeWindow = frame?.contentWindow as EmulatorJsRuntimeWindow | null;
-    const runtimeDocument = frame?.contentDocument;
-    if (!frame || !runtimeWindow || !runtimeDocument) {
+    const container = runtimeContainerRef.current;
+    if (!container) {
       setState("error");
-      setDetail("EmulatorJS iframe is unavailable");
+      setDetail("EmulatorJS runtime container is unavailable");
       return;
     }
 
     let disposed = false;
     let gameUrl: string | null = null;
+    const frame = createRuntimeFrame(container);
+    frame.dataset.emulatorjsInit = rom.runtimeToken;
+
+    const runtimeWindow = frame.contentWindow as EmulatorJsRuntimeWindow | null;
+    const runtimeDocument = frame.contentDocument;
+    if (!runtimeWindow || !runtimeDocument) {
+      frame.remove();
+      setState("error");
+      setDetail("EmulatorJS iframe is unavailable");
+      return;
+    }
 
     const fail = (reason: unknown) => {
       if (disposed) return;
@@ -139,10 +163,6 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
     };
 
     try {
-      delete frame.dataset.emulatorjsLoaded;
-      delete frame.dataset.emulatorjsReady;
-      delete frame.dataset.emulatorjsBootstrap;
-      frame.dataset.emulatorjsInit = rom.runtimeToken;
       setState("starting");
       setDetail(null);
 
@@ -211,6 +231,7 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
         // Closing the process must continue even if the emulator already stopped.
       }
       if (gameUrl) runtimeWindow.URL.revokeObjectURL(gameUrl);
+      frame.remove();
     };
   }, [rom]);
 
@@ -218,15 +239,10 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
     <div
       style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", background: "#000" }}
     >
-      {rom ? (
-        <iframe
-          ref={frameRef}
-          key={rom.runtimeToken}
-          title="NES game"
-          aria-label="NES game"
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0, background: "#000" }}
-        />
-      ) : null}
+      <div
+        ref={runtimeContainerRef}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      />
       {state !== "ready" ? (
         <div
           role={state === "error" ? "alert" : "status"}
