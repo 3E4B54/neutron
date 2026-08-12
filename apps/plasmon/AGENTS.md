@@ -82,6 +82,8 @@ README files explain what a directory is, how it fits the product, its public se
 
 Do not use README/AGENTS as an issue tracker. Concrete bugs, temporary migrations, exact one-off acceptance fixes, and sprint ownership belong in GitHub Issues, tests, or dated design/handoff records.
 
+The canonical daedalOS parity ledger under `apps/plasmon/docs/` is an evidence index, not a second work queue. Keep implementation, headless verification, packaged/browser verification, and human/manual acceptance as separate claims. Never upgrade one column merely because another layer passed, and never count an open implementation PR as integrated behavior. Link the canonical Issue when work or acceptance remains; use direct reference inspection before adding new parity claims.
+
 ## Escalate instead of assuming
 
 Escalate unverified Neutron capabilities, shared-contract changes, persistent schema changes, security-boundary changes, release/version changes, or contradictions with accepted architecture. Do not invent shims simply to make a local UX path work.
