@@ -1,112 +1,75 @@
 # Plasmon OS architecture
 
-`apps/plasmon/src/os/` contains the shared desktop-OS layer for Plasmon. It composes filesystem, associations, process/window management, desktop/FileManager, Shell, Neutron integration, and shared visual primitives without taking ownership away from the Neutron Kernel.
+`apps/plasmon/src/os/` is the canonical shared desktop-OS layer for Plasmon. It composes filesystem, associations, process/window management, desktop/FileManager, Shell, Neutron integration, and shared presentation while leaving Kernel authority with Neutron.
 
-## Boundaries
+## Architectural boundaries
 
-- Neutron remains authoritative for installation, AppScope isolation, capabilities, and Kernel security.
-- `src/os/contracts/**` contains shared subsystem interfaces. Do not redefine those concepts inside consumers.
-- `FsService` is the filesystem authority; higher layers operate through filesystem/core services rather than repositories or storage internals.
-- `src/os/integration/**` is the central composition layer for shared services and cross-subsystem wiring.
+- `contracts/**` defines the shared vocabulary between subsystems.
+- `fs/**` is the filesystem semantics/persistence boundary; UI surfaces consume it rather than becoming storage authorities.
+- `associations/**` owns generic handler matching and defaults.
+- `process/**` and `windowing/**` own Plasmon-local native app lifecycle/window state.
+- `neutron/**` adapts verified Kernel behavior; it must not invent missing Kernel capabilities.
+- `integration/**` composes public implementations and should not absorb subsystem policy.
+- `visual/**` supplies shared presentation primitives without deciding filesystem or application semantics.
 
-## Filesystem model
-
-The managed Plasmon filesystem includes user-visible roots plus system-managed resources such as:
-
-```text
-/
-├── Desktop/
-├── Documents/
-├── Games/
-├── Music/
-├── Pictures/
-├── Videos/
-├── Apps/
-└── System/
-    ├── Start Menu/
-    ├── .Trash/
-    └── Program Files/
-```
-
-Key invariants:
-
-- `NodeId` is stable across rename/move and Trash/restore.
-- Dot-prefixed names define hidden semantics.
-- `/Apps/*.neutron` entries are Kernel-backed projections and cannot be generically deleted.
-- `/System/Start Menu` is filesystem-backed and intentionally user-customizable.
-- `/System/.Trash` implements Trash/restore/permanent-delete core behavior.
-- `.sys` resources are only actual Plasmon-native applications/system programs.
-
-## Opening resources
-
-Filesystem-aware opening is shared infrastructure, not Shell behavior.
-
-Conceptually:
-
-```text
-filesystem node
-  -> shared open dispatcher
-  -> directory / shortcut / .sys / .neutron classification
-  -> AssociationRegistry for ordinary files
-  -> OpenService / ProcessController / NeutronBridge as appropriate
-```
-
-Shortcuts dereference stable node identity and support cycle protection. Association-backed Program Files runtimes such as js-dos do not become `.sys` applications merely because they use the native process host.
+Stable identifiers are intentional boundaries. A filesystem node, logical Atom, native process, window, and Neutron application are different identities even when one user action connects them.
 
 ## Subsystems
 
 ### `contracts/`
-Shared interfaces for filesystem, applications, associations, process, windowing, Neutron, sharing, authorization, backup, and common identifiers.
+Shared interfaces and identifiers. Contract changes are cross-subsystem changes and require an implementer/consumer audit.
 
 ### `fs/`
-Persistent filesystem service, bootstrap/reconciliation, resource classification/protection, stable Neutron projections, dot-hidden behavior, Trash, shortcuts, and the shared open dispatcher.
+Filesystem service implementation, persistence/RPC boundary, bootstrap and reconciliation, protection/classification policy, projections, Trash/restore support, shortcuts, and filesystem-aware open dispatch.
 
 ### `associations/`
-Handler registry, matching/default rules, Open With service model, shortcut association helpers, and Atom package matching where applicable.
+Handler registry, deterministic matching/defaults, Open With models, and resource-description helpers used by consumers.
 
-### `process/` and `windowing/`
-Native application process lifecycle and Plasmon window management. These are local application-host mechanics, not Kernel AppScope ownership.
+### `process/`
+Native application registration/hosting and process lifecycle. This is not Neutron AppScope/process ownership.
 
-### `desktop/` and `file-manager/`
-Filesystem presentation, selection, drag/drop, rename, clipboard, shortcuts, properties, download, thumbnails, and FileManager behavior. Desktop is a filesystem view, not filesystem authority.
+### `windowing/`
+Native window state, geometry, focus, z-order, minimize/maximize/restore, and interaction primitives.
+
+### `desktop/`
+The Desktop presentation over filesystem state and persisted layout metadata.
+
+### `file-manager/`
+Reusable filesystem presentation and user file operations used by Desktop and Explorer-style applications.
 
 ### `shell/`
-Start, Search, taskbar, calendar, preferences, and shell presentation. Shell consumes shared open/filesystem services; it does not own generic launch semantics.
+Start, Search, taskbar/tray, calendar, flyouts, shell preferences, and shell-level navigation/presentation.
 
 ### `neutron/`
-The bridge to actual vanilla-Neutron behavior. Do not invent capabilities here that the Kernel does not expose.
+The narrow adapter to vanilla Neutron discovery, opening, runtime state, installation mediation, and package metadata supported by the Kernel.
 
 ### `integration/`
-Service composition and shared adapters. Cross-cutting changes to `PlasmonOS.tsx`, service construction, or build/package wiring belong here unless a task explicitly grants another owner.
+Composition of filesystem transport, associations, native app registry, processes, windows, Neutron bridge, open service, clipboard, and other cross-cutting dependencies.
 
 ### `visual/`
-Shared visual tokens, resource/native-app/system/file-type icons, shortcut overlays, media presentation, sizing, and wallpaper primitives.
+Shared visual tokens, resource/app presentation, media/thumbnails, overlays, sizing, and wallpaper primitives.
 
-## Native applications and runtimes
+## Refactor direction
 
-Native app implementations live under `../../native-apps/`. Association-backed runtimes can be hosted through the native process/window system without becoming filesystem `.sys` applications.
+The OS should become easier to reason about by reducing orchestration inside large React surfaces and eliminating duplicate authorities. Prefer:
 
-Games currently use the same generic open path as other resources. `.jsdos` resolves through `AssociationRegistry` to the js-dos runtime under `/System/Program Files/js-dos`; there is no game-name dispatcher and no `DOS.sys`/`Games.sys`.
+- headless production models/services/controllers for deterministic actions;
+- event/subscription boundaries that invalidate consumers without duplicating authoritative state;
+- one generic resource-opening path shared by Desktop, Explorer, Start, Search, and other consumers;
+- reusable interaction primitives for repeated desktop behaviors;
+- integration code that wires public contracts rather than reaching into private stores;
+- compatibility and demo code that can be removed cleanly once migration is verified.
 
-## Atom and sharing boundary
+Feature-completeness work may use daedalOS as the inventory/reference, while Windows/macOS inform familiar desktop interaction. Implement those capabilities through these Plasmon/Neutron boundaries rather than adding reference-project architecture.
 
-An Atom is an app-defined logical unit, not a physical Neutron app instance or filesystem path. One accepted semantic transaction produces one logical `RevisionId`; the revision identifier does not prescribe a snapshot, Git-like commit, hash tree, chunk manifest, or provider publication.
+## Testing strategy
 
-Live structured Atom state must be capable of record-level semantic mutation. Immutable snapshots/chunks remain appropriate for exports, files/blobs, attachments, archives/backups, and immutable publications.
+Keep semantic tests close to the owning subsystem. Cross-subsystem tests should exercise public contracts and real composition. Browser tests should concentrate on browser-only concerns such as DOM event routing, focus, pointer/drag behavior, iframe/media/runtime APIs, and packaged visible workflows. Package checks are required when the built Neutron artifact or installed asset graph is part of the change.
 
-Plasmon resource providers own resource semantics and publication. MTN authorization owns grants, bearer-secret handling, rights/audience, leases, revocation, authorization epochs, reshare policy, and cross-AppScope routing.
+Manual review remains part of acceptance for visual polish and interaction feel.
 
-## Validation
-
-Use focused subsystem tests while iterating, then run the relevant Plasmon package/integration checks. User-visible work is complete only when it works in packaged Plasmon/Neutron.
+Specific regressions, compatibility exceptions, file-format minutiae, and active refactor tasks belong in Issues and focused tests, not in this overview.
 
 ## Further reading
 
-- [`AGENTS.md`](AGENTS.md) — scoped OS implementation instructions.
-- [`../../docs/README.md`](../../docs/README.md) — architecture/design document index.
-- [`fs/README.md`](fs/README.md) — filesystem details.
-- [`file-manager/README.md`](file-manager/README.md) — FileManager behavior.
-- [`associations/README.md`](associations/README.md) — association model.
-- [`neutron/README.md`](neutron/README.md) — Neutron bridge.
-- [`integration/README.md`](integration/README.md) — integration layer.
-- [`visual/README.md`](visual/README.md) — visual primitives.
+Read the nearest subsystem `README.md` and `AGENTS.md` before modifying it. Accepted design/history lives under `apps/plasmon/docs/`; repository Neutron behavior is documented under `/doc/`.

@@ -2,59 +2,44 @@
 
 ## Scope
 
-These instructions apply to `apps/plasmon/src/os/**`. Also follow
-`apps/plasmon/src/AGENTS.md`, `apps/plasmon/AGENTS.md`, and repository rules.
-Read the nearest nested `AGENTS.md` before modifying a subsystem.
+Applies to `apps/plasmon/src/os/**` together with parent instructions. Read the nearest subsystem README and `AGENTS.md` before editing.
 
-## Read first
+## Durable invariants
 
-- `apps/plasmon/src/os/README.md`
-- nearest subsystem `README.md` and `AGENTS.md`
-- applicable accepted documents under `apps/plasmon/docs/`
+- Shared concepts come from `contracts/**`; consumers must not create incompatible local versions.
+- Filesystem semantics and mutation remain behind the filesystem/core contracts.
+- Stable identifiers must remain stable across presentation changes such as rename, move, focus, or view changes.
+- Generic resource opening is shared infrastructure. Desktop, FileManager, Start, Search, and native apps should delegate instead of growing private dispatch tables.
+- Desktop/FileManager/Shell are presentation and interaction layers, not replacement persistence authorities.
+- Native process/window state is Plasmon-local and must remain distinct from Neutron application/AppScope state.
+- Neutron bridge code may expose only behavior supported by the actual Kernel contract/implementation.
+- Shared visual primitives describe presentation; semantic classification belongs to the owning resource/application subsystem.
+- Atom/resource semantics and cross-AppScope authorization remain separate responsibilities according to accepted contracts.
 
-## Core invariants
+Do not encode an individual bug fix, suffix rule, demo resource, historical agent decision, or temporary migration as a generic OS invariant unless it is truly architectural. Put those details in the responsible Issue, test, contract, or design record.
 
-- Shared concepts come from `contracts/**`; consumers must not create
-  incompatible local versions.
-- `FsService`/`fs/**` are authoritative for filesystem semantics and mutation.
-- Preserve `NodeId` across rename/move and Trash/restore.
-- Dot-prefixed names define hidden semantics.
-- Use the shared filesystem-aware open dispatcher. Desktop, FileManager, Start,
-  and Search must not implement private generic launch paths.
-- Ordinary files resolve through `AssociationRegistry`.
-- `/Apps/*.neutron` is a Kernel-backed projection, not a mutable install store.
-- `.sys` is only for actual Plasmon-native apps/system programs.
-- No `DOS.sys`, `Emulator.sys`, or `Games.sys`.
-- Program Files runtimes may use native process windows without becoming `.sys`.
-- Desktop/FileManager are filesystem presentations, not storage authorities.
-- Shell owns shell presentation, not generic resource dispatch.
-- Neutron bridge code may expose only real Kernel behavior.
+## Refactor direction
 
-## Integration boundaries
+Prefer a structure where user actions have a production headless seam beneath React. As components grow, extract reusable models/controllers/commands rather than keeping mutation and lifecycle rules embedded only in event handlers.
 
-Prefer contracts and composed services over imports into another subsystem's
-repository/store internals. Cross-cutting construction belongs in
-`integration/**` and `PlasmonOS.tsx`.
+Converge duplicated behavior on the owning subsystem:
 
-The visual system under `visual/**` is shared vocabulary. Do not create
-per-surface replacement icon/palette/density systems.
+- filesystem state/mutations -> `fs/**`;
+- handler matching/defaults -> `associations/**`;
+- native lifecycle -> `process/**`;
+- window mechanics -> `windowing/**`;
+- Kernel integration -> `neutron/**`;
+- cross-subsystem construction -> `integration/**`;
+- common presentation -> `visual/**`.
 
-## Packaged regression policy
+Major cleanup/refactor work should be issue-driven and independently verifiable rather than silently broadening a feature patch.
 
-A user-visible failure from packaged review remains next-sprint acceptance work
-unless explicitly deferred. Add Playwright/browser coverage for automatable
-cross-surface regressions, especially resource opening, shortcuts, `.sys`,
-`.neutron`, Start/Search, and taskbar invalidation.
+## Testing
 
-## Atom/sharing security
+Use focused subsystem tests for deterministic behavior, then the Plasmon fast suite. Add integration tests for contract/composition boundaries. Use browser tests where real DOM/browser/runtime mechanics matter, and package/installed checks where the artifact is part of the claim.
 
-- Atom is logical resource identity, not AppScope/process/window/path/install.
-- One accepted semantic transaction maps to one logical revision.
-- Revision encoding is not frozen to snapshots/hashes/chunks.
-- MTN owns grant/bearer/rights/lease/revocation/reshare/authorization-epoch and
-  cross-AppScope routing.
+A passing unit test does not prove the active packaged path. Conversely, do not force deterministic semantics into slow browser tests when production headless code can prove them cheaply.
 
 ## Escalate
 
-Escalate shared-contract, persistence, Kernel-capability, security, or
-release-version changes rather than inventing shims.
+Escalate shared-contract, persistence/schema, unverified Kernel-capability, security-boundary, or release/version changes rather than inventing compatibility shims.
