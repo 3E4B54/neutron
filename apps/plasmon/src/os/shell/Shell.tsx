@@ -9,7 +9,6 @@ import {
   type ReactNode,
 } from "react";
 import type {
-  AssociationRegistry,
   ExternalElement,
   FsEventSource,
   FsNode,
@@ -20,10 +19,10 @@ import type {
   ProcessController,
   WindowManager,
 } from "../contracts/index.ts";
-import { FilesystemOpenDispatcher } from "../fs/index.ts";
 import {
   activateSearchFilesystemResult,
   activateStartFilesystemNode,
+  type ShellFilesystemOpener,
 } from "./activation.ts";
 import { addCalendarMonths, buildCalendarMonth, startOfCalendarMonth } from "./calendar.ts";
 import { ShellIcon } from "./icon.tsx";
@@ -76,7 +75,7 @@ export interface ShellProps {
   fsEvents?: FsEventSource;
   neutron: NeutronBridge;
   nativeApps: NativeAppRegistry;
-  associations?: AssociationRegistry;
+  filesystemOpen: ShellFilesystemOpener;
   openService?: OpenService;
   children?: ReactNode;
   now?: () => Date;
@@ -181,16 +180,10 @@ function contextPosition(client: number, viewport: number, size: number): number
 }
 
 export function Shell({
-  process, windows, fs, fsEvents, neutron, nativeApps, associations, openService,
+  process, windows, fs, fsEvents, neutron, nativeApps, filesystemOpen, openService,
   children, now = () => new Date(),
 }: ShellProps) {
   const preferenceStore = useMemo(() => new ShellPreferenceStore(fs), [fs]);
-  const filesystemOpen = useMemo(
-    () => associations && openService
-      ? new FilesystemOpenDispatcher({ fs, associations, openService, process, neutron })
-      : null,
-    [associations, fs, neutron, openService, process],
-  );
   const [preferences, setPreferences] = useState<ShellPreferences | null>(null);
   const [flyout, setFlyout] = useState<Flyout>(null);
   const [contextMenu, setContextMenu] = useState<ShellContextMenuState>(null);
@@ -401,7 +394,6 @@ export function Shell({
     }
     setBusyId(`start:${node.id}`);
     try {
-      if (!filesystemOpen) throw new Error("Filesystem opening is unavailable until AssociationRegistry and OpenService are injected");
       await activateStartFilesystemNode(filesystemOpen, node);
       setFlyout(null);
     } catch (cause: unknown) {
@@ -437,7 +429,6 @@ export function Shell({
       } else if (result.kind === "element") {
         await neutron.openElement(result.element.id);
       } else {
-        if (!filesystemOpen) throw new Error("Filesystem opening is unavailable until AssociationRegistry and OpenService are injected");
         await activateSearchFilesystemResult(filesystemOpen, result);
       }
       setFlyout(null);
