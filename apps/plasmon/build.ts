@@ -24,6 +24,19 @@ const DOOM_GIT_BLOB_SHA1 = "421f4c1ace76f33737bfcb87fc51b04f39aa6c3a";
 const PACKAGED_JS_DOS_ROOT = "/System/Program Files/js-dos/";
 let proofAssetsPromise: Promise<void> | null = null;
 
+const EMULATORJS_VERSION = "4.2.3";
+const EMULATORJS_DATA_URL = `https://cdn.emulatorjs.org/${EMULATORJS_VERSION}/data`;
+const EMULATORJS_ASSETS = [
+  "loader.js",
+  "emulator.min.js",
+  "emulator.min.css",
+  "cores/fceumm-wasm.data",
+  "cores/fceumm-legacy-wasm.data",
+  "compression/extract7z.js",
+] as const;
+const EMULATORJS_BROWSER_DATA_DIRECTORY = "./dist/web/runtime/emulatorjs/data";
+let emulatorJsAssetsPromise: Promise<void> | null = null;
+
 async function stripRemoteDiagnostics(): Promise<void> {
   const source = await readFile(mainOutfile, "utf8");
   const sanitized = source.replaceAll("https://react.dev/errors/", "#react-error-");
@@ -178,6 +191,98 @@ async function installPlayableProofAssets(): Promise<void> {
   return proofAssetsPromise;
 }
 
+function createPlasmonNesTestRom(): Uint8Array {
+  const headerBytes = 16;
+  const prgBytes = 16_384;
+  const chrBytes = 8_192;
+  const rom = new Uint8Array(headerBytes + prgBytes + chrBytes);
+
+  // iNES 1.0, mapper 0 / NROM-128, one PRG bank, one CHR bank, no battery SRAM.
+  rom.set([0x4e, 0x45, 0x53, 0x1a, 0x01, 0x01, 0x00, 0x00], 0);
+
+  // Minimal original 6502 program: initialize the stack, then remain in a
+  // stable loop. It is acceptance data, not a bundled third-party game.
+  rom.set([0x78, 0xd8, 0xa2, 0xff, 0x9a, 0x4c, 0x05, 0x80], headerBytes);
+  const vectors = headerBytes + prgBytes - 6;
+  rom.set([
+    0x00, 0x80, // NMI -> $8000
+    0x00, 0x80, // RESET -> $8000
+    0x00, 0x80, // IRQ -> $8000
+  ], vectors);
+  return rom;
+}
+
+async function installEmulatorJsProofAssets(): Promise<void> {
+  if (emulatorJsAssetsPromise) return emulatorJsAssetsPromise;
+  emulatorJsAssetsPromise = (async () => {
+    const downloaded = await Promise.all(
+      EMULATORJS_ASSETS.map(async (relative) => ({
+        relative,
+        bytes: await fetchBytes(`${EMULATORJS_DATA_URL}/${relative}`),
+      })),
+    );
+
+    const runtimeDirectory = "./dist/web/System/Program Files/EmulatorJS";
+    const dataDirectory = join(runtimeDirectory, "data");
+    const browserDataDirectory = EMULATORJS_BROWSER_DATA_DIRECTORY;
+    await Promise.all([
+      rm(runtimeDirectory, { recursive: true, force: true }),
+      rm("./dist/web/runtime/emulatorjs", { recursive: true, force: true }),
+    ]);
+    await Promise.all([
+      mkdir(dataDirectory, { recursive: true }),
+      mkdir(browserDataDirectory, { recursive: true }),
+    ]);
+
+    for (const asset of downloaded) {
+      if (asset.bytes.length === 0) throw new Error(`Empty EmulatorJS asset: ${asset.relative}`);
+      const parts = asset.relative.split("/");
+      const canonicalTarget = join(dataDirectory, ...parts);
+      const browserTarget = join(browserDataDirectory, ...parts);
+      await Promise.all([
+        mkdir(dirname(canonicalTarget), { recursive: true }),
+        mkdir(dirname(browserTarget), { recursive: true }),
+      ]);
+      await Promise.all([
+        writeFile(canonicalTarget, asset.bytes),
+        writeFile(browserTarget, asset.bytes),
+      ]);
+    }
+
+    const loader = new TextDecoder().decode(
+      downloaded.find(({ relative }) => relative === "loader.js")?.bytes ?? new Uint8Array(),
+    );
+    if (!loader.includes("EJS_emulator") || !loader.includes("EJS_onGameStart")) {
+      throw new Error("Pinned EmulatorJS loader does not expose the expected 4.2.3 lifecycle hooks");
+    }
+
+    // EmulatorJS treats a missing core report as optional. Publish the same
+    // package-local report into both the managed Program Files authority and
+    // the URL-safe browser transport path used by Kernel app-host routing.
+    for (const root of [dataDirectory, browserDataDirectory]) {
+      const reportPath = join(root, "cores", "reports", "fceumm.json");
+      await mkdir(dirname(reportPath), { recursive: true });
+      await writeFile(reportPath, "{}\n");
+    }
+    await writeFile(
+      join(runtimeDirectory, "runtime.json"),
+      `${JSON.stringify({
+        runtime: "EmulatorJS",
+        version: EMULATORJS_VERSION,
+        source: `https://github.com/EmulatorJS/EmulatorJS/releases/tag/v${EMULATORJS_VERSION}`,
+        core: "fceumm",
+        resourceType: ".nes",
+        browserDataRoot: "runtime/emulatorjs/data/",
+      }, null, 2)}\n`,
+    );
+
+    const fixturePath = "./dist/web/Games/Test ROMs/PlasmonTest.nes";
+    await mkdir(dirname(fixturePath), { recursive: true });
+    await writeFile(fixturePath, createPlasmonNesTestRom());
+  })();
+  return emulatorJsAssetsPromise;
+}
+
 const config: BuildOptions = {
   entryPoints: [
     { in: "./src/index.tsx", out: "main" },
@@ -215,7 +320,7 @@ const config: BuildOptions = {
         build.onEnd(async (result) => {
           if (result.errors.length !== 0) return;
           if (!result.metafile) throw new Error("Plasmon build requires an esbuild metafile");
-          await installPlayableProofAssets();
+          await Promise.all([installPlayableProofAssets(), installEmulatorJsProofAssets()]);
           assertMatureNativeAppBundle(result.metafile);
           await mergeApplicationStyles();
           if (!devMode) await stripRemoteDiagnostics();

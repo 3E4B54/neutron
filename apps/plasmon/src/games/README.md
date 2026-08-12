@@ -26,6 +26,7 @@ See:
 
 - `../../docs/GAMES_DAEDALOS_ARCHITECTURE.md`
 - `../../docs/FILESYSTEM_DESKTOP_UX_GAMES_CORRECTION.md`
+- `../native-apps/emulatorjs/README.md`
 - `../native-apps/jsdos/README.md`
 - `../os/fs/README.md`
 - `../os/associations/README.md`
