@@ -1,29 +1,24 @@
 # Native process runtime
 
-This directory implements the Plasmon-native application/process runtime behind the frozen OS contracts.
+`process/**` implements Plasmon-local native application registration, process lifecycle, lazy component hosting, and synchronization with the window manager.
 
-## Invariants
+A native application definition, a running process record, a window, a filesystem resource, a logical Atom, and a Neutron Element/AppScope are separate identities.
 
-- `NativeAppDefinition` remains framework-neutral. React component loaders live only in this subsystem's runtime registry/host adapter.
-- Native app definition, process instance, and window instance are separate identities.
-- Process IDs are monotonic per application (`<appId>#<n>` by default) and are not reused while the controller is alive.
-- A singleton application reuses its existing non-closing process, updates its `OpenTarget`, and focuses its existing window.
-- A multi-instance application creates a new process/window for every successful open.
-- `OpenTarget.nodeId` remains the stable resource identity; this subsystem never converts it to a filesystem path.
-- `WindowManager` is consumed only through its frozen contract. This subsystem does not own geometry, chrome, z-order, drag, resize, minimize, or maximize behavior.
-- Window creation failure removes the temporary `starting` process and returns `null`.
-- Closing through `ProcessController` transitions through `closing`, closes the associated window, then removes the record. If a window disappears through `WindowManager`, subscription reconciliation removes its running process.
-- `list()` returns snapshots; subscribers are notified only by the process store, and no external consumer needs the internal store.
-- Real Neutron Elements are not represented as native `ProcessRecord`s.
+## Architecture
 
-## React hosting
+- `registry.ts` stores native application metadata and lazy loaders.
+- `controller.ts` owns process creation, singleton/multi-instance behavior, target/title updates, focus delegation, close lifecycle, and reconciliation when windows disappear.
+- `store.ts` owns process records/subscriptions.
+- `NativeProcessHost.tsx` is the React adapter that subscribes to process state and mounts the registered lazy component.
 
-`NativeApplicationRegistry.registerWithLoader()` or `setLoader()` associates framework-neutral metadata with a lazy React loader without changing the public application contract. `NativeProcessHost` subscribes to `ProcessController`, lazy-loads the registered component, and passes the current process ID/target plus `FsService` and `ProcessController` through the narrow React adapter props defined in `runtime.ts`.
+The controller delegates geometry/chrome/focus mechanics to `WindowManager`; the window manager does not become process storage. Real Neutron Elements remain outside this process model.
 
-Loader promises are cached after success. A rejected load is evicted so a later mount/open can retry.
+## Refactor direction
 
-## Integration
+Keep lifecycle state and decisions in the controller/store/registry so Shell and apps can be tested without rendering React. Keep the React host thin: loading/mounting an app should not become the place where process policy accumulates.
 
-Composition code should expose `NativeApplicationRegistry` through the `NativeAppRegistry` contract and `NativeProcessController` through the `ProcessController` contract. Only the composition/native-host layer needs the React-specific loader APIs.
+If lifecycle semantics expand (activation, shutdown negotiation, recovery, multi-window ownership), evolve the production controller/contracts deliberately rather than encoding them as taskbar or app-specific event handlers.
 
-Tests in `process.test.ts` cover creation, singleton reuse/focus, multi-instance behavior, close lifecycle (including external window closure), title/target updates, subscriptions, WindowManager calls, failed startup cleanup, and lazy loader caching/retry.
+## Testing
+
+Use fast controller/registry/store tests for creation, singleton/multi-instance behavior, target/title updates, startup failure cleanup, focus delegation, close/reconciliation, subscriptions, and loader retry/cache behavior. Browser tests are only needed when the claim depends on visible focus/window/taskbar behavior rather than controller state.

@@ -2,25 +2,22 @@
 
 ## Authority
 
-`process/**` owns Plasmon-local native application registration, process records,
-lifecycle, lazy host loading, and synchronization with the window manager.
+`process/**` owns Plasmon-local native application registration, process records, lifecycle, lazy host loading, and synchronization with the public window manager.
 
 ## Rules
 
-- A native process is not a Neutron AppScope, Element installation, Atom, or
-  Kernel tile.
-- External Neutron Elements remain Kernel-owned sibling tiles and must not be
-  hosted as local native processes.
-- Respect singleton vs multi-instance application metadata.
-- Relaunching a singleton must update its target and focus/restore its window.
+- Native process identity is distinct from Neutron AppScope/Element, logical resource/Atom, filesystem node, and window identity.
+- Real Neutron applications remain Kernel-owned and must not be represented as local native process records merely for UI convenience.
+- Respect application lifecycle metadata such as singleton versus multi-instance behavior through the controller.
 - Process close and external window close must converge without leaked records.
-- Title, target, icon and lifecycle changes must notify subscribers so Shell and
-  taskbar state invalidates promptly.
-- Runtime handlers such as js-dos may use a native process/window host without
-  becoming `.sys` applications.
+- Process metadata/lifecycle changes must notify subscribers so consumers can derive current state rather than keeping shadow copies.
+- Window geometry/chrome/z-order remain windowing responsibilities; coordinate only through public process/window contracts.
+- Runtime hosts may use the native process/window machinery without changing their higher-level product identity.
+
+## Refactor direction
+
+Keep process policy in controller/store/registry production code and React hosting thin. Do not put lifecycle rules into Shell/taskbar or individual apps as a workaround.
 
 ## Validation
 
-Cover loader retry behavior, defensive metadata snapshots, lifecycle cleanup,
-target/title updates, singleton focus/restore and window-close synchronization.
-Packaged taskbar staleness is a regression even if process-unit tests pass.
+Cover lifecycle creation/reuse/cleanup, target/title changes, subscriptions, window-close synchronization, startup failures, defensive snapshots, and loader retry/cache behavior. Add browser coverage only for user-visible focus/window integration that cannot be established through controller tests.

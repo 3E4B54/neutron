@@ -1,70 +1,42 @@
 # Plasmon filesystem
 
-This directory is the implementation boundary behind the frozen `FsService` and `FsEventSource` contracts. Consumers import those contracts; they do not import repository classes.
-
-## Invariants
-
-- `NodeId` is immutable. Rename and move only change name/parent metadata.
-- Paths are derived from parent/name and resolve case-insensitively using NFC-normalized name keys.
-- Sibling names are unique by normalized case-insensitive key while preserving display spelling.
-- The root cannot be renamed, moved, or removed.
-- Directories never have readable/writable file content. `file`, `shortcut`, and `atom` nodes share byte semantics.
-- Every successful public mutation commits one monotonically increasing filesystem revision. Failed mutations do not change revision.
-- File content is SHA-256 addressed and stored in 512 KiB repository chunks. Copies get new node identities while equivalent content reuses blob identity/refcounts.
-- Foreground/background byte transport uses at most 384 KiB raw chunks. No large file requires one whole-file JSON message.
-- Recursive tree mutations commit metadata/content-reference changes atomically at the repository boundary.
-- Files are browser-local by default. Sharing, backup, associations, desktop state, window state, and process state are outside this subsystem.
+`fs/**` implements the filesystem authority behind the public `FsService`/`FsEventSource` contracts. Higher layers consume those services; they do not own repository or storage semantics.
 
 ## Architecture
 
+The implementation is deliberately layered:
+
 ```text
 foreground consumers
-       |
-       | frozen FsService / FsEventSource
-       v
-FsRpcClient
-       |
-       | plasmon.fs.* tools, <=384 KiB raw chunks
-       v
-app:plasmon:background
-       |
-       v
-FsRpcServer -> PersistentFsService
-                    |
-                    v
-                FsRepository
-              /      |       \
-   SQLite/OPFS   IndexedDB   memory
-  integration     fallback   emergency
+      -> FsService / FsEventSource
+      -> hosted RPC client or local service
+      -> persistent filesystem service
+      -> repository/storage adapter
 ```
 
-`PersistentFsService` is the single filesystem authority. It bootstraps `/Desktop`, `/Documents`, `/Downloads`, `/Videos`, `/Pictures`, `/Shared`, and hidden `/System`. The service keeps node/blob metadata in memory and fetches content chunks from its repository for ranged reads.
+Hosted Plasmon keeps durable browser filesystem ownership behind the application's persistent background/RPC boundary. Standalone preview may use a local browser repository. Repository choice is an implementation detail behind the filesystem service.
 
-`IndexedDbFsRepository` is the built-in persistent browser fallback. Metadata and changed content chunks use one IndexedDB transaction so a committed state never points at only partially written content. `MemoryFsRepository` is deterministic for tests and is the last-resort runtime fallback when persistent browser storage cannot initialize.
+`core.ts` composes the higher-level filesystem policy layer around the raw service: bootstrap/reconciliation, protected managed resources, Trash operations, external application projections, and the shared filesystem-aware open dispatcher. Durable seeds and demo/fixture seeds are intentionally separate inputs.
 
-The preferred production repository remains official SQLite WASM in an OPFS worker using `opfs-sahpool`. The filesystem branch intentionally does not edit shared package/lock files. `createBrowserFsRepository()` therefore accepts a `sqliteRepositoryFactory` hook and tries it before IndexedDB. `DEPENDENCIES.md` records the integration-owned dependency/wiring needed to supply that factory.
+## Durable semantics
 
-## Events and revisions
+- A node has stable identity independent of path and display name.
+- Rename/move change presentation/location, not identity.
+- Public mutations advance filesystem revision only after successful commit.
+- Repository commits must not expose partially applied metadata/content state.
+- Event streams are invalidation/change signals; consumers re-read authoritative state rather than treating events as a second database.
+- Resource classification/protection policy is centralized rather than duplicated in Desktop/FileManager/Shell.
+- Generic resource opening and shortcut dereference are shared OS behavior rather than UI-owned dispatch.
+- Bootstrap/reconciliation must be versionable and idempotent so upgrades can repair expected managed state without destroying user state.
 
-The authoritative in-process service emits granular frozen `FsEvent` values after a repository commit. The background surface additionally publishes the `fs` app-state topic once per commit. `FsRpcClient` translates those cross-surface invalidations to a frozen `{ type: "reset", revision }` event and consumers can reload cached state. File bytes are never included in invalidation events.
+## Refactor direction
 
-## Write semantics
+Keep storage mechanics, managed-resource policy, projection reconciliation, Trash, and open dispatch as separable responsibilities even when composed by one filesystem core. Avoid growing `FsService` into a catch-all for unrelated desktop/application state.
 
-`write(id, bytes, { offset, truncate })` behaves as an offset patch:
+When `managed.ts` or other policy modules become difficult to reason about, split them by durable responsibility rather than by historical feature wave. Preserve one public filesystem authority and one repository transaction boundary.
 
-- omitted `offset` means `0`;
-- without `truncate`, unaffected existing bytes remain and gaps are zero-filled;
-- with `truncate`, final size is exactly `offset + bytes.length`;
-- content hash and blob references change only at commit.
+## Testing
 
-The RPC implementation turns a public `write()` into `write_begin`, one or more bounded `write_chunk` calls, then one `write_commit`. Incomplete uploads expire and can be explicitly aborted.
+Use fast tests for identity, naming, revisions, atomic mutations, copy/move/remove semantics, bootstrap/reconciliation, protection/classification, projections, Trash, and shared open dispatch. Repository/RPC tests should prove persistence and transport boundaries without duplicating service logic.
 
-## Integration-affecting edits made by Agent 1
-
-Three minimal files outside `src/os/fs/**` are required so the authority has a persistent Neutron background surface:
-
-- `apps/plasmon/neutron.json` declares `service.html` as the background surface and requests `persistent_browser_storage` there.
-- `apps/plasmon/build.ts` builds both `main.js` and filesystem `service.js`.
-- `apps/plasmon/public/service.html` loads `service.js`.
-
-No shared package manifest or lockfile was changed.
+Use browser/package tests only for behavior that genuinely crosses browser persistence/background surfaces or packaged user-visible opening. A UI regression caused by filesystem policy should normally receive a production service/model regression first.

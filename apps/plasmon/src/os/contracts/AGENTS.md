@@ -1,27 +1,22 @@
 # OS contracts agent instructions
 
-## Scope
+## Authority
 
-Applies to `apps/plasmon/src/os/contracts/**`.
+`contracts/**` owns shared OS vocabulary, public capability boundaries, and stable cross-subsystem identifiers.
 
 ## Rules
 
-- Keep contracts implementation-free: no React components, browser storage,
-  repositories, concrete registries, or Kernel transport details.
-- Preserve stable identifier semantics. In particular `NodeId`, Atom identity,
-  process identity, and window identity must not be conflated.
-- A contract change is not a local refactor. Audit all implementers, fakes,
-  adapters, and consumers before changing it.
-- Do not weaken `FsService` into path-only identity; rename/move must preserve
-  node identity.
-- Keep Neutron bridge contracts narrower than or equal to actual vanilla
-  Neutron capabilities.
-- Authorization/sharing contracts must preserve the boundary where MTN owns
-  cross-AppScope authorization and providers own resource semantics.
-- Do not add app-specific or game-specific methods to generic contracts.
+- Keep contracts implementation-free: no React components, repositories, concrete registries, browser storage, or Kernel transport details.
+- Preserve identity separation. Filesystem nodes, logical Atoms/resources, processes, windows, and Neutron applications are distinct identities even when one operation connects them.
+- Do not weaken stable identity into path/name/view identity.
+- Keep the Neutron-facing contract no broader than capabilities verified in Neutron.
+- Keep authorization/sharing contracts generic and preserve the accepted boundary between cross-AppScope authorization and provider-owned resource semantics.
+- Do not add app-specific, game-specific, or UI-specific methods to generic contracts merely to simplify one caller.
+
+## Change policy
+
+A contract change is not a local refactor. Before editing, inspect all implementers, fakes/adapters, consumers, persistence implications, and tests. Prefer compatibility-preserving additions where practical; surface breaking semantic changes for coordinator/owner review.
 
 ## Validation
 
-Update contract fakes and contract/integration tests with every semantic change.
-Prefer compatibility-preserving additions where possible. Surface breaking
-changes for coordinator/owner review before implementation.
+Update contract fakes and all affected subsystem/integration tests. Test semantics through implementations rather than asserting only TypeScript shape.

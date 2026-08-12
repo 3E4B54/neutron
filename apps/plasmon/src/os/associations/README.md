@@ -1,26 +1,21 @@
-# Associations, Atoms, and shortcuts
+# Associations and Open With
 
-This directory implements Agent 2's association/Atom subsystem behind the frozen contracts in `../contracts/**`.
+`associations/**` implements Plasmon's shared handler catalog, deterministic resource matching, user defaults, Open With model, and logical resource/compatibility parsers used by the association system.
 
-## Invariants
+## Responsibilities
 
-- `HandlerDefinition` is metadata only. This subsystem never launches native apps or Neutron Elements directly; `OpenWithServiceModel` delegates execution to the injected public `OpenService`.
-- Atom identity is the descriptor's immutable `atomId`. File name, parent directory, path, title, handler version, and other mutable metadata are not identity. `updateAtomDescriptor()` therefore cannot replace `atomId`.
-- Atoms remain filesystem resources. The local descriptor is stored as JSON-compatible `node.metadata.atom`; package/import helpers do not create a second Atom object hierarchy.
-- Resolution is deterministic. Source precedence is: node `opensWith`; Atom descriptor handler; Atom-type rule; shortcut handler/BaseURL alias; compound extension; ordinary extension; MIME. Within a source, user defaults are promoted, then specificity/priority, then rule ID and handler ID provide stable tie-breaks.
-- Extension matching is case-insensitive. Compound extensions such as `.spreadsheet.atom` outrank `.atom`. MIME matching is case-insensitive, strips parameters, and supports exact, `type/*`, and `*/*` rules.
-- Rules fail fast when malformed or when they reference an unregistered handler. A repeated handler ID or rule ID replaces the earlier registration so metadata discovery can refresh deterministically.
-- User defaults use stable keys: `extension:.md`, `mime:text/markdown`, and `atom:spreadsheet/v1`. `MemoryAssociationDefaultStore` is useful in tests; `LocalStorageAssociationDefaultStore` provides browser persistence without coupling the public contract to storage details.
-- `.url` resources use the Windows/daedalOS `[InternetShortcut]` form. `Handler=` is Plasmon-specific; `BaseURL=` remains accepted for compatibility. Parsing malformed resources returns structured errors through `tryParseInternetShortcut()`.
-- Downloaded `.atom` resources are ZIP-compatible packages containing `atom.json` and a payload entry. The writer uses the universally supported ZIP store method and deterministic entry ordering. The reader validates paths, bounds, duplicate names, uncompressed-size limits, CRC-32, required manifest fields, and payload presence; it also accepts deflate entries when the runtime exposes `DecompressionStream("deflate-raw")`.
-- Malformed Atom metadata/packages never need to crash association resolution. Invalid embedded data is ignored for matching so lower-precedence extension/MIME handlers can still be offered, while parsing/Open With APIs surface warnings or structured errors to callers.
+`HandlerAssociationRegistry` is the matching authority. It normalizes registered handlers/rules, resolves explicit/resource metadata plus extension/MIME/logical-resource matches, applies persisted defaults, and returns deterministic ordered candidates.
 
-## Main API
+`OpenWithServiceModel` turns those candidates into a consumer-facing model for one-off opening and persisted default selection while delegating execution through the public `OpenService`. Association code chooses handlers; it does not become the native process manager or Neutron launcher.
 
-- `HandlerAssociationRegistry` — handler/rule registration, matching, priorities, defaults, and deterministic resolution.
-- `OpenWithServiceModel` — ordered Open With candidates, target construction, default selection, and execution delegation.
-- `serializeAtomDescriptor()` / `parseAtomDescriptor()` / `updateAtomDescriptor()` — canonical Atom metadata handling.
-- `createAtomPackage()` / `tryParseAtomPackage()` — portable compound `.atom` interchange resources.
-- `writeInternetShortcut()` / `tryParseInternetShortcut()` — `.url` compatibility.
+Logical Atom/resource helpers keep immutable logical identity distinct from path/name and physical application/process identity. Package/shortcut parsers are compatibility/resource-description helpers, not alternate application authorities.
 
-The subsystem intentionally does not import filesystem implementation classes, process runtime implementation, Neutron bridge implementation, Desktop/Explorer, sharing, or backup code.
+## Refactor direction
+
+Keep matching, persisted defaults, resource metadata/parsing, and execution delegation as separable concerns. Centralize extension/MIME/logical type knowledge here or in shared content metadata so Properties, Search, FileManager, and native apps do not grow contradictory local mappings.
+
+UI code should consume ordered candidates/default operations rather than downcasting registries or reproducing precedence. Concrete persistence should remain behind the approved default-store interface.
+
+## Testing
+
+Use fast tests for registration validation, deterministic ordering, specificity/default behavior, persistence/reconstruction, malformed input, compatibility parsers, and logical-resource matching. Browser tests are appropriate for the actual Open With dialog/persistence wiring, not for re-testing matching rules through clicks.
