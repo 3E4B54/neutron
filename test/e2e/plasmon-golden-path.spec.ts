@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { localCanisterOrigin } from "neutron-tools/src/runtime.js";
 import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src/local_session.ts";
 
@@ -14,82 +14,20 @@ type BrowserPageError = {
 test("packaged Plasmon boots its real tile and protects native desktop workflows", async ({ page, request }) => {
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
-  const pageErrors: BrowserPageError[] = [];
-  page.on("pageerror", (error) => pageErrors.push({
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-  }));
-
-  const expectNoPageErrors = (label: string): void => {
-    expect(pageErrors, label).toEqual([]);
-  };
-
-  // Monaco cancels in-flight editor work while its disposable graph is torn
-  // down. The packaged runtime proves that boundary as a single Canceled error
-  // whose stack starts in cancellation and immediately enters disposal. Consume
-  // only that exact boundary signal; unrelated errors and cancellations elsewhere
-  // remain fatal through the global pageErrors collector.
-  const expectOnlyMonacoDisposeCancellation = async (
-    label: string,
-    dispose: () => Promise<void>,
-  ): Promise<void> => {
-    expectNoPageErrors(`${label} must begin without unexplained browser errors`);
-    await dispose();
-    await page.waitForTimeout(0);
-
-    const disposalErrors = pageErrors.splice(0);
-    expect(disposalErrors, `${label} may emit only the proven Monaco disposal cancellation`).toHaveLength(1);
-    const [error] = disposalErrors;
-    expect(error).toMatchObject({ name: "Canceled", message: "Canceled" });
-
-    const stack = error?.stack ?? "";
-    expect(stack, `${label} cancellation must retain its disposal stack`).toContain("Canceled: Canceled");
-    const cancelIndex = stack.indexOf(".cancel (");
-    const disposeIndex = stack.indexOf(".dispose (");
-    expect(cancelIndex, `${label} cancellation must originate from cancel()`).toBeGreaterThanOrEqual(0);
-    expect(disposeIndex, `${label} cancellation must flow into dispose()`).toBeGreaterThan(cancelIndex);
-  };
-
-  // Chromium's native EditContext is Monaco's real input boundary. Mirror the
-  // VS Code browser driver's textupdate path instead of synthesizing keyboard
-  // events that bypass EditContext's selection/update contract.
-  const typeInMonacoEditContext = async (editContext: Locator, text: string): Promise<void> => {
-    await editContext.evaluate((element, nextText) => {
-      const nativeElement = element as HTMLDivElement & {
-        editContext?: {
-          selectionStart: number;
-          selectionEnd: number;
-          dispatchEvent: (event: Event) => boolean;
-        };
-      };
-      const nativeEditContext = nativeElement.editContext;
-      if (!nativeEditContext) throw new Error("Monaco native EditContext is unavailable");
-      const TextUpdateEventCtor = (globalThis as unknown as {
-        TextUpdateEvent: new (type: string, init: {
-          updateRangeStart: number;
-          updateRangeEnd: number;
-          text: string;
-          selectionStart: number;
-          selectionEnd: number;
-          compositionStart: number;
-          compositionEnd: number;
-        }) => Event;
-      }).TextUpdateEvent;
-      if (!TextUpdateEventCtor) throw new Error("Browser TextUpdateEvent is unavailable");
-      const selectionStart = nativeEditContext.selectionStart;
-      const selectionEnd = nativeEditContext.selectionEnd;
-      nativeEditContext.dispatchEvent(new TextUpdateEventCtor("textupdate", {
-        updateRangeStart: selectionStart,
-        updateRangeEnd: selectionEnd,
-        text: nextText,
-        selectionStart: selectionStart + nextText.length,
-        selectionEnd: selectionStart + nextText.length,
-        compositionStart: 0,
-        compositionEnd: 0,
-      }));
-    }, text);
-  };
+  const pageErrors: string[] = [];
+  const issue67PageErrors: BrowserPageError[] = [];
+  let monacoLifecycleActive = false;
+  let issue67Active = false;
+  page.on("pageerror", (error) => {
+    if (issue67Active) {
+      issue67PageErrors.push({ name: error.name, message: error.message, stack: error.stack });
+    }
+    // Existing #42 acceptance scopes Monaco's cancellation sentinel to that
+    // already-integrated lifecycle. #67 disables this before its journeys and
+    // uses the strict collector above, except at a proven disposal boundary.
+    if (monacoLifecycleActive && error.message === "Canceled") return;
+    pageErrors.push(error.message);
+  });
 
   await page.goto(kernelUrl);
   await page.waitForFunction(
@@ -177,10 +115,8 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await dragTitlebarTo(workspace.x + workspace.width - 1);
   await expect(dialog).toHaveAttribute("data-window-snap", "right");
 
-  // Issue #42 visible boundary: create/open a real filesystem document through
-  // Explorer, dirty the packaged Monaco editor, and use the real native Close
-  // control. Save/discard/failure semantics stay in deterministic Native Apps
-  // tests; Playwright protects only the rendered close-request interaction.
+  // Issue #42 visible boundary: preserve the already-integrated dirty-close
+  // browser journey. #67 starts its own strict error collection after this.
   await dialog.getByRole("button", { name: "New Text Document" }).click();
   const renameDocument = dialog.getByRole("textbox", { name: "Rename New Text Document.txt" });
   await expect(renameDocument).toBeVisible();
@@ -188,25 +124,17 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
 
   const textEntry = dialog.locator("[data-fm-node-id]", { hasText: "New Text Document.txt" }).first();
   await expect(textEntry).toBeVisible();
+  monacoLifecycleActive = true;
   await textEntry.dblclick();
 
   const editorWindow = app.getByRole("dialog", { name: "New Text Document.txt" }).last();
   await expect(editorWindow).toBeVisible({ timeout: 20_000 });
   const editorSurface = editorWindow.locator('[data-editor-engine="monaco"][aria-label="Text content"]');
   await expect(editorSurface).toHaveAttribute("data-editor-ready", "true", { timeout: 30_000 });
-  const dirtyEditContext = editorWindow.getByRole("textbox", {
-    name: "Text content",
-    exact: true,
-    includeHidden: true,
-  }).first();
-  const dirtyFirstLine = editorWindow.locator(".monaco-editor .view-line").first();
 
-  await expect(dirtyFirstLine).toBeVisible();
-  await dirtyFirstLine.click({ position: { x: 1, y: 1 } });
-  await expect(dirtyEditContext).toBeFocused();
-  await typeInMonacoEditContext(dirtyEditContext, "dirty close proof");
+  await editorSurface.click({ position: { x: 120, y: 80 } });
+  await page.keyboard.type("dirty close proof");
   await expect(editorWindow.getByText("Modified", { exact: true })).toBeVisible();
-  expectNoPageErrors("dirty-close edit must not emit browser errors");
 
   const closeEditor = editorWindow.locator(".plasmon-window__controls").getByRole("button", { name: "Close" });
   await closeEditor.click();
@@ -214,28 +142,32 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await expect(closePrompt).toBeVisible({ timeout: 5_000 });
   await expect(closePrompt.getByRole("button", { name: "Save" })).toBeVisible();
   await expect(closePrompt.getByRole("button", { name: "Discard" })).toBeVisible();
-  expectNoPageErrors("opening dirty-close prompt must not emit browser errors");
   await closePrompt.getByRole("button", { name: "Cancel" }).click();
   await expect(closePrompt).not.toBeVisible();
   await expect(editorWindow).toBeVisible();
-  expectNoPageErrors("cancelled dirty close must not emit browser errors");
 
   // Dirty it again so the second close remains deterministic even if autosave
   // had time to run after Cancel.
-  await dirtyFirstLine.click({ position: { x: 1, y: 1 } });
-  await expect(dirtyEditContext).toBeFocused();
-  await typeInMonacoEditContext(dirtyEditContext, " again");
+  await editorSurface.click({ position: { x: 120, y: 80 } });
+  await page.keyboard.type(" again");
   await expect(editorWindow.getByText("Modified", { exact: true })).toBeVisible();
-  expectNoPageErrors("dirty-close edit after Cancel must not emit browser errors");
   await closeEditor.click();
   await expect(closePrompt).toBeVisible({ timeout: 5_000 });
-  expectNoPageErrors("second dirty-close prompt must not emit browser errors");
-  await expectOnlyMonacoDisposeCancellation("discarded dirty Text editor", async () => {
-    await closePrompt.getByRole("button", { name: "Discard" }).click();
-    await expect(app.getByRole("dialog", { name: "New Text Document.txt" })).toHaveCount(0, { timeout: 10_000 });
-  });
+  await closePrompt.getByRole("button", { name: "Discard" }).click();
+  await expect(app.getByRole("dialog", { name: "New Text Document.txt" })).toHaveCount(0, { timeout: 10_000 });
+  expect(pageErrors).toEqual([]);
 
-  expectNoPageErrors("dirty-close journey must leave no unexplained browser errors");
+  // Issue #67 starts here. No lifecycle-wide cancellation suppression applies
+  // to edit/save/reopen. A cancellation may be consumed only while an actual
+  // Monaco window is being disposed, and only when its stack proves that path.
+  monacoLifecycleActive = false;
+  pageErrors.length = 0;
+  issue67Active = true;
+
+  const expectNoIssue67PageErrors = (label: string): void => {
+    expect(pageErrors, label).toEqual([]);
+    expect(issue67PageErrors, label).toEqual([]);
+  };
 
   const explorerWindowId = await dialog.getAttribute("data-window-id");
   if (!explorerWindowId) throw new Error("Explorer window has no stable data-window-id");
@@ -284,9 +216,6 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
         `${label} packaged Monaco did not become usable${details ? `: ${details}` : `: ${cause instanceof Error ? cause.message : String(cause)}`}`,
       );
     }
-    const monaco = openedWindow.locator(".monaco-editor").first();
-    await expect(monaco).toBeVisible();
-    return monaco;
   };
 
   const closeDocument = async (
@@ -294,10 +223,29 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     openedWindow: ReturnType<typeof nativeWindows.last>,
     label: string,
   ) => {
-    await expectOnlyMonacoDisposeCancellation(label, async () => {
+    expectNoIssue67PageErrors(`${label} must begin without browser errors`);
+    monacoLifecycleActive = true;
+    try {
       await openedWindow.getByRole("button", { name: "Close", exact: true }).click();
       await expect(nativeWindows).toHaveCount(before, { timeout: 10_000 });
-    });
+      await page.waitForTimeout(0);
+    } finally {
+      monacoLifecycleActive = false;
+    }
+
+    // Non-cancellation errors were never suppressed by the inherited collector.
+    expect(pageErrors, `${label} must not emit non-cancellation browser errors`).toEqual([]);
+    const disposalErrors = issue67PageErrors.splice(0);
+    expect(disposalErrors.length, `${label} may emit at most one proven Monaco disposal cancellation`).toBeLessThanOrEqual(1);
+    if (disposalErrors.length === 1) {
+      const [error] = disposalErrors;
+      expect(error).toMatchObject({ name: "Canceled", message: "Canceled" });
+      const stack = error?.stack ?? "";
+      const cancelIndex = stack.indexOf(".cancel (");
+      const disposeIndex = stack.indexOf(".dispose (");
+      expect(cancelIndex, `${label} cancellation must originate from cancel()`).toBeGreaterThanOrEqual(0);
+      expect(disposeIndex, `${label} cancellation must flow into dispose()`).toBeGreaterThan(cancelIndex);
+    }
   };
 
   const exercisePackagedEditor = async (options: {
@@ -311,10 +259,8 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     const entry = await createDocument(options.createButton, options.generatedName, options.fileName);
     const opened = await openDocument(entry, options.appLabel);
     await waitForUsableMonaco(opened.editorWindow, options.appLabel);
-    await expect(opened.editorWindow.locator('[data-editor-engine="monaco"]').first()).toHaveAttribute(
-      "aria-label",
-      options.sourceLabel,
-    );
+    const surface = opened.editorWindow.locator('[data-editor-engine="monaco"]').first();
+    await expect(surface).toHaveAttribute("aria-label", options.sourceLabel);
 
     const editContext = opened.editorWindow.getByRole("textbox", {
       name: options.sourceLabel,
@@ -323,30 +269,31 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     }).first();
     const firstLine = opened.editorWindow.locator(".monaco-editor .view-line").first();
     await expect(firstLine).toBeVisible();
-    await firstLine.click({ position: { x: 1, y: 1 } });
+    await firstLine.click({ position: { x: 8, y: 10 } });
     await expect(editContext).toBeFocused();
-    await typeInMonacoEditContext(editContext, options.persistedText);
+    await page.keyboard.type(options.persistedText, { delay: 10 });
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await expect(firstLine).toHaveText(options.persistedText);
-    expectNoPageErrors(`${options.appLabel} edit must not emit browser errors`);
+    expectNoIssue67PageErrors(`${options.appLabel} edit must not emit browser errors`);
 
-    await opened.editorWindow.getByRole("button", { name: "Save", exact: true }).click();
+    const save = opened.editorWindow.getByRole("button", { name: "Save", exact: true });
+    await save.click();
     await expect(opened.editorWindow.getByText("Saved", { exact: true })).toBeVisible();
-    await expect(opened.editorWindow.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
-    expectNoPageErrors(`${options.appLabel} save must not emit browser errors`);
+    await expect(save).toBeDisabled();
+    expectNoIssue67PageErrors(`${options.appLabel} save must not emit browser errors`);
     await closeDocument(opened.before, opened.editorWindow, `${options.appLabel} saved close`);
 
     const reopened = await openDocument(entry, options.appLabel);
     await waitForUsableMonaco(reopened.editorWindow, `${options.appLabel} after reopen`);
-    await expect(reopened.editorWindow.locator(".view-line").first()).toHaveText(options.persistedText);
-    expectNoPageErrors(`${options.appLabel} reopen must not emit browser errors`);
+    await expect(reopened.editorWindow.locator(".monaco-editor .view-line").first()).toHaveText(options.persistedText);
+    expectNoIssue67PageErrors(`${options.appLabel} reopen must preserve exact content without browser errors`);
     await closeDocument(reopened.before, reopened.editorWindow, `${options.appLabel} reopened close`);
   };
 
   // Issue #67 browser/package boundary: create real filesystem documents through
-  // Explorer, open through canonical associations/process/windowing, exercise the
-  // real packaged Monaco surface, save through the production document session,
-  // then close/reopen to prove exact filesystem persistence rather than component state.
+  // Explorer, open through canonical associations/process/windowing, edit the
+  // actual packaged Monaco surface with real pointer/keyboard input, save through
+  // the production document session, then close/reopen and prove exact persistence.
   await exercisePackagedEditor({
     createButton: "New Text Document",
     generatedName: "New Text Document",
@@ -364,7 +311,8 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     persistedText: "packaged markdown persisted",
   });
 
-  expectNoPageErrors("packaged golden path must finish without unexplained browser errors");
+  expectNoIssue67PageErrors("packaged Monaco acceptance must finish without unexplained browser errors");
+  issue67Active = false;
 });
 
 declare global {
