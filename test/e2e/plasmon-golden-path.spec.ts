@@ -75,7 +75,12 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
   await rootShortcut.dblclick();
 
   await expect(nativeWindows).toHaveCount(initialWindowCount + 1, { timeout: 20_000 });
-  const explorerWindow = nativeWindows.last();
+  const explorerWindowCandidate = nativeWindows.last();
+  const explorerWindowId = await explorerWindowCandidate.getAttribute("data-window-id");
+  if (!explorerWindowId) throw new Error("Explorer window has no stable data-window-id");
+  const explorerWindow = app.locator(
+    `.plasmon-window-layer [data-window-id="${explorerWindowId}"]`,
+  );
   await expect(explorerWindow.getByLabel("File Explorer", { exact: true })).toBeVisible();
 
   const createDocument = async (
