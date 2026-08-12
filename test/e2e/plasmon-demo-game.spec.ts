@@ -1,9 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
 import { localCanisterOrigin } from "neutron-tools/src/runtime.js";
 import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src/local_session.ts";
 
 const APP_ID = "plasmon";
 const TILE_ID = "main";
+const FIXTURE_PARAM = "plasmon-fixture";
+const FIXTURE_VALUE = "demo-game";
 
 test("explicit packaged demo fixture opens through the normal js-dos desktop path", async ({ page, request }) => {
   const runtime = resolveLocalNeutronRuntime();
@@ -27,34 +29,53 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   expect(fixtureResponse.ok(), "demo fixture should be served from the installed Plasmon package").toBe(true);
   expect((await fixtureResponse.body()).length).toBeGreaterThan(0);
 
-  await page.locator('[data-tid="launcher-open"]').click();
-  await expect(page.locator('[data-tid="launcher"]')).toBeVisible();
-  await page.locator(`[data-tid="launcher-tile-${APP_ID}-${TILE_ID}"]`).click();
+  // The fixture flag is startup configuration. Intercept only the initial
+  // installed Plasmon document request and redirect it before any unflagged
+  // Plasmon document can execute filesystem bootstrap. The redirected document
+  // still comes from the installed package and uses the normal product startup.
+  const fixtureRoute = `**/app/${APP_ID}/**`;
+  let fixtureRedirected = false;
+  const redirectInitialPlasmonDocument = async (route: Route) => {
+    const requestUrl = new URL(route.request().url());
+    const appRoot = `/app/${APP_ID}/`;
+    const isMainDocument = route.request().resourceType() === "document"
+      && (requestUrl.pathname === appRoot || requestUrl.pathname === `${appRoot}index.html`);
+    if (!isMainDocument || requestUrl.searchParams.get(FIXTURE_PARAM) === FIXTURE_VALUE) {
+      await route.continue();
+      return;
+    }
 
-  // The fixture flag is startup configuration. Apply it as soon as Kernel has
-  // attached the real application iframe, before waiting for an unflagged
-  // Plasmon document to boot and initialize the filesystem first.
-  const frame = page.locator(`iframe[data-app-id="${APP_ID}"][data-tile-id="${TILE_ID}"]`).first();
-  await expect(frame).toBeAttached();
-  const source = await frame.getAttribute("src");
-  if (!source) throw new Error("Installed Plasmon tile has no iframe source");
+    fixtureRedirected = true;
+    requestUrl.searchParams.set(FIXTURE_PARAM, FIXTURE_VALUE);
+    await route.fulfill({
+      status: 307,
+      headers: {
+        location: requestUrl.href,
+        "cache-control": "no-store",
+      },
+    });
+  };
+  await page.route(fixtureRoute, redirectInitialPlasmonDocument);
 
-  const fixtureUrl = new URL(source, kernelUrl);
-  fixtureUrl.searchParams.set("plasmon-fixture", "demo-game");
   const fixtureNavigation = page.waitForEvent("framenavigated", (candidate) => {
     try {
       const url = new URL(candidate.url());
-      return url.pathname === fixtureUrl.pathname
-        && url.searchParams.get("plasmon-fixture") === "demo-game";
+      return (url.pathname === `/app/${APP_ID}/` || url.pathname === `/app/${APP_ID}/index.html`)
+        && url.searchParams.get(FIXTURE_PARAM) === FIXTURE_VALUE;
     } catch {
       return false;
     }
   });
-  await frame.evaluate((element, href) => {
-    (element as HTMLIFrameElement).src = href;
-  }, fixtureUrl.href);
-  await fixtureNavigation;
 
+  await page.locator('[data-tid="launcher-open"]').click();
+  await expect(page.locator('[data-tid="launcher"]')).toBeVisible();
+  await page.locator(`[data-tid="launcher-tile-${APP_ID}-${TILE_ID}"]`).click();
+  await fixtureNavigation;
+  await page.unroute(fixtureRoute, redirectInitialPlasmonDocument);
+  expect(fixtureRedirected, "the first installed Plasmon document should be redirected to the explicit fixture URL").toBe(true);
+
+  const frame = page.locator(`iframe[data-app-id="${APP_ID}"][data-tile-id="${TILE_ID}"]`).first();
+  await expect(frame).toBeAttached();
   const app = page.frameLocator(`iframe[data-app-id="${APP_ID}"][data-tile-id="${TILE_ID}"]`).first();
   await expect(app.getByRole("navigation", { name: "Taskbar" })).toBeVisible({ timeout: 30_000 });
 
