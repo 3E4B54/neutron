@@ -1,0 +1,157 @@
+@layer app {
+  :root {
+    /*
+     * Plasmon visual-system proof.
+     *
+     * These semantic tokens deliberately preserve the compact teal/green GUI1
+     * identity while giving the current OS components one vocabulary. Component
+     * owners should consume these values rather than introducing new local
+     * palettes. Existing aliases are retained below so this file is safe to
+     * adopt incrementally.
+     */
+
+    /* Typography */
+    --plasmon-font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --plasmon-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --plasmon-font-size-ui: 13px;
+    --plasmon-font-size-small: 11.5px;
+    --plasmon-font-size-caption: 10.5px;
+    --plasmon-font-size-title: 12px;
+    --plasmon-line-height-ui: 1.35;
+
+    /* Core surfaces */
+    --plasmon-desktop-background: #07131a;
+    --plasmon-panel-background: rgba(18, 28, 35, 0.94);
+    --plasmon-panel-elevated: #17242c;
+    --plasmon-window-background: #111820;
+    --plasmon-window-titlebar: #18242b;
+    --plasmon-taskbar-background: rgba(13, 24, 30, 0.91);
+
+    /* Borders */
+    --plasmon-border-subtle: rgba(255, 255, 255, 0.11);
+    --plasmon-border-strong: rgba(255, 255, 255, 0.18);
+
+    /* Text */
+    --plasmon-text-primary: #f5faf7;
+    --plasmon-text-secondary: #a7b7b1;
+    --plasmon-text-disabled: #6f807a;
+
+    /* State */
+    --plasmon-accent: #84e3b0;
+    --plasmon-accent-hover: #9ce9c0;
+    --plasmon-accent-ink: #082419;
+    --plasmon-selection: rgba(132, 227, 176, 0.16);
+    --plasmon-selection-border: rgba(156, 233, 192, 0.34);
+    --plasmon-focus-ring: #a7edc7;
+    --plasmon-danger: #ff9a9f;
+    --plasmon-warning: #f0c878;
+    --plasmon-success: #84e3b0;
+
+    /* Elevation */
+    --plasmon-shadow-window: 0 26px 70px rgba(0, 0, 0, 0.46), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+    --plasmon-shadow-panel: 0 28px 80px rgba(0, 0, 0, 0.5);
+    --plasmon-shadow-icon: 0 6px 16px rgba(0, 0, 0, 0.2);
+
+    /* Shape and layout */
+    --plasmon-radius-window: 10px;
+    --plasmon-radius-panel: 10px;
+    --plasmon-radius-control: 6px;
+    --plasmon-radius-icon-frame: 9px;
+    --plasmon-taskbar-height: 52px;
+    --plasmon-titlebar-height: 38px;
+
+    /* Icon canvas system */
+    --plasmon-icon-desktop-cell-width: 92px;
+    --plasmon-icon-desktop-cell-height: 90px;
+    --plasmon-icon-desktop-frame: 48px;
+    --plasmon-icon-desktop-art: 42px;
+    --plasmon-icon-grid-frame: 44px;
+    --plasmon-icon-grid-art: 38px;
+    --plasmon-icon-list-frame: 26px;
+    --plasmon-icon-list-art: 22px;
+    --plasmon-icon-start-frame: 32px;
+    --plasmon-icon-start-art: 28px;
+    --plasmon-icon-search-frame: 30px;
+    --plasmon-icon-search-art: 26px;
+    --plasmon-icon-taskbar-frame: 30px;
+    --plasmon-icon-taskbar-art: 26px;
+    --plasmon-icon-titlebar-frame: 18px;
+    --plasmon-icon-titlebar-art: 16px;
+    --plasmon-icon-context-frame: 20px;
+    --plasmon-icon-context-art: 16px;
+    --plasmon-icon-properties-frame: 56px;
+    --plasmon-icon-properties-art: 46px;
+
+    /* Motion */
+    --plasmon-motion-fast: 120ms;
+    --plasmon-motion-window: 180ms;
+
+    /* Incremental aliases used by current windowing/integration code. */
+    --plasmon-surface: var(--plasmon-window-background);
+    --plasmon-surface-elevated: var(--plasmon-panel-elevated);
+    --plasmon-text: var(--plasmon-text-primary);
+    --plasmon-text-muted: var(--plasmon-text-secondary);
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  /* Neutralize the legacy GUI2 .plasmon-shell grid selector at composition. */
+  .plasmon-shell {
+    display: block;
+    grid-template-columns: none;
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .plasmon-os-workspace {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .plasmon-os-desktop-layer,
+  .plasmon-os-window-layer-wrap {
+    position: absolute;
+    inset: 0;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .plasmon-os-desktop-layer {
+    z-index: 0;
+  }
+
+  .plasmon-os-window-layer-wrap {
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .plasmon-os-window-layer-wrap .plasmon-window:not(.plasmon-window--minimized) {
+    pointer-events: auto;
+  }
+
+  .plasmon-os-host-state {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 24px;
+    color: var(--plasmon-text-secondary);
+    text-align: center;
+  }
+
+  .plasmon-os-host-state--error {
+    color: var(--plasmon-danger);
+  }
+}

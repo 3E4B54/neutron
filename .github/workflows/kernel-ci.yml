@@ -4,7 +4,11 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "apps/plasmon/**"
   pull_request:
+    paths-ignore:
+      - "apps/plasmon/**"
   workflow_dispatch:
 
 jobs:
@@ -14,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31

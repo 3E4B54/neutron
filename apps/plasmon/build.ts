@@ -1,0 +1,267 @@
+import esbuild from "esbuild";
+import copyStaticFiles from "esbuild-copy-static-files";
+import { sassPlugin } from "esbuild-sass-plugin";
+import { createHash } from "node:crypto";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { inflateRawSync } from "node:zlib";
+import { fileURLToPath } from "node:url";
+import type { BuildOptions } from "esbuild";
+import { assertMatureNativeAppBundle, cacheBustEntryAssets } from "./src/native-apps/packaging.ts";
+
+const mainOutfile = "./dist/web/main.js";
+const bundledCss = "./dist/web/main.bundle.css";
+const outputCss = "./dist/web/main.css";
+const outputIndex = "./dist/web/index.html";
+const args = process.argv.slice(2);
+const devMode = args[0] === "dev";
+
+const JS_DOS_VERSION = "8.4.1";
+const JS_DOS_RELEASE_URL = `https://github.com/caiiiycuk/js-dos/releases/download/v${JS_DOS_VERSION}/release.zip`;
+const JS_DOS_RELEASE_SHA256 = "26118692bbb180aec78ec1697eb1ea6b28ff410101870cfa3e68309914c7eaa6";
+const DOOM_SOURCE_URL = "https://raw.githubusercontent.com/GG-O-BP/mendix-doom/c42008f2f9542854a921104c65adc7f2105099aa/src/assets/doom.jsdos";
+const DOOM_GIT_BLOB_SHA1 = "421f4c1ace76f33737bfcb87fc51b04f39aa6c3a";
+const PACKAGED_JS_DOS_ROOT = "/System/Program Files/js-dos/";
+let proofAssetsPromise: Promise<void> | null = null;
+
+async function stripRemoteDiagnostics(): Promise<void> {
+  const source = await readFile(mainOutfile, "utf8");
+  const sanitized = source.replaceAll("https://react.dev/errors/", "#react-error-");
+  if (sanitized !== source) await writeFile(mainOutfile, sanitized);
+}
+
+/**
+ * Plasmon's application styles are imported by src/index.tsx. Monaco's ESM
+ * modules contribute additional CSS to the same esbuild output. esbuild emits
+ * that complete stylesheet as main.bundle.css; publish it as main.css because
+ * public/index.html references that stable package path.
+ */
+async function mergeApplicationStyles(): Promise<void> {
+  const generated = await readFile(bundledCss, "utf8");
+  await writeFile(outputCss, generated);
+}
+
+async function fingerprintEntryAssets(): Promise<void> {
+  const [javascript, css, index] = await Promise.all([
+    readFile(mainOutfile),
+    readFile(outputCss),
+    readFile(outputIndex, "utf8"),
+  ]);
+  const fingerprint = createHash("sha256")
+    .update(javascript)
+    .update(css)
+    .digest("hex")
+    .slice(0, 16);
+  await writeFile(outputIndex, cacheBustEntryAssets(index, fingerprint));
+}
+
+async function fetchBytes(url: string): Promise<Uint8Array> {
+  const response = await fetch(url, { redirect: "follow" });
+  if (!response.ok) throw new Error(`Failed to fetch build asset (${response.status}): ${url}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function gitBlobSha1(bytes: Uint8Array): string {
+  const hash = createHash("sha1");
+  hash.update(`blob ${bytes.length}\0`);
+  hash.update(bytes);
+  return hash.digest("hex");
+}
+
+function findZipEnd(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const minimum = Math.max(0, bytes.length - 65_557);
+  for (let offset = bytes.length - 22; offset >= minimum; offset -= 1) {
+    if (view.getUint32(offset, true) === 0x06054b50) return offset;
+  }
+  throw new Error("js-dos release ZIP has no end-of-central-directory record");
+}
+
+async function extractReleaseZip(bytes: Uint8Array, destination: string): Promise<void> {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const end = findZipEnd(bytes);
+  const entries = view.getUint16(end + 10, true);
+  let centralOffset = view.getUint32(end + 16, true);
+  const decoder = new TextDecoder();
+
+  for (let index = 0; index < entries; index += 1) {
+    if (view.getUint32(centralOffset, true) !== 0x02014b50) {
+      throw new Error("js-dos release ZIP central directory is malformed");
+    }
+    const method = view.getUint16(centralOffset + 10, true);
+    const compressedSize = view.getUint32(centralOffset + 20, true);
+    const uncompressedSize = view.getUint32(centralOffset + 24, true);
+    const nameLength = view.getUint16(centralOffset + 28, true);
+    const extraLength = view.getUint16(centralOffset + 30, true);
+    const commentLength = view.getUint16(centralOffset + 32, true);
+    const localOffset = view.getUint32(centralOffset + 42, true);
+    const name = decoder.decode(bytes.subarray(centralOffset + 46, centralOffset + 46 + nameLength));
+    centralOffset += 46 + nameLength + extraLength + commentLength;
+
+    if (!name.startsWith("dist/") || name.endsWith("/")) continue;
+    const relative = name.slice("dist/".length);
+    const parts = relative.split("/");
+    if (!relative || parts.some((part) => !part || part === "." || part === "..")) {
+      throw new Error(`Unsafe js-dos release path: ${name}`);
+    }
+    if (view.getUint32(localOffset, true) !== 0x04034b50) {
+      throw new Error(`Malformed js-dos ZIP entry: ${name}`);
+    }
+    const localNameLength = view.getUint16(localOffset + 26, true);
+    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = bytes.subarray(dataOffset, dataOffset + compressedSize);
+    const output = method === 0
+      ? compressed
+      : method === 8
+        ? new Uint8Array(inflateRawSync(compressed))
+        : (() => { throw new Error(`Unsupported ZIP compression method ${method} for ${name}`); })();
+    if (output.length !== uncompressedSize) {
+      throw new Error(`Unexpected uncompressed size for js-dos release entry: ${name}`);
+    }
+
+    const target = join(destination, ...parts);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, output);
+  }
+}
+
+async function rebaseJsDosRelease(runtimeDirectory: string): Promise<void> {
+  for (const name of ["js-dos.js", "js-dos.css"]) {
+    const path = join(runtimeDirectory, name);
+    const source = await readFile(path, "utf8");
+    const rebased = source.replaceAll("/latest/", PACKAGED_JS_DOS_ROOT);
+    if (rebased !== source) await writeFile(path, rebased);
+  }
+}
+
+async function installPlayableProofAssets(): Promise<void> {
+  if (proofAssetsPromise) return proofAssetsPromise;
+  proofAssetsPromise = (async () => {
+    const [releaseZip, doomBundle] = await Promise.all([
+      fetchBytes(JS_DOS_RELEASE_URL),
+      fetchBytes(DOOM_SOURCE_URL),
+    ]);
+
+    if (sha256(releaseZip) !== JS_DOS_RELEASE_SHA256) {
+      throw new Error("Pinned js-dos release digest mismatch");
+    }
+    if (gitBlobSha1(doomBundle) !== DOOM_GIT_BLOB_SHA1) {
+      throw new Error("Pinned Doom hackathon bundle Git blob digest mismatch");
+    }
+
+    const runtimeDirectory = "./dist/web/System/Program Files/js-dos";
+    await rm(runtimeDirectory, { recursive: true, force: true });
+    await mkdir(runtimeDirectory, { recursive: true });
+    await extractReleaseZip(releaseZip, runtimeDirectory);
+    await rebaseJsDosRelease(runtimeDirectory);
+    await Promise.all([
+      access(join(runtimeDirectory, "js-dos.js")),
+      access(join(runtimeDirectory, "js-dos.css")),
+      access(join(runtimeDirectory, "emulators", "emulators.js")),
+      access(join(runtimeDirectory, "emulators", "wdosbox.js")),
+      access(join(runtimeDirectory, "emulators", "wdosbox.wasm")),
+    ]);
+    await writeFile(
+      join(runtimeDirectory, "runtime.json"),
+      `${JSON.stringify({ runtime: "js-dos", version: JS_DOS_VERSION, releaseSha256: JS_DOS_RELEASE_SHA256 }, null, 2)}\n`,
+    );
+
+    const gamePath = "./dist/web/Games/DOS Bundles/Doom.jsdos";
+    await mkdir(dirname(gamePath), { recursive: true });
+    await writeFile(gamePath, doomBundle);
+  })();
+  return proofAssetsPromise;
+}
+
+const config: BuildOptions = {
+  entryPoints: [
+    { in: "./src/index.tsx", out: "main" },
+    { in: "./src/os/fs/background.ts", out: "service" },
+    { in: "monaco-editor/esm/vs/editor/editor.worker.js", out: "monaco-workers/editor.worker" },
+    { in: "monaco-editor/esm/vs/language/json/json.worker.js", out: "monaco-workers/json.worker" },
+    { in: "monaco-editor/esm/vs/language/css/css.worker.js", out: "monaco-workers/css.worker" },
+    { in: "monaco-editor/esm/vs/language/html/html.worker.js", out: "monaco-workers/html.worker" },
+    { in: "monaco-editor/esm/vs/language/typescript/ts.worker.js", out: "monaco-workers/ts.worker" },
+  ],
+  outdir: "./dist/web",
+  bundle: true,
+  minify: !devMode,
+  sourcemap: devMode ? "inline" : false,
+  external: [],
+  format: "esm",
+  jsx: "automatic",
+  loader: { ".ts": "ts", ".tsx": "tsx", ".ttf": "file" },
+  outExtension: { ".css": ".bundle.css" },
+  platform: "browser",
+  metafile: true,
+  plugins: [
+    sassPlugin(),
+    copyStaticFiles({
+      src: "./public",
+      dest: "./dist/web",
+      dereference: true,
+      errorOnExist: false,
+      preserveTimestamps: true,
+      recursive: true,
+    }),
+    {
+      name: "neutron-self-contained-assets",
+      setup(build) {
+        build.onEnd(async (result) => {
+          if (result.errors.length !== 0) return;
+          if (!result.metafile) throw new Error("Plasmon build requires an esbuild metafile");
+          await installPlayableProofAssets();
+          assertMatureNativeAppBundle(result.metafile);
+          await mergeApplicationStyles();
+          if (!devMode) await stripRemoteDiagnostics();
+          await fingerprintEntryAssets();
+        });
+      },
+    },
+  ],
+};
+
+await rm("./dist/web", { recursive: true, force: true });
+
+if (args[0] === "watch") {
+  const ctx = await esbuild.context(config);
+  await ctx.watch();
+  console.log("Watching local files for changes...");
+} else if (devMode) {
+  const ctx = await esbuild.context(config);
+  await ctx.watch();
+  await ctx.rebuild();
+
+  const root = new URL("./dist/web/", import.meta.url);
+  const port = Number(process.env.PORT ?? 5173);
+  Bun.serve({
+    port,
+    async fetch(request) {
+      const url = new URL(request.url);
+      const relative = url.pathname === "/"
+        ? "index.html"
+        : decodeURIComponent(url.pathname.slice(1));
+      if (!relative || relative.split("/").includes("..")) {
+        return new Response("Not found", { status: 404 });
+      }
+      const file = Bun.file(fileURLToPath(new URL(relative, root)));
+      if (!(await file.exists())) return new Response("Not found", { status: 404 });
+      return new Response(file);
+    },
+  });
+
+  console.log(`Plasmon UI dev server: http://localhost:${port}`);
+  console.log("Standalone mode uses mock Neutron data; no Kernel build is required.");
+} else {
+  try {
+    await esbuild.build(config);
+  } catch (error: unknown) {
+    console.error("Plasmon UI build failed:", error);
+    process.exitCode = 1;
+  }
+}

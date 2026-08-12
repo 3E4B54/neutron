@@ -1,0 +1,83 @@
+{
+  "format": 3,
+  "name": "Plasmon",
+  "id": "plasmon",
+  "version": 101,
+  "src": "main.mo",
+  "background": {
+    "path": "service.html",
+    "description": "Own and persist the browser-local Plasmon filesystem"
+  },
+  "capabilities": {
+    "persistent_browser_storage": {
+      "api": 1,
+      "surface": "background"
+    }
+  },
+  "tiles": [
+    {
+      "id": "main",
+      "title": "Plasmon",
+      "path": "index.html",
+      "icon": "static/icon.svg"
+    }
+  ],
+  "func": {
+    "hello_world": {
+      "type": "update",
+      "async": false
+    },
+    "sharing_schema_version": {
+      "type": "query",
+      "async": false
+    },
+    "sharing_has_chunk": {
+      "type": "query",
+      "async": false
+    },
+    "sharing_put_chunk": {
+      "type": "update",
+      "async": false
+    },
+    "sharing_get_chunk": {
+      "type": "query",
+      "async": false
+    },
+    "sharing_describe": {
+      "type": "query",
+      "async": false
+    },
+    "sharing_get_revision": {
+      "type": "query",
+      "async": false
+    },
+    "sharing_read_resource_chunk": {
+      "type": "query",
+      "async": false
+    },
+    "sharing_commit_revision": {
+      "type": "update",
+      "async": false
+    }
+  },
+  "memory": {
+    "hello": {
+      "version": 1,
+      "schemas": {
+        "1": {
+          "src": "memory/hello/v1.mo"
+        }
+      },
+      "migrations": []
+    },
+    "sharing": {
+      "version": 1,
+      "schemas": {
+        "1": {
+          "src": "memory/sharing/v1.mo"
+        }
+      },
+      "migrations": []
+    }
+  }
+}
