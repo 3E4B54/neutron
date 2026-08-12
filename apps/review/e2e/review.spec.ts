@@ -13,8 +13,8 @@ test("packaged vanilla Neutron Review persists and round-trips Markdown through 
   await harness.review.getByRole("button", { name: "Add item" }).click();
   const card = harness.review.locator(".review-card").filter({ hasText: "Review launches in vanilla Neutron" });
   await expect(card).toBeVisible();
-  await card.getByRole("button", { name: "Working" }).click();
-  await expect(card.getByRole("button", { name: "Working" })).toHaveClass(/active/);
+  await card.getByRole("button", { name: "Working", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Working", exact: true })).toHaveClass(/active/);
 
   await card.getByLabel("Desired").selectOption("must");
   await card.getByLabel("Effort").selectOption("small");
