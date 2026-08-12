@@ -33,6 +33,7 @@ const EMULATORJS_ASSETS = [
   "cores/fceumm-wasm.data",
   "cores/fceumm-legacy-wasm.data",
 ] as const;
+const EMULATORJS_BROWSER_DATA_DIRECTORY = "./dist/web/runtime/emulatorjs/data";
 let emulatorJsAssetsPromise: Promise<void> | null = null;
 
 async function stripRemoteDiagnostics(): Promise<void> {
@@ -222,14 +223,29 @@ async function installEmulatorJsProofAssets(): Promise<void> {
 
     const runtimeDirectory = "./dist/web/System/Program Files/EmulatorJS";
     const dataDirectory = join(runtimeDirectory, "data");
-    await rm(runtimeDirectory, { recursive: true, force: true });
-    await mkdir(dataDirectory, { recursive: true });
+    const browserDataDirectory = EMULATORJS_BROWSER_DATA_DIRECTORY;
+    await Promise.all([
+      rm(runtimeDirectory, { recursive: true, force: true }),
+      rm("./dist/web/runtime/emulatorjs", { recursive: true, force: true }),
+    ]);
+    await Promise.all([
+      mkdir(dataDirectory, { recursive: true }),
+      mkdir(browserDataDirectory, { recursive: true }),
+    ]);
 
     for (const asset of downloaded) {
       if (asset.bytes.length === 0) throw new Error(`Empty EmulatorJS asset: ${asset.relative}`);
-      const target = join(dataDirectory, ...asset.relative.split("/"));
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, asset.bytes);
+      const parts = asset.relative.split("/");
+      const canonicalTarget = join(dataDirectory, ...parts);
+      const browserTarget = join(browserDataDirectory, ...parts);
+      await Promise.all([
+        mkdir(dirname(canonicalTarget), { recursive: true }),
+        mkdir(dirname(browserTarget), { recursive: true }),
+      ]);
+      await Promise.all([
+        writeFile(canonicalTarget, asset.bytes),
+        writeFile(browserTarget, asset.bytes),
+      ]);
     }
 
     const loader = new TextDecoder().decode(
@@ -239,11 +255,14 @@ async function installEmulatorJsProofAssets(): Promise<void> {
       throw new Error("Pinned EmulatorJS loader does not expose the expected 4.2.3 lifecycle hooks");
     }
 
-    // EmulatorJS treats a missing core report as optional. Package an empty
-    // report so installed runtime startup remains entirely package-local.
-    const reportPath = join(dataDirectory, "cores", "reports", "fceumm.json");
-    await mkdir(dirname(reportPath), { recursive: true });
-    await writeFile(reportPath, "{}\n");
+    // EmulatorJS treats a missing core report as optional. Publish the same
+    // package-local report into both the managed Program Files authority and
+    // the URL-safe browser transport path used by Kernel app-host routing.
+    for (const root of [dataDirectory, browserDataDirectory]) {
+      const reportPath = join(root, "cores", "reports", "fceumm.json");
+      await mkdir(dirname(reportPath), { recursive: true });
+      await writeFile(reportPath, "{}\n");
+    }
     await writeFile(
       join(runtimeDirectory, "runtime.json"),
       `${JSON.stringify({
@@ -252,6 +271,7 @@ async function installEmulatorJsProofAssets(): Promise<void> {
         source: `https://github.com/EmulatorJS/EmulatorJS/releases/tag/v${EMULATORJS_VERSION}`,
         core: "fceumm",
         resourceType: ".nes",
+        browserDataRoot: "runtime/emulatorjs/data/",
       }, null, 2)}\n`,
     );
 
