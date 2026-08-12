@@ -62,7 +62,9 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   await expect(demo).toBeVisible({ timeout: 20_000 });
   await demo.dblclick();
 
-  const gameWindow = app.getByRole("dialog", { name: "Plasmon Demo.jsdos" }).last();
+  // The runtime window stays generic by design; target filenames never become
+  // game-title-specific product/runtime behavior.
+  const gameWindow = app.getByRole("dialog", { name: "js-dos" }).last();
   await expect(gameWindow).toBeVisible({ timeout: 20_000 });
   const player = gameWindow.getByLabel("DOS game");
   await expect(player).toHaveAttribute("data-jsdos-ready", "true", { timeout: 60_000 });
