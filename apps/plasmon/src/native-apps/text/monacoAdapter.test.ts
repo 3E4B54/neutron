@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
-import { createOwnedEditorModel, editorLanguageForName, syncEditorModelValue } from "./editorModel.ts";
+import { createEditorSurfaceModelOwner, editorLanguageForName, syncEditorModelValue } from "./editorModel.ts";
 import { monacoWorkerFile } from "./monacoEnvironment.ts";
 class FakeModel { value = "hello"; replacements = 0; disposeCalls = 0; getValue() { return this.value; } setValue(value: string) { this.value = value; this.replacements += 1; } dispose() { this.disposeCalls += 1; } }
 test("Monaco model is not reset when the saved document value is unchanged", () => { const model = new FakeModel(); expect(syncEditorModelValue(model, "hello")).toBe(false); expect(model.replacements).toBe(0); expect(syncEditorModelValue(model, "external replacement")).toBe(true); expect(model.replacements).toBe(1); });
 test("two live Monaco surfaces for one semantic document own distinct models", () => {
   const createdUris: string[] = [];
   const create = (uri: string) => { createdUris.push(uri); return new FakeModel(); };
-  const first = createOwnedEditorModel("node:shared-document", 41, create);
-  const second = createOwnedEditorModel("node:shared-document", 42, create);
+  const first = createEditorSurfaceModelOwner("node:shared-document", create);
+  const second = createEditorSurfaceModelOwner("node:shared-document", create);
 
   expect(first.uri).not.toBe(second.uri);
   expect(createdUris).toEqual([first.uri, second.uri]);
