@@ -6,6 +6,7 @@ on:
       - version-0.1.0-os
     paths:
       - "apps/plasmon/**"
+      - "apps/review/**"
       - "apps/kernel/**"
       - "packages/neutron-provision/**"
       - "packages/neutron-tools/**"
@@ -18,6 +19,7 @@ on:
   pull_request:
     paths:
       - "apps/plasmon/**"
+      - "apps/review/**"
       - "apps/kernel/**"
       - "packages/neutron-provision/**"
       - "packages/neutron-tools/**"
@@ -58,6 +60,7 @@ jobs:
             npm ci
             npm --workspace neutron-kernel run package
             npm --workspace neutron-plasmon run test:package
+            npm --workspace neutron-review run package
 
             npm run provision -- plasmon-local.ndeploy.json serve > /tmp/plasmon-pocketic.log 2>&1 &
             server_pid=$!
