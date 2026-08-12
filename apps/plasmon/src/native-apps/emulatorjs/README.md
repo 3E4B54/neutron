@@ -6,11 +6,13 @@ The initial supported resource is an iNES `.nes` ROM. Association matching selec
 
 ## Runtime assets and lifecycle
 
-Packaged runtime data lives under `/System/Program Files/EmulatorJS`. The iframe navigates to the package-local `emulatorjs-host.html`; that child host loads `emulatorjs-host.js`, creates the ROM Blob URL in its own browsing context, sets the `EJS_*` globals, and injects the package-local EmulatorJS `loader.js`.
+The managed runtime authority remains `/System/Program Files/EmulatorJS`. The build also publishes the exact same pinned `data/` bytes at `/runtime/emulatorjs/data/` inside the Plasmon package for browser execution. That second path is a transport mirror, not a second runtime authority: Kernel executable app-host routing admits URL-safe path segments, while the literal `Program Files` path contains a space and is therefore unsuitable as an executable HTTP asset path.
+
+The iframe navigates to the package-local `emulatorjs-host.html`; that child host loads `emulatorjs-host.js`, creates the ROM Blob URL in its own browsing context, sets the `EJS_*` globals, and injects `/runtime/emulatorjs/data/loader.js`. `EJS_pathtodata` points at that same package-local URL-safe mirror, so EmulatorJS JavaScript, CSS, fceumm core data, and optional core report all resolve from the installed package without remote fallback.
 
 EmulatorJS 4.2.3 uses browser-global `EJS_*` configuration. Each process therefore gets its own iframe so runtime globals, WASM, audio, timers, and engine state remain isolated per native window. Plasmon does not inspect or mutate the iframe document: Neutron can isolate the outer application browsing context, so direct `contentDocument` access is not a valid runtime contract. Instead, the parent and packaged child exchange token-validated `postMessage` lifecycle messages. The child reports `loaded` only from the real `EJS_ready` callback and `ready` only from the real `EJS_onGameStart` callback; tests must not synthesize those states.
 
-This keeps the approved daedalOS-style one-iframe-per-runtime-instance boundary while adapting bootstrap to Neutron's application isolation. Required EmulatorJS scripts, styles, fceumm core data, and the generated proof ROM remain package-local. Do not replace the real child runtime with a test-only frame, readiness flag, filename dispatch, or generic emulator framework.
+This keeps the approved daedalOS-style one-iframe-per-runtime-instance boundary while adapting bootstrap to Neutron's application isolation and app-host routing. Required EmulatorJS scripts, styles, fceumm core data, and the generated proof ROM remain package-local. Do not replace the real child runtime with a test-only frame, readiness flag, filename dispatch, or generic emulator framework.
 
 Unmounting the host sends a terminate command to the exact child runtime and removes its iframe. No shared emulator framework is introduced.
 
@@ -22,4 +24,4 @@ The legal packaged acceptance ROM is a generated mapper-0 NES test image with no
 
 ## Testing
 
-Use fast Bun tests for `.nes` association matching, ROM validation, package-relative host/data resolution, and the canonical headless filesystem -> association -> OpenService -> process/window path. Package acceptance verifies the real child host and EmulatorJS/core assets are present. Use the packaged browser lane only to prove the installed child host boots, the actual package-local loader/core starts the generated NES fixture, and iframe teardown works in a real browser.
+Use fast Bun tests for `.nes` association matching, ROM validation, URL-safe package-relative browser resolution, and the canonical headless filesystem -> association -> OpenService -> process/window path. Package acceptance verifies the managed Program Files assets and URL-safe browser mirror are byte-identical. Use the packaged browser lane only to prove the installed child host boots, the actual package-local loader/core starts the generated NES fixture, no required runtime asset leaves the package, and iframe teardown works in a real browser.
