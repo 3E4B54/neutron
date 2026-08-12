@@ -139,7 +139,9 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     const entry = await createDocument(options.createButton, options.generatedName, options.fileName);
     const opened = await openDocument(entry, options.appLabel);
     const monaco = await waitForUsableMonaco(opened.editorWindow, options.appLabel);
-    await expect(opened.editorWindow.getByLabel(options.sourceLabel, { exact: true })).toBeVisible();
+    await expect(
+      opened.editorWindow.getByRole("textbox", { name: options.sourceLabel, exact: true }),
+    ).toBeVisible();
 
     await monaco.click({ position: { x: 80, y: 48 } });
     await page.keyboard.insertText(options.persistedText);
