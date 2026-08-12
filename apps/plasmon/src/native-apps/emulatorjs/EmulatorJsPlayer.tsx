@@ -75,6 +75,16 @@ function createRuntimeFrame(container: HTMLDivElement): HTMLIFrameElement {
   return frame;
 }
 
+function markPhase(container: HTMLDivElement | null, phase: string, error?: unknown): void {
+  if (!container) return;
+  container.dataset.emulatorjsPhase = phase;
+  if (error === undefined) {
+    delete container.dataset.emulatorjsError;
+  } else {
+    container.dataset.emulatorjsError = error instanceof Error ? error.message : String(error);
+  }
+}
+
 /**
  * Association-backed NES host. The selected filesystem node is the only game
  * input; title-specific dispatch stays outside the runtime path.
@@ -96,6 +106,7 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
     let disposed = false;
     const runtimeToken = crypto.randomUUID();
 
+    markPhase(runtimeContainerRef.current, "loading-rom");
     setRom(null);
     setState("loading");
     setDetail(null);
@@ -108,11 +119,13 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       assertNesRom(bytes);
 
       if (disposed) return;
+      markPhase(runtimeContainerRef.current, "rom-loaded");
       setRom({ name: node.name, bytes: bytes.slice(), runtimeToken });
     };
 
     void load().catch((error: unknown) => {
       if (disposed) return;
+      markPhase(runtimeContainerRef.current, "error", error);
       setState("error");
       setDetail(error instanceof Error ? error.message : String(error));
     });
@@ -136,13 +149,16 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
     let gameUrl: string | null = null;
     const frame = createRuntimeFrame(container);
     frame.dataset.emulatorjsInit = rom.runtimeToken;
+    markPhase(container, "frame-created");
 
     const runtimeWindow = frame.contentWindow as EmulatorJsRuntimeWindow | null;
     const runtimeDocument = frame.contentDocument;
     if (!runtimeWindow || !runtimeDocument) {
+      const error = new Error("EmulatorJS iframe is unavailable");
+      markPhase(container, "error", error);
       frame.remove();
       setState("error");
-      setDetail("EmulatorJS iframe is unavailable");
+      setDetail(error.message);
       return;
     }
 
@@ -151,6 +167,7 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
       startTimeoutRef.current = null;
       delete frame.dataset.emulatorjsReady;
+      markPhase(container, "error", reason);
       setState("error");
       setDetail(reason instanceof Error ? reason.message : String(reason || "EmulatorJS runtime error"));
     };
@@ -167,12 +184,14 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       setDetail(null);
 
       populateRuntimeDocument(runtimeDocument);
+      markPhase(container, "document-populated");
       runtimeWindow.addEventListener("error", onRuntimeError);
       runtimeWindow.addEventListener("unhandledrejection", onUnhandledRejection);
 
       gameUrl = runtimeWindow.URL.createObjectURL(
         new runtimeWindow.Blob([rom.bytes.slice().buffer], { type: "application/octet-stream" }),
       );
+      markPhase(container, "rom-url-created");
       const config = createEmulatorJsLaunchConfig(gameUrl, rom.name, document.baseURI);
 
       runtimeWindow.EJS_player = config.player;
@@ -189,18 +208,21 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       runtimeWindow.EJS_ready = runtimeCallback(() => {
         if (disposed) return;
         frame.dataset.emulatorjsLoaded = "true";
+        markPhase(container, "loader-ready");
       }, runtimeWindow);
       runtimeWindow.EJS_onGameStart = runtimeCallback(() => {
         if (disposed) return;
         if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
         startTimeoutRef.current = null;
         frame.dataset.emulatorjsReady = "true";
+        markPhase(container, "game-started");
         setState("ready");
         frame.focus();
       }, runtimeWindow);
       runtimeWindow.EJS_onExit = runtimeCallback(() => {
         fail("EmulatorJS runtime exited");
       }, runtimeWindow);
+      markPhase(container, "configured");
 
       const loader = runtimeDocument.createElement("script");
       loader.src = `${resolveEmulatorJsDataRoot(document.baseURI)}loader.js`;
@@ -209,6 +231,7 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       loader.addEventListener("error", () => fail("Unable to load packaged EmulatorJS runtime"), { once: true });
       runtimeDocument.head.append(loader);
       frame.dataset.emulatorjsBootstrap = "true";
+      markPhase(container, "loader-injected");
 
       if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
       startTimeoutRef.current = setTimeout(() => {
@@ -241,6 +264,7 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
     >
       <div
         ref={runtimeContainerRef}
+        data-emulatorjs-runtime-host="true"
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       />
       {state !== "ready" ? (
