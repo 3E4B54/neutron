@@ -11,6 +11,7 @@ import {
   createEmulatorJsLaunchConfig,
   EMULATORJS_NES_MIME,
   resolveEmulatorJsDataRoot,
+  resolveEmulatorJsHostUrl,
 } from "./runtime.ts";
 
 function romNode(name = "Fixture.nes"): FsNode {
@@ -60,6 +61,9 @@ test("EmulatorJS launch configuration stays package-relative and disables browse
   const base = "https://neutron.test/app/plasmon/index.html";
   expect(resolveEmulatorJsDataRoot(base)).toBe(
     "https://neutron.test/app/plasmon/System/Program%20Files/EmulatorJS/data/",
+  );
+  expect(resolveEmulatorJsHostUrl(base, "runtime-token")).toBe(
+    "https://neutron.test/app/plasmon/emulatorjs-host.html?token=runtime-token",
   );
 
   const config = createEmulatorJsLaunchConfig("blob:test-rom", "Fixture.nes", base);
