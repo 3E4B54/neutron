@@ -157,11 +157,6 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     await expect(nativeWindows).toHaveCount(before, { timeout: 10_000 });
   };
 
-  await page.context().grantPermissions(
-    ["clipboard-read", "clipboard-write"],
-    { origin: new URL(kernelUrl).origin },
-  );
-
   const exercisePackagedEditor = async (options: {
     createButton: "New Text Document" | "New Markdown Document";
     generatedName: "New Text Document" | "New Markdown Document";
@@ -172,7 +167,7 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
   }) => {
     const entry = await createDocument(options.createButton, options.generatedName, options.fileName);
     const opened = await openDocument(entry, options.appLabel);
-    const monaco = await waitForUsableMonaco(opened.editorWindow, options.appLabel);
+    await waitForUsableMonaco(opened.editorWindow, options.appLabel);
     await expect(opened.editorWindow.locator('[data-editor-engine="monaco"]').first()).toHaveAttribute(
       "aria-label",
       options.sourceLabel,
@@ -183,15 +178,13 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
       exact: true,
       includeHidden: true,
     }).first();
-    await monaco.click();
+    const firstLine = opened.editorWindow.locator(".monaco-editor .view-line").first();
+    await expect(firstLine).toBeVisible();
+    await firstLine.click({ position: { x: 1, y: 1 } });
     await expect(editContext).toBeFocused();
-    await page.evaluate(
-      async (text) => navigator.clipboard.writeText(text),
-      options.persistedText,
-    );
-    await page.keyboard.press("Control+V");
+    await page.keyboard.type(options.persistedText, { delay: 50 });
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
-    await expect(opened.editorWindow.locator(".view-line").first()).toHaveText(options.persistedText);
+    await expect(firstLine).toHaveText(options.persistedText);
 
     await opened.editorWindow.getByRole("button", { name: "Save", exact: true }).click();
     await expect(opened.editorWindow.getByText("Saved", { exact: true })).toBeVisible();
