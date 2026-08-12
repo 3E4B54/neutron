@@ -4,7 +4,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { syncEditorModelValue } from "./editorModel.ts";
+import { createOwnedEditorModel, syncEditorModelValue, type OwnedEditorModel } from "./editorModel.ts";
 import { installMonacoEnvironment } from "./monacoEnvironment.ts";
 
 export const MONACO_ENGINE_NAME = "Monaco";
@@ -35,7 +35,9 @@ type MonacoEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type MonacoModel = import("monaco-editor").editor.ITextModel;
 type MonacoDisposable = import("monaco-editor").IDisposable;
 
-/** Thin React lifecycle adapter around Monaco. The model is stable per resource. */
+let nextSurfaceInstanceId = 1;
+
+/** Thin React lifecycle adapter around Monaco. Each live surface owns its model. */
 export function MonacoEditorSurface({
   modelKey,
   value,
@@ -51,6 +53,8 @@ export function MonacoEditorSurface({
   const editorRef = useRef<MonacoEditor | null>(null);
   const modelRef = useRef<MonacoModel | null>(null);
   const monacoRef = useRef<MonacoApi | null>(null);
+  const surfaceInstanceIdRef = useRef<number | null>(null);
+  if (surfaceInstanceIdRef.current === null) surfaceInstanceIdRef.current = nextSurfaceInstanceId++;
   const applyingExternalValueRef = useRef(false);
   const onChangeRef = useRef(onChange);
   const onCursorChangeRef = useRef(onCursorChange);
@@ -65,7 +69,7 @@ export function MonacoEditorSurface({
   useEffect(() => {
     let cancelled = false;
     let editor: MonacoEditor | null = null;
-    let model: MonacoModel | null = null;
+    let ownedModel: OwnedEditorModel<MonacoModel> | null = null;
     const disposables: MonacoDisposable[] = [];
     setLoading(true);
     setError(null);
@@ -76,9 +80,12 @@ export function MonacoEditorSurface({
       .then((monaco) => {
         if (cancelled || !containerRef.current) return;
         monacoRef.current = monaco;
-        const uri = monaco.Uri.parse(`inmemory://plasmon/${encodeURIComponent(modelKey)}`);
-        monaco.editor.getModel(uri)?.dispose();
-        const createdModel: MonacoModel = monaco.editor.createModel(value, language, uri);
+        const created = createOwnedEditorModel(
+          modelKey,
+          surfaceInstanceIdRef.current!,
+          (uri) => monaco.editor.createModel(value, language, monaco.Uri.parse(uri)),
+        );
+        const createdModel = created.model;
         createdModel.updateOptions({ tabSize: 2, insertSpaces: true, trimAutoWhitespace: false });
         const createdEditor: MonacoEditor = monaco.editor.create(containerRef.current, {
           model: createdModel,
@@ -99,7 +106,7 @@ export function MonacoEditorSurface({
           smoothScrolling: true,
           wordWrap: "off",
         });
-        model = createdModel;
+        ownedModel = created;
         editor = createdEditor;
         editorRef.current = createdEditor;
         modelRef.current = createdModel;
@@ -137,9 +144,9 @@ export function MonacoEditorSurface({
       onReadyChangeRef.current?.(false);
       for (const disposable of disposables) disposable.dispose();
       editor?.dispose();
-      model?.dispose();
+      ownedModel?.dispose();
       if (editorRef.current === editor) editorRef.current = null;
-      if (modelRef.current === model) modelRef.current = null;
+      if (modelRef.current === ownedModel?.model) modelRef.current = null;
     };
   }, [modelKey]);
 
