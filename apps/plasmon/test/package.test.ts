@@ -20,11 +20,13 @@ const emulatorScriptUrl = new URL("../dist/web/System/Program Files/EmulatorJS/d
 const emulatorStyleUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/emulator.min.css", import.meta.url);
 const emulatorCoreUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/cores/fceumm-wasm.data", import.meta.url);
 const emulatorLegacyCoreUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/cores/fceumm-legacy-wasm.data", import.meta.url);
+const emulatorExtract7zUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/compression/extract7z.js", import.meta.url);
 const emulatorBrowserLoaderUrl = new URL("../dist/web/runtime/emulatorjs/data/loader.js", import.meta.url);
 const emulatorBrowserScriptUrl = new URL("../dist/web/runtime/emulatorjs/data/emulator.min.js", import.meta.url);
 const emulatorBrowserStyleUrl = new URL("../dist/web/runtime/emulatorjs/data/emulator.min.css", import.meta.url);
 const emulatorBrowserCoreUrl = new URL("../dist/web/runtime/emulatorjs/data/cores/fceumm-wasm.data", import.meta.url);
 const emulatorBrowserLegacyCoreUrl = new URL("../dist/web/runtime/emulatorjs/data/cores/fceumm-legacy-wasm.data", import.meta.url);
+const emulatorBrowserExtract7zUrl = new URL("../dist/web/runtime/emulatorjs/data/compression/extract7z.js", import.meta.url);
 const emulatorFixtureUrl = new URL("../dist/web/Games/Test ROMs/PlasmonTest.nes", import.meta.url);
 
 async function readManifest(): Promise<NeutronManifest> {
@@ -115,11 +117,13 @@ test("plasmon packages EmulatorJS authority, URL-safe browser assets, NES core, 
     style,
     core,
     legacyCore,
+    extract7z,
     browserLoader,
     browserScript,
     browserStyle,
     browserCore,
     browserLegacyCore,
+    browserExtract7z,
     fixture,
   ] = await Promise.all([
     readFile(emulatorHostHtmlUrl, "utf8"),
@@ -130,11 +134,13 @@ test("plasmon packages EmulatorJS authority, URL-safe browser assets, NES core, 
     readFile(emulatorStyleUrl),
     readFile(emulatorCoreUrl),
     readFile(emulatorLegacyCoreUrl),
+    readFile(emulatorExtract7zUrl),
     readFile(emulatorBrowserLoaderUrl),
     readFile(emulatorBrowserScriptUrl),
     readFile(emulatorBrowserStyleUrl),
     readFile(emulatorBrowserCoreUrl),
     readFile(emulatorBrowserLegacyCoreUrl),
+    readFile(emulatorBrowserExtract7zUrl),
     readFile(emulatorFixtureUrl),
   ]);
 
@@ -162,11 +168,13 @@ test("plasmon packages EmulatorJS authority, URL-safe browser assets, NES core, 
   expect(style.length).toBeGreaterThan(1_000);
   expect(core.length).toBeGreaterThan(100_000);
   expect(legacyCore.length).toBeGreaterThan(100_000);
+  expect(extract7z.length).toBeGreaterThan(100_000);
   expect(browserLoader).toEqual(loader);
   expect(browserScript).toEqual(script);
   expect(browserStyle).toEqual(style);
   expect(browserCore).toEqual(core);
   expect(browserLegacyCore).toEqual(legacyCore);
+  expect(browserExtract7z).toEqual(extract7z);
   expect(fixture.length).toBe(16 + 16_384 + 8_192);
   expect([...fixture.subarray(0, 8)]).toEqual([0x4e, 0x45, 0x53, 0x1a, 0x01, 0x01, 0x00, 0x00]);
 });
