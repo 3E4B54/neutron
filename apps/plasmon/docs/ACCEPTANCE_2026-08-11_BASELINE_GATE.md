@@ -55,7 +55,9 @@ The browser lane remains intentionally small. This Issue does not create broad U
 | Start/Search filesystem result semantics | **PASS** | deterministic fast/headless | Search covers matching folders/file categories; #32 routes filesystem-backed Start/Search activation through the canonical opener; #49 adds canonical Neutron-projection app classification/de-duplication. | #32, #49, #107 |
 | Packaged Search -> native application launch | **PASS** | packaged/browser | The installed golden path searches for Recycle Bin, launches it, and observes the real native Recycle Bin window. | #32, #45, #107 |
 | Start/Search click-away interaction | **NOT-YET-TESTABLE** | packaged/manual interaction | Production has click-away handling, but this gate does not broaden the golden path into generic overlay scripting. Human/manual packaged acceptance remains required. | #107 |
-| Current Start inventory | **FAIL** | current canonical defects | #87 still tracks the managed `System` folder for Settings/Explorer/Properties; #88 still tracks runtime-only hosts such as js-dos leaking into launchable Start inventory. | #87, #88, #107 |
+| Managed default `System` Start category retirement | **PASS** | deterministic filesystem/Start reconciliation | #87 is integrated: fresh reconciliation no longer creates the managed default `System` category for Settings/Explorer/Properties, and focused migration tests preserve user moves/renames/deletions/custom folders while remaining idempotent. | #87, #107 |
+| Visible packaged Start layout after `System` retirement | **NOT-YET-TESTABLE** | packaged/manual visual | #87 explicitly permits packaged/manual confirmation of the resulting visible Start layout. This gate does not promote deterministic reconciliation tests into human visual acceptance. | #87, #107 |
+| Runtime-only hosts in normal Start inventory | **FAIL** | current canonical inventory defect | #88 remains open: runtime-only hosts such as js-dos still need to be excluded from normal user-launchable Start inventory without breaking direct association/runtime launch. | #88, #107 |
 | Start pinning semantics | **PASS** | deterministic model/service | Pin state remains filesystem-backed and semantic pin/unpin behavior is covered below React. | #107 |
 | Shared Start/Shell pin-control implementation | **PASS** | component/presentation | #109 is integrated: literal platform emoji pin controls were replaced by shared Plasmon pin iconography while preserving accessible labels and FsService-backed pin semantics. | #109, #107 |
 | Shared Start/Shell pin-control visual acceptance | **NOT-YET-TESTABLE** | packaged/manual visual | #109 remains open with `needs-verification` for its bounded packaged/manual visual check. Component evidence is not promoted into human visual acceptance. | #109, #107 |
@@ -82,7 +84,7 @@ It does **not** imply that every Start item, taskbar state, media app, editor, d
 
 The integrated desktop should not be described as clearing the 2026-08-11 baseline while these directly relevant blockers remain:
 
-1. **Start inventory remains wrong** — #87 and #88.
+1. **Start inventory is not fully accepted** — #87's managed `System` category retirement is implemented but still lacks visible packaged/manual confirmation; #88 remains the actual runtime-only inventory FAIL.
 2. **Neutron application Search presentation remains incomplete** — #90; real installed projection activation also lacks package proof under #120.
 3. **Shared pin controls still require independent visual acceptance** — #109 is implemented but remains `needs-verification` for the bounded packaged/manual check.
 4. **Taskbar still needs composed lifecycle and visible acceptance** — #81 plus #72's remaining `needs-verification` packaged/manual check.
