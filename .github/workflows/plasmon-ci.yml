@@ -12,6 +12,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/plasmon-ci.yml"
+      - ".github/workflows/plasmon-browser-ci.yml"
   pull_request:
     paths:
       - "apps/plasmon/**"
@@ -21,6 +22,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/plasmon-ci.yml"
+      - ".github/workflows/plasmon-browser-ci.yml"
   workflow_dispatch:
 
 permissions:
