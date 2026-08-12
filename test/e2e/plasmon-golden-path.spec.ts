@@ -85,6 +85,27 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await expect(nativeWindows).toHaveCount(initialWindowCount + 1, { timeout: 20_000 });
   const dialog = nativeWindows.last();
   await expect(dialog).toBeVisible();
+
+  // Issue #108 visible boundary: folder activation and toolbar Back/Forward must
+  // reach the same production navigation model in the real packaged Explorer.
+  const explorerAddress = dialog.getByRole("textbox", { name: "Address" });
+  await expect(explorerAddress).toHaveValue("/");
+  const documentsEntry = dialog.locator("[data-fm-node-id]", { hasText: "Documents" }).first();
+  await expect(documentsEntry).toBeVisible();
+  await documentsEntry.dblclick();
+  await expect(explorerAddress).toHaveValue("/Documents");
+
+  const back = dialog.getByRole("button", { name: "Back" });
+  const forward = dialog.getByRole("button", { name: "Forward" });
+  await expect(back).toBeEnabled();
+  await back.click();
+  await expect(explorerAddress).toHaveValue("/");
+  await expect(forward).toBeEnabled();
+  await forward.click();
+  await expect(explorerAddress).toHaveValue("/Documents");
+  await back.click();
+  await expect(explorerAddress).toHaveValue("/");
+
   const titlebar = dialog.locator(".plasmon-window__titlebar");
   const workspace = await app.locator(".plasmon-window-layer").first().boundingBox();
   if (!workspace) throw new Error("Plasmon WindowLayer has no browser bounds");
