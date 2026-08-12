@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { localCanisterOrigin } from "neutron-tools/src/runtime.js";
 import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src/local_session.ts";
 
@@ -49,6 +49,46 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     const disposeIndex = stack.indexOf(".dispose (");
     expect(cancelIndex, `${label} cancellation must originate from cancel()`).toBeGreaterThanOrEqual(0);
     expect(disposeIndex, `${label} cancellation must flow into dispose()`).toBeGreaterThan(cancelIndex);
+  };
+
+  // Chromium's native EditContext is Monaco's real input boundary. Mirror the
+  // VS Code browser driver's textupdate path instead of synthesizing keyboard
+  // events that bypass EditContext's selection/update contract.
+  const typeInMonacoEditContext = async (editContext: Locator, text: string): Promise<void> => {
+    await editContext.evaluate((element, nextText) => {
+      const nativeElement = element as HTMLDivElement & {
+        editContext?: {
+          selectionStart: number;
+          selectionEnd: number;
+          dispatchEvent: (event: Event) => boolean;
+        };
+      };
+      const nativeEditContext = nativeElement.editContext;
+      if (!nativeEditContext) throw new Error("Monaco native EditContext is unavailable");
+      const TextUpdateEventCtor = (globalThis as unknown as {
+        TextUpdateEvent: new (type: string, init: {
+          updateRangeStart: number;
+          updateRangeEnd: number;
+          text: string;
+          selectionStart: number;
+          selectionEnd: number;
+          compositionStart: number;
+          compositionEnd: number;
+        }) => Event;
+      }).TextUpdateEvent;
+      if (!TextUpdateEventCtor) throw new Error("Browser TextUpdateEvent is unavailable");
+      const selectionStart = nativeEditContext.selectionStart;
+      const selectionEnd = nativeEditContext.selectionEnd;
+      nativeEditContext.dispatchEvent(new TextUpdateEventCtor("textupdate", {
+        updateRangeStart: selectionStart,
+        updateRangeEnd: selectionEnd,
+        text: nextText,
+        selectionStart: selectionStart + nextText.length,
+        selectionEnd: selectionStart + nextText.length,
+        compositionStart: 0,
+        compositionEnd: 0,
+      }));
+    }, text);
   };
 
   await page.goto(kernelUrl);
@@ -154,10 +194,19 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await expect(editorWindow).toBeVisible({ timeout: 20_000 });
   const editorSurface = editorWindow.locator('[data-editor-engine="monaco"][aria-label="Text content"]');
   await expect(editorSurface).toHaveAttribute("data-editor-ready", "true", { timeout: 30_000 });
+  const dirtyEditContext = editorWindow.getByRole("textbox", {
+    name: "Text content",
+    exact: true,
+    includeHidden: true,
+  }).first();
+  const dirtyFirstLine = editorWindow.locator(".monaco-editor .view-line").first();
 
-  await editorSurface.click({ position: { x: 120, y: 80 } });
-  await page.keyboard.type("dirty close proof");
+  await expect(dirtyFirstLine).toBeVisible();
+  await dirtyFirstLine.click({ position: { x: 1, y: 1 } });
+  await expect(dirtyEditContext).toBeFocused();
+  await typeInMonacoEditContext(dirtyEditContext, "dirty close proof");
   await expect(editorWindow.getByText("Modified", { exact: true })).toBeVisible();
+  expectNoPageErrors("dirty-close edit must not emit browser errors");
 
   const closeEditor = editorWindow.locator(".plasmon-window__controls").getByRole("button", { name: "Close" });
   await closeEditor.click();
@@ -165,6 +214,7 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await expect(closePrompt).toBeVisible({ timeout: 5_000 });
   await expect(closePrompt.getByRole("button", { name: "Save" })).toBeVisible();
   await expect(closePrompt.getByRole("button", { name: "Discard" })).toBeVisible();
+  expectNoPageErrors("opening dirty-close prompt must not emit browser errors");
   await closePrompt.getByRole("button", { name: "Cancel" }).click();
   await expect(closePrompt).not.toBeVisible();
   await expect(editorWindow).toBeVisible();
@@ -172,11 +222,14 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
 
   // Dirty it again so the second close remains deterministic even if autosave
   // had time to run after Cancel.
-  await editorSurface.click({ position: { x: 120, y: 80 } });
-  await page.keyboard.type(" again");
+  await dirtyFirstLine.click({ position: { x: 1, y: 1 } });
+  await expect(dirtyEditContext).toBeFocused();
+  await typeInMonacoEditContext(dirtyEditContext, " again");
   await expect(editorWindow.getByText("Modified", { exact: true })).toBeVisible();
+  expectNoPageErrors("dirty-close edit after Cancel must not emit browser errors");
   await closeEditor.click();
   await expect(closePrompt).toBeVisible({ timeout: 5_000 });
+  expectNoPageErrors("second dirty-close prompt must not emit browser errors");
   await expectOnlyMonacoDisposeCancellation("discarded dirty Text editor", async () => {
     await closePrompt.getByRole("button", { name: "Discard" }).click();
     await expect(app.getByRole("dialog", { name: "New Text Document.txt" })).toHaveCount(0, { timeout: 10_000 });
@@ -272,40 +325,7 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     await expect(firstLine).toBeVisible();
     await firstLine.click({ position: { x: 1, y: 1 } });
     await expect(editContext).toBeFocused();
-    await editContext.evaluate((element, text) => {
-      const nativeElement = element as HTMLDivElement & {
-        editContext?: {
-          selectionStart: number;
-          selectionEnd: number;
-          dispatchEvent: (event: Event) => boolean;
-        };
-      };
-      const nativeEditContext = nativeElement.editContext;
-      if (!nativeEditContext) throw new Error("Monaco native EditContext is unavailable");
-      const TextUpdateEventCtor = (globalThis as unknown as {
-        TextUpdateEvent: new (type: string, init: {
-          updateRangeStart: number;
-          updateRangeEnd: number;
-          text: string;
-          selectionStart: number;
-          selectionEnd: number;
-          compositionStart: number;
-          compositionEnd: number;
-        }) => Event;
-      }).TextUpdateEvent;
-      if (!TextUpdateEventCtor) throw new Error("Browser TextUpdateEvent is unavailable");
-      const selectionStart = nativeEditContext.selectionStart;
-      const selectionEnd = nativeEditContext.selectionEnd;
-      nativeEditContext.dispatchEvent(new TextUpdateEventCtor("textupdate", {
-        updateRangeStart: selectionStart,
-        updateRangeEnd: selectionEnd,
-        text,
-        selectionStart: selectionStart + text.length,
-        selectionEnd: selectionStart + text.length,
-        compositionStart: 0,
-        compositionEnd: 0,
-      }));
-    }, options.persistedText);
+    await typeInMonacoEditContext(editContext, options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await expect(firstLine).toHaveText(options.persistedText);
     expectNoPageErrors(`${options.appLabel} edit must not emit browser errors`);
