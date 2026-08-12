@@ -34,7 +34,10 @@ test("packaged vanilla Neutron Review persists and round-trips Markdown through 
   await harness.review.getByLabel("Export Markdown path").fill(exportPath);
   await harness.review.getByRole("button", { name: "Export Markdown" }).click();
   await approveFilesTool(page, "writeBinary");
-  await expect(harness.review.getByText("Exported revision", { exact: false })).toBeVisible();
+  const exportBanner = harness.review.locator(".banner");
+  await expect(exportBanner).toBeVisible({ timeout: 5_000 });
+  const exportMessage = await exportBanner.innerText();
+  expect(exportMessage, `Review export did not succeed: ${exportMessage}`).toContain("Exported revision");
 
   await harness.review.getByLabel("Markdown or TODO path").fill(exportPath);
   await harness.review.getByRole("button", { name: "Open Markdown/TODO" }).click();
