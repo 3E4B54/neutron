@@ -1,6 +1,7 @@
 import type { ProcessId, WindowId } from "../contracts/common.ts";
 import type {
   WindowCreateOptions,
+  WindowFocusSnapshot,
   WindowGeometry,
   WindowManager,
   WindowState,
@@ -108,6 +109,8 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
   private viewportOverride: WindowViewport | undefined;
   private nextZ: number;
   private createdCount = 0;
+  private focusedId: WindowId | null = null;
+  private focusMru: WindowId[] = [];
   private disposed = false;
   private readonly onBrowserResize = (): void => this.constrainToViewport();
 
@@ -137,6 +140,8 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
     this.disposed = true;
     if (typeof window !== "undefined") window.removeEventListener("resize", this.onBrowserResize);
     this.listeners.clear();
+    this.focusedId = null;
+    this.focusMru = [];
   }
 
   subscribe(listener: () => void): () => void {
@@ -171,6 +176,7 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
       minHeight,
     };
     this.windows.set(id, state);
+    this.recordFocus(id);
     this.compactZIfNeeded();
     this.emit();
     return id;
@@ -181,8 +187,13 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
     if (!state) return;
     state.minimized = false;
     state.z = this.raiseZ();
+    this.recordFocus(id);
     this.compactZIfNeeded();
     this.emit();
+  }
+
+  focusSnapshot(): WindowFocusSnapshot {
+    return { focusedId: this.focusedId, mru: [...this.focusMru] };
   }
 
   move(id: WindowId, x: number, y: number): void {
@@ -233,6 +244,7 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
     state.maximized = false;
     state.minimized = false;
     state.z = this.raiseZ();
+    this.recordFocus(id);
     this.compactZIfNeeded();
     this.emit();
   }
@@ -247,6 +259,7 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
     const state = this.windows.get(id);
     if (!state || state.minimized) return;
     state.minimized = true;
+    if (this.focusedId === id) this.activateFallback();
     this.emit();
   }
 
@@ -258,6 +271,7 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
         state.minimized = false;
         Object.assign(state, maximizeGeometry(this.getViewport()));
         state.z = this.raiseZ();
+        this.recordFocus(id);
         this.compactZIfNeeded();
         this.emit();
       }
@@ -268,6 +282,7 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
     state.maximized = true;
     state.minimized = false;
     state.z = this.raiseZ();
+    this.recordFocus(id);
     this.compactZIfNeeded();
     this.emit();
   }
@@ -282,6 +297,7 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
       if (state.maximized) Object.assign(state, maximizeGeometry(this.getViewport()));
       else if (snapSide) Object.assign(state, horizontalSnapGeometry(this.getViewport(), snapSide));
       state.z = this.raiseZ();
+      this.recordFocus(id);
       this.compactZIfNeeded();
       this.emit();
       return;
@@ -292,6 +308,7 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
         Object.assign(state, horizontalSnapGeometry(this.getViewport(), snapSide));
         state.maximized = false;
         state.z = this.raiseZ();
+        this.recordFocus(id);
         this.compactZIfNeeded();
         this.emit();
         return;
@@ -301,6 +318,7 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
       state.maximized = false;
       delete state.restoreGeometry;
       state.z = this.raiseZ();
+      this.recordFocus(id);
       this.compactZIfNeeded();
       this.emit();
       return;
@@ -312,13 +330,17 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
     this.snapSides.delete(id);
     delete state.restoreGeometry;
     state.z = this.raiseZ();
+    this.recordFocus(id);
     this.compactZIfNeeded();
     this.emit();
   }
 
   close(id: WindowId): void {
+    const wasFocused = this.focusedId === id;
     if (!this.windows.delete(id)) return;
     this.snapSides.delete(id);
+    this.removeFocusEntry(id);
+    if (wasFocused) this.activateFallback();
     this.emit();
   }
 
@@ -366,6 +388,42 @@ export class NativeWindowManager implements WindowManager, WindowGeometryCommitt
   private clearSnapForFloatingEdit(state: WindowState): void {
     if (!this.snapSides.delete(state.id)) return;
     delete state.restoreGeometry;
+  }
+
+  private recordFocus(id: WindowId): void {
+    this.pruneFocusMru();
+    this.focusMru = [id, ...this.focusMru.filter((candidate) => candidate !== id)];
+    this.focusedId = id;
+  }
+
+  private removeFocusEntry(id: WindowId): void {
+    this.focusMru = this.focusMru.filter((candidate) => candidate !== id);
+    if (this.focusedId === id) this.focusedId = null;
+    this.pruneFocusMru();
+  }
+
+  private pruneFocusMru(): void {
+    this.focusMru = this.focusMru.filter((id, index, all) => this.windows.has(id) && all.indexOf(id) === index);
+  }
+
+  private activateFallback(): void {
+    this.pruneFocusMru();
+    const fallback = this.focusMru.find((id) => {
+      const state = this.windows.get(id);
+      return Boolean(state && !state.minimized);
+    });
+    if (!fallback) {
+      this.focusedId = null;
+      return;
+    }
+    const state = this.windows.get(fallback);
+    if (!state) {
+      this.focusedId = null;
+      return;
+    }
+    state.z = this.raiseZ();
+    this.recordFocus(fallback);
+    this.compactZIfNeeded();
   }
 
   private uniqueId(): WindowId {
