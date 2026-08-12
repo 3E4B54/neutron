@@ -17,6 +17,7 @@ export async function login(page: Page): Promise<void> {
   }, runtime.developerIdentitySeed);
   await expect(page.locator('[data-tid="auth-error"]')).toHaveCount(0);
   await expect(page.locator('[data-tid="app-background-frame"][data-app-id="review"]')).toHaveCount(1);
+  await expect(page.locator('[data-tid="app-background-frame"][data-app-id="files"]')).toHaveCount(1);
   await page.frameLocator('[data-tid="app-background-frame"][data-app-id="review"]').locator("body").waitFor({ state: "attached" });
 }
 
@@ -53,6 +54,16 @@ export async function callReviewTool(page: Page, name: string, args: Record<stri
     window.addEventListener("message", onMessage);
     frame.contentWindow.postMessage({ type: "exec", id, payload: { action: "__neutron_msgbus_tools_call", payload: { name, arguments: args } } }, "*");
   }), { name, args, timeoutMs });
+}
+
+export async function approveFilesTool(page: Page, tool: "readBinary" | "writeBinary"): Promise<void> {
+  const dialog = page.locator('[data-tid="frontend-tool-dialog"]');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("review/background");
+  await expect(dialog).toContainText("app:files:background");
+  await expect(dialog).toContainText(tool);
+  await page.locator('[data-tid="frontend-tool-approve-session"]').click();
+  await expect(dialog).toHaveCount(0);
 }
 
 function kernelUrl(): string {
