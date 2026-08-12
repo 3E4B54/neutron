@@ -4,10 +4,7 @@ import type {
   ProcessRecord,
   WindowState,
 } from "../src/os/contracts/index.ts";
-import {
-  MemoryFsRepository,
-  PersistentFsService,
-} from "../src/os/fs/index.ts";
+import { MemoryFsRepository } from "../src/os/fs/index.ts";
 import {
   createPlasmonServices,
   type PlasmonServices,
@@ -23,7 +20,6 @@ export interface HeadlessPlasmonEnvironmentOptions {
 export interface HeadlessPlasmonEnvironment {
   readonly services: PlasmonServices;
   readonly repository: MemoryFsRepository;
-  readonly rawFs: PersistentFsService;
   readonly neutron: MockNeutronBridge;
   readonly neutronMessages: readonly string[];
   readonly ready: PlasmonServices["filesystem"]["ready"];
@@ -47,7 +43,6 @@ export function createHeadlessPlasmonEnvironment(
   options: HeadlessPlasmonEnvironmentOptions = {},
 ): HeadlessPlasmonEnvironment {
   const repository = new MemoryFsRepository();
-  const rawFs = new PersistentFsService(repository);
   const neutronMessages: string[] = [];
   const neutron = new MockNeutronBridge({
     elements: options.elements ?? [],
@@ -59,14 +54,17 @@ export function createHeadlessPlasmonEnvironment(
     viewport: () => ({ x: 0, y: 0, width: 1280, height: 720 }),
     listenForViewportChanges: false,
   });
-  const services = createPlasmonServices({ fs: rawFs, neutron, windows });
+  const services = createPlasmonServices({
+    filesystemRepository: repository,
+    neutron,
+    windows,
+  });
 
   const node = (path: string): Promise<FsNode | null> => services.fs.resolvePath(path);
 
   return {
     services,
     repository,
-    rawFs,
     neutron,
     neutronMessages,
     ready: services.filesystem.ready,
