@@ -19,6 +19,7 @@ import type {
   ProcessController,
   WindowManager,
 } from "../contracts/index.ts";
+import { PinIcon } from "../visual/primitives.tsx";
 import {
   activateSearchFilesystemResult,
   activateStartFilesystemNode,
@@ -543,7 +544,7 @@ export function Shell({
               aria-label={pinAction.label}
               aria-pressed={pinAction.pinned}
               onClick={() => presentation.pinKind === "native" ? toggleNativePin(presentation.pinId!) : toggleElementPin(presentation.pinId!)}
-            >📌</button> : null}
+            ><PinIcon pinned={pinAction.pinned} /></button> : null}
           </div>;
         })}{!startBusy && filteredStartItems.length === 0 ? <p>This Start Menu folder is empty.</p> : null}</div>
       </div>
@@ -573,7 +574,7 @@ export function Shell({
       role="menu"
       aria-label="Shell context menu"
       style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, bottom: "auto", transform: "none", width: 230, padding: 8 }}
-    ><div className="plasmon-shell__list">{contextPin ? <button type="button" role="menuitem" title={contextPin.action.label} onClick={() => { if (contextPin.kind === "native") toggleNativePin(contextPin.id); else toggleElementPin(contextPin.id); setContextMenu(null); }}>📌 <span><strong>{contextPin.action.label}</strong></span></button> : <><button type="button" role="menuitem" onClick={() => { setFlyout("start"); setContextMenu(null); }}>Start</button><button type="button" role="menuitem" onClick={() => { setFlyout("search"); setContextMenu(null); }}>Search</button><button type="button" role="menuitem" onClick={() => { setFlyout("settings"); setContextMenu(null); }}>Settings</button></>}</div></section> : null}
+    ><div className="plasmon-shell__list">{contextPin ? <button type="button" role="menuitem" title={contextPin.action.label} aria-label={contextPin.action.label} onClick={() => { if (contextPin.kind === "native") toggleNativePin(contextPin.id); else toggleElementPin(contextPin.id); setContextMenu(null); }}><PinIcon pinned={contextPin.action.pinned} /><span><strong>{contextPin.action.label}</strong></span></button> : <><button type="button" role="menuitem" onClick={() => { setFlyout("start"); setContextMenu(null); }}>Start</button><button type="button" role="menuitem" onClick={() => { setFlyout("search"); setContextMenu(null); }}>Search</button><button type="button" role="menuitem" onClick={() => { setFlyout("settings"); setContextMenu(null); }}>Settings</button></>}</div></section> : null}
 
     <nav className="plasmon-shell__taskbar" data-shell-owned-surface aria-label="Taskbar"><div className="plasmon-shell__taskbar-main"><button type="button" data-shell-flyout-toggle className="plasmon-shell__task-button" aria-label="Start" aria-expanded={flyout === "start"} onClick={() => toggleFlyout("start")}><StartMark /></button><button type="button" data-shell-flyout-toggle className="plasmon-shell__task-button" aria-label="Search" aria-expanded={flyout === "search"} onClick={() => toggleFlyout("search")}><SearchMark /></button><div className="plasmon-shell__tasks">{taskbarEntries.map((entry) => entry.kind === "element" ? <button key={entry.id} type="button" data-shell-context-element={entry.elementId} className={`plasmon-shell__task-button${entry.running === "yes" ? " is-running" : ""}`} aria-label={`${entry.name}; Neutron running state ${entry.running}`} data-running={entry.running} onClick={() => void activateTaskbar(entry)}><ShellIcon icon={entry.icon} label={entry.name} /><small>{entry.running}</small></button> : (() => {
       const action = decideNativeTaskbarAction(entry, windowStates);

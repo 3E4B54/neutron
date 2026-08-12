@@ -43,6 +43,25 @@ export function SystemIcon({ icon, className }: SystemIconProps) {
   return <img className={`plasmon-icon-art${className ? ` ${className}` : ""}`} src={SYSTEM_ICON_ASSETS[icon]} alt="" draggable={false} />;
 }
 
+export interface PinIconProps {
+  pinned: boolean;
+  className?: string | undefined;
+}
+
+/** Shared pin/unpin presentation; callers keep ownership of pin semantics and accessible labels. */
+export function PinIcon({ pinned, className }: PinIconProps) {
+  return (
+    <span
+      className={`plasmon-pin-icon${pinned ? " is-pinned" : ""}${className ? ` ${className}` : ""}`}
+      data-pin-state={pinned ? "pinned" : "unpinned"}
+      aria-hidden="true"
+    >
+      <SystemIcon icon="pin" />
+      <span className="plasmon-pin-icon__state" />
+    </span>
+  );
+}
+
 export interface FileTypeIconProps {
   icon: FileTypeIconName;
   className?: string | undefined;
