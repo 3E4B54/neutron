@@ -13,6 +13,7 @@ on:
       - "test/e2e/plasmon-golden-path.spec.ts"
       - "test/e2e/plasmon-review-demo.spec.ts"
       - "test/e2e/plasmon-emulatorjs-proof.spec.ts"
+      - "test/e2e/plasmon-demo-game.spec.ts"
       - "playwright.config.ts"
       - "plasmon-local.ndeploy.json"
       - "package.json"
@@ -28,6 +29,7 @@ on:
       - "test/e2e/plasmon-golden-path.spec.ts"
       - "test/e2e/plasmon-review-demo.spec.ts"
       - "test/e2e/plasmon-emulatorjs-proof.spec.ts"
+      - "test/e2e/plasmon-demo-game.spec.ts"
       - "playwright.config.ts"
       - "plasmon-local.ndeploy.json"
       - "package.json"
@@ -95,5 +97,6 @@ jobs:
               npx playwright test \
                 test/e2e/plasmon-golden-path.spec.ts \
                 test/e2e/plasmon-review-demo.spec.ts \
-                test/e2e/plasmon-emulatorjs-proof.spec.ts
+                test/e2e/plasmon-emulatorjs-proof.spec.ts \
+                test/e2e/plasmon-demo-game.spec.ts
           '
