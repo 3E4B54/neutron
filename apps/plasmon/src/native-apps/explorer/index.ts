@@ -6,7 +6,10 @@ import type {
   OpenService,
 } from "../../os/contracts/index.ts";
 import type { NativeAppComponent, NativeAppLoader } from "../../os/process/index.ts";
-import type { FileOperationClipboard } from "../../os/file-manager/model.ts";
+import type {
+  FileManagerOpenAuthority,
+  FileOperationClipboard,
+} from "../../os/file-manager/index.ts";
 
 export type { ExplorerAppProps } from "./ExplorerApp.tsx";
 export * from "./history.ts";
@@ -25,6 +28,7 @@ export interface ExplorerNativeDependencies {
   fsEvents?: FsEventSource;
   associations: AssociationRegistry;
   openService: OpenService;
+  openAuthority: FileManagerOpenAuthority;
   clipboard?: FileOperationClipboard;
 }
 
@@ -35,6 +39,7 @@ export function createExplorerNativeLoader(dependencies: ExplorerNativeDependenc
       ...props,
       associations: dependencies.associations,
       openService: dependencies.openService,
+      openAuthority: dependencies.openAuthority,
       ...(dependencies.fsEvents ? { fsEvents: dependencies.fsEvents } : {}),
       ...(dependencies.clipboard ? { clipboard: dependencies.clipboard } : {}),
     });

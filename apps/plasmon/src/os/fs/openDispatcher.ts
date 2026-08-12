@@ -26,6 +26,13 @@ export interface FilesystemOpenDispatcherOptions {
 
 export interface OpenFilesystemNodeOptions {
   handlerId?: HandlerId;
+  /**
+   * Optional presentation-owned directory action. The dispatcher still owns
+   * resource classification and shortcut dereference; callers such as an
+   * existing Explorer window may choose same-window navigation instead of the
+   * default behavior of opening another Explorer process.
+   */
+  onOpenDirectory?: (node: FsNode) => void | Promise<void>;
 }
 
 async function associationProbe(fs: FsService, node: FsNode): Promise<Uint8Array | undefined> {
@@ -96,6 +103,10 @@ export class FilesystemOpenDispatcher {
     }
 
     if (node.kind === "directory") {
+      if (options.onOpenDirectory) {
+        await options.onOpenDirectory(node);
+        return;
+      }
       const processId = await this.process.open("native:explorer", { nodeId: node.id });
       if (processId === null) throw new Error("File Manager is unavailable");
       return;

@@ -12,6 +12,7 @@ import type {
 import {
   FileManager,
   FileOperationClipboard,
+  type FileManagerOpenAuthority,
   type FileManagerSnapshot,
 } from "../file-manager/index.ts";
 import {
@@ -98,6 +99,7 @@ export async function persistDesktopPositions(
 
 export interface DesktopProps {
   fs: FsService;
+  openAuthority: FileManagerOpenAuthority;
   fsEvents?: FsEventSource;
   process: ProcessController;
   associations?: AssociationRegistry;
@@ -108,6 +110,7 @@ export interface DesktopProps {
 
 export function Desktop({
   fs,
+  openAuthority,
   fsEvents,
   process,
   associations,
@@ -180,6 +183,7 @@ export function Desktop({
       <FileManager
         directoryId={desktop.id}
         fs={fs}
+        openAuthority={openAuthority}
         {...(fsEvents ? { fsEvents } : {})}
         {...(associations ? { associations } : {})}
         {...(openService ? { openService } : {})}

@@ -10,6 +10,12 @@
 
 Logical Atom/resource helpers keep immutable logical identity distinct from path/name and physical application/process identity. Package/shortcut parsers are compatibility/resource-description helpers, not alternate application authorities.
 
+## Default persistence
+
+Production and supported preview composition persist association defaults through `FsServiceAssociationDefaultStore`. Hosted Plasmon therefore reaches durable background persistence through the filesystem RPC boundary, while standalone preview uses the same `FsService` semantics over its selected filesystem repository.
+
+`MemoryAssociationDefaultStore` remains available for isolated tests that explicitly inject an in-memory preference store. There is no supported foreground `localStorage` association-default store in the active subsystem surface; durable association preferences must not acquire a second browser-local authority.
+
 ## Refactor direction
 
 Keep matching, persisted defaults, resource metadata/parsing, and execution delegation as separable concerns. Centralize extension/MIME/logical type knowledge here or in shared content metadata so Properties, Search, FileManager, and native apps do not grow contradictory local mappings.
@@ -18,4 +24,4 @@ UI code should consume ordered candidates/default operations rather than downcas
 
 ## Testing
 
-Use fast tests for registration validation, deterministic ordering, specificity/default behavior, persistence/reconstruction, malformed input, compatibility parsers, and logical-resource matching. Browser tests are appropriate for the actual Open With dialog/persistence wiring, not for re-testing matching rules through clicks.
+Use fast tests for registration validation, deterministic ordering, specificity/default behavior, persistence/reconstruction, malformed input, compatibility parsers, and logical-resource matching. Composition coverage should prove production defaults persist through `FsService` and survive service reconstruction. Browser tests are appropriate for the actual Open With dialog/persistence wiring, not for re-testing matching rules through clicks.

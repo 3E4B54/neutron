@@ -22,30 +22,6 @@ export class MemoryAssociationDefaultStore implements AssociationDefaultStore {
   }
 }
 
-export class LocalStorageAssociationDefaultStore implements AssociationDefaultStore {
-  private readonly storage: Storage;
-  private readonly prefix: string;
-
-  constructor(storage?: Storage, prefix = "plasmon.association.default.") {
-    const resolved = storage ?? (typeof localStorage !== "undefined" ? localStorage : null);
-    if (!resolved) throw new Error("localStorage is unavailable in this environment");
-    this.storage = resolved;
-    this.prefix = prefix;
-  }
-
-  async get(typeKey: string): Promise<HandlerId | null> {
-    return this.storage.getItem(`${this.prefix}${typeKey}`);
-  }
-
-  async set(typeKey: string, handlerId: HandlerId): Promise<void> {
-    this.storage.setItem(`${this.prefix}${typeKey}`, handlerId);
-  }
-
-  async delete(typeKey: string): Promise<void> {
-    this.storage.removeItem(`${this.prefix}${typeKey}`);
-  }
-}
-
 export const associationTypeKey = {
   extension(extension: string): string {
     return `extension:${normalizeExtension(extension)}`;
