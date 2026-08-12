@@ -191,8 +191,17 @@ function fileSubtitle(node: FsNode, category: FileSearchCategory): string {
   return category === "media" ? "Media" : "Document";
 }
 
+function elementRuntimeLabel(running: ExternalElement["running"]): string {
+  switch (running) {
+    case "yes": return "Running";
+    case "no": return "Not running";
+    case "unknown": return "Runtime status unavailable";
+  }
+}
+
 function elementSubtitle(element: ExternalElement): string {
-  return `${element.description || "Neutron Element"} · running ${element.running}`;
+  const description = element.description.trim() || "Neutron application";
+  return `${description} · ${elementRuntimeLabel(element.running)}`;
 }
 
 function projectionSearchResult(node: FsNode, metadata: NeutronAppMetadata): NeutronProjectionSearchResult {
@@ -200,8 +209,8 @@ function projectionSearchResult(node: FsNode, metadata: NeutronAppMetadata): Neu
     kind: "neutron-projection",
     id: `element:${metadata.elementId}`,
     category: "apps",
-    title: metadata.name ?? node.name,
-    subtitle: metadata.description ?? "Neutron application projection",
+    title: metadata.name ?? metadata.elementId,
+    subtitle: metadata.description ?? "Neutron application",
     ...(metadata.icon ? { icon: metadata.icon } : {}),
     elementId: metadata.elementId,
     node,
@@ -217,8 +226,17 @@ function withElementPresentation(
     ...projection,
     title: element.name,
     subtitle: elementSubtitle(element),
-    ...(element.icon ? { icon: element.icon } : { icon: undefined }),
+    ...(element.icon ? { icon: element.icon } : {}),
   };
+}
+
+export function searchApplicationIcon(result: ShellSearchResult): NativeAppDefinition["icon"] | string | undefined {
+  switch (result.kind) {
+    case "native-app": return result.app.icon;
+    case "element": return result.element.icon;
+    case "neutron-projection": return result.icon;
+    default: return undefined;
+  }
 }
 
 function shortcutSubtitle(target: StartShortcutTarget): string {
