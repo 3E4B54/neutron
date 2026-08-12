@@ -155,6 +155,12 @@ export class MemorySharedResourceStore implements SharedResourceStore {
 
     const key = identityKey(request.identity);
     const existing = this.state.resources.get(key);
+    if (existing && existing.record.resourceType !== request.resourceType) {
+      throw new ResourceIntegrityError(
+        `Shared-resource type is immutable for ${request.identity.namespace}/${request.identity.resourceId}: ` +
+          `${existing.record.resourceType} != ${request.resourceType}`,
+      );
+    }
     const actualRevision = existing?.record.currentRevision ?? null;
     if (request.expectedRevision !== actualRevision) {
       throw new RevisionConflictError(request.expectedRevision, actualRevision);
@@ -186,7 +192,6 @@ export class MemorySharedResourceStore implements SharedResourceStore {
     if (existing) {
       existing.record = {
         ...existing.record,
-        resourceType: request.resourceType,
         currentRevision: revision.revision,
         updatedAt: request.createdAt,
       };
