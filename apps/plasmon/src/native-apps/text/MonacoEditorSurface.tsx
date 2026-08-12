@@ -90,6 +90,11 @@ export function MonacoEditorSurface({
           lineHeight: 21,
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
           minimap: { enabled: false },
+          // Monaco 0.54 enables sticky scroll by default. Its provider cancels
+          // and restarts async model work on every content change, which leaks
+          // Canceled exceptions through the standalone browser surface. Plasmon
+          // does not expose sticky-scroll UX yet, so keep that contribution idle.
+          stickyScroll: { enabled: false },
           lineNumbers: "on",
           glyphMargin: true,
           folding: true,
