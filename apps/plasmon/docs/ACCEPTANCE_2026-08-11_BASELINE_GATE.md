@@ -57,7 +57,8 @@ The browser lane remains intentionally small. This Issue does not create broad U
 | Start/Search click-away interaction | **NOT-YET-TESTABLE** | packaged/manual interaction | Production has click-away handling, but this gate does not broaden the golden path into generic overlay scripting. Human/manual packaged acceptance remains required. | #107 |
 | Current Start inventory | **FAIL** | current canonical defects | #87 still tracks the managed `System` folder for Settings/Explorer/Properties; #88 still tracks runtime-only hosts such as js-dos leaking into launchable Start inventory. | #87, #88, #107 |
 | Start pinning semantics | **PASS** | deterministic model/service | Pin state remains filesystem-backed and semantic pin/unpin behavior is covered below React. | #107 |
-| Start/Shell pin-control presentation | **FAIL** | current canonical visual defect | #109 still tracks literal `📌` emoji controls instead of the accepted shared icon presentation. | #109, #107 |
+| Shared Start/Shell pin-control implementation | **PASS** | component/presentation | #109 is integrated: literal platform emoji pin controls were replaced by shared Plasmon pin iconography while preserving accessible labels and FsService-backed pin semantics. | #109, #107 |
+| Shared Start/Shell pin-control visual acceptance | **NOT-YET-TESTABLE** | packaged/manual visual | #109 remains open with `needs-verification` for its bounded packaged/manual visual check. Component evidence is not promoted into human visual acceptance. | #109, #107 |
 | Taskbar state derivation | **PASS** | deterministic model | #72's merged implementation derives pinned-only, launching, running, active, and uncertain states from canonical Process/Windowing/Neutron/Shell observations. Focused tests preserve genuine `unknown` uncertainty without raw runtime tokens in accessibility labels. | #72, #107 |
 | Taskbar cross-authority lifecycle | **NOT-YET-TESTABLE** | composed headless regression not integrated | #81 still owns the shared-headless Process/Windowing/Shell lifecycle regression: pinned-only -> running -> active/inactive -> minimized/restored -> stopped. | #81, #107 |
 | Taskbar visible wording/accessibility | **NOT-YET-TESTABLE** | packaged/manual | #72 remains open with `needs-verification` specifically for the visible packaged/manual wording/accessibility check after its implementation merged. | #72, #107 |
@@ -83,7 +84,7 @@ The integrated desktop should not be described as clearing the 2026-08-11 baseli
 
 1. **Start inventory remains wrong** — #87 and #88.
 2. **Neutron application Search presentation remains incomplete** — #90; real installed projection activation also lacks package proof under #120.
-3. **Start/Shell pin presentation remains provisional** — #109.
+3. **Shared pin controls still require independent visual acceptance** — #109 is implemented but remains `needs-verification` for the bounded packaged/manual check.
 4. **Taskbar still needs composed lifecycle and visible acceptance** — #81 plus #72's remaining `needs-verification` packaged/manual check.
 5. **Text/Markdown real Monaco workflows lack integrated packaged proof** — #67.
 6. **The explicit installed-package js-dos fixture/game path is not accepted** — #121; the old boot-time Doom seed remains intentionally retired.
