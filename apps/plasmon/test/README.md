@@ -31,6 +31,17 @@ bun test src/native-apps
 
 Prefer executable behavior over source-string assertions. If source inspection is unavoidable, assert the smallest durable relationship rather than local naming or incidental implementation shape.
 
+## Reusable headless environment
+
+`headlessEnvironment.ts` provides the shared fast composition for cross-surface workflows. It calls `createPlasmonServices()` with deterministic external boundaries rather than reproducing OS behavior in tests:
+
+- `MemoryFsRepository` backs the real `PersistentFsService`;
+- `MockNeutronBridge` stands in for Neutron RPC;
+- `NativeWindowManager` runs with deterministic IDs and a fixed headless viewport;
+- filesystem bootstrap/policy, associations, opening, native-app registration, process lifecycle, and window semantics remain the production implementations.
+
+Use `createHeadlessPlasmonEnvironment()` when a workflow spans several Plasmon authorities and does not require React or browser behavior. Prefer its exposed production `services` plus small state-inspection helpers over feature-specific fake models. If a workflow needs a new semantic operation, add that operation to the owning production model/controller/command rather than implementing it in this harness.
+
 ## Package lane
 
 Use:
