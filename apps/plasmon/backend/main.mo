@@ -382,7 +382,7 @@ module {
 
             #ok(published);
         };
-    }
+    };
 
 /*---NEUTRON GENERATED BEGIN---*/
 
