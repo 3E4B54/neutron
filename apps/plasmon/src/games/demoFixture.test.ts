@@ -101,7 +101,9 @@ test("the explicit packaged fixture survives hosted filesystem transport and ope
     });
     if (!node) throw new Error("Composed demo fixture was not visible in filesystem inventory");
 
-    expect((await services.associations.resolve(node)).map(({ id }) => id)).toEqual(["runtime:js-dos"]);
+    const handlers = (await services.associations.resolve(node)).map(({ id }) => id);
+    expect(handlers[0]).toBe("runtime:js-dos");
+    expect(handlers).toContain("native:text");
     await services.filesystem.open.openNode(node.id);
 
     const processes = services.process.list();
