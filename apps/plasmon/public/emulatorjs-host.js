@@ -18,6 +18,27 @@
     post("error", reason instanceof Error ? reason.message : reason || "EmulatorJS runtime error");
   };
 
+  const disableBrowserPersistence = () => {
+    // Kernel intentionally runs app documents in an allow-scripts sandbox with
+    // an opaque origin. EmulatorJS 4.2.3 probes window.localStorage before it
+    // checks EJS_disableLocalStorage, and its save-state storage still probes
+    // IndexedDB even when EJS_disableDatabases is true. Shadow both browser
+    // persistence capabilities inside this runtime instance instead of
+    // weakening Kernel's sandbox or making browser storage authoritative.
+    for (const name of ["localStorage", "indexedDB"]) {
+      try {
+        Object.defineProperty(window, name, {
+          configurable: true,
+          enumerable: true,
+          value: null,
+          writable: false,
+        });
+      } catch (error) {
+        throw new Error(`Unable to isolate EmulatorJS ${name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  };
+
   window.addEventListener("error", (event) => {
     fail(event.error || event.message || "EmulatorJS runtime error");
   });
@@ -56,6 +77,7 @@
       // while this package-local mirror is the browser transport path.
       const dataRoot = new URL("./runtime/emulatorjs/data/", window.location.href).href;
 
+      disableBrowserPersistence();
       gameUrl = URL.createObjectURL(new Blob([message.bytes], { type: "application/octet-stream" }));
       window.EJS_player = "#game";
       window.EJS_core = "nes";
