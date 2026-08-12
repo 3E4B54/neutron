@@ -2,17 +2,17 @@
 
 This directory integrates packaged EmulatorJS as an association-backed Plasmon runtime. It is a runtime host, not a Games launcher and not a `.sys` application.
 
-The initial supported resource is an iNES `.nes` ROM. Association matching selects `runtime:emulatorjs`; the normal OpenService, process, and window authorities create the host. `EmulatorJsPlayer.tsx` reads the selected filesystem node through `FsService`, then gives the ROM to an isolated same-origin iframe running the packaged EmulatorJS browser engine.
+The initial supported resource is an iNES `.nes` ROM. Association matching selects `runtime:emulatorjs`; the normal OpenService, process, and window authorities create the host. `EmulatorJsPlayer.tsx` reads and validates the selected filesystem node through `FsService`, then gives the ROM bytes to an isolated child iframe running the packaged EmulatorJS browser engine.
 
 ## Runtime assets and lifecycle
 
-Packaged runtime data lives under `/System/Program Files/EmulatorJS`. The host resolves that path relative to the installed Plasmon document so it continues to work when Neutron serves Plasmon below `/app/plasmon/`.
+Packaged runtime data lives under `/System/Program Files/EmulatorJS`. The iframe navigates to the package-local `emulatorjs-host.html`; that child host loads `emulatorjs-host.js`, creates the ROM Blob URL in its own browsing context, sets the `EJS_*` globals, and injects the package-local EmulatorJS `loader.js`.
 
-EmulatorJS 4.2.3 uses global `EJS_*` configuration. Each process therefore gets its own ordinary blank iframe so runtime globals, WASM, audio, timers, and engine state are isolated per native window. Following the proven daedalOS boundary, the runtime host owns that iframe imperatively: it creates and appends the element into a stable React-owned container, populates its document directly, assigns the `EJS_*` configuration and lifecycle callbacks on its `contentWindow`, and injects the packaged `loader.js` into that same document. React owns the surrounding container, not the runtime document. Only the ROM bytes use a Blob URL.
+EmulatorJS 4.2.3 uses browser-global `EJS_*` configuration. Each process therefore gets its own iframe so runtime globals, WASM, audio, timers, and engine state remain isolated per native window. Plasmon does not inspect or mutate the iframe document: Neutron can isolate the outer application browsing context, so direct `contentDocument` access is not a valid runtime contract. Instead, the parent and packaged child exchange token-validated `postMessage` lifecycle messages. The child reports `loaded` only from the real `EJS_ready` callback and `ready` only from the real `EJS_onGameStart` callback; tests must not synthesize those states.
 
-Do not replace this with a navigated `srcdoc` or Blob-hosted runtime document without packaged-browser evidence. Chromium may treat packaged runtime scripts loaded from an opaque nested document as cross-origin and block them before EmulatorJS initializes. Likewise, do not move the runtime document back under declarative React iframe ownership without browser evidence: the runtime needs one exact iframe/document instance from creation through teardown. The direct blank-iframe/contentWindow pattern keeps runtime assets on the Plasmon application origin while preserving one-engine-per-process isolation.
+This keeps the approved daedalOS-style one-iframe-per-runtime-instance boundary while adapting bootstrap to Neutron's application isolation. Required EmulatorJS scripts, styles, fceumm core data, and the generated proof ROM remain package-local. Do not replace the real child runtime with a test-only frame, readiness flag, filename dispatch, or generic emulator framework.
 
-Unmounting the host terminates EmulatorJS when available, removes the exact runtime iframe, and revokes the ROM object URL; no shared emulator framework is introduced.
+Unmounting the host sends a terminate command to the exact child runtime and removes its iframe. No shared emulator framework is introduced.
 
 The host disables EmulatorJS local settings/database caches where the public configuration supports it. Plasmon's filesystem remains authoritative for the ROM resource and any durable product state.
 
@@ -22,4 +22,4 @@ The legal packaged acceptance ROM is a generated mapper-0 NES test image with no
 
 ## Testing
 
-Use fast Bun tests for `.nes` association matching, ROM validation, launch configuration, and the canonical headless filesystem -> association -> OpenService -> process/window path. Use the packaged browser lane only to prove installed EmulatorJS assets are served, the NES core initializes, and iframe teardown works in a real browser.
+Use fast Bun tests for `.nes` association matching, ROM validation, package-relative host/data resolution, and the canonical headless filesystem -> association -> OpenService -> process/window path. Package acceptance verifies the real child host and EmulatorJS/core assets are present. Use the packaged browser lane only to prove the installed child host boots, the actual package-local loader/core starts the generated NES fixture, and iframe teardown works in a real browser.
