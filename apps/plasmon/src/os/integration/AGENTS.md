@@ -2,31 +2,22 @@
 
 ## Authority
 
-This directory is the composition boundary. It wires implementations together;
-it must not become a second home for subsystem policy.
-
-`services.ts` constructs filesystem transport, windows, Neutron bridge, native
-registry, association defaults, process controller, OpenService, clipboard and
-the filesystem core. `PlasmonOS.tsx` consumes those public services.
+`integration/**` composes public subsystem implementations. It must not become a second policy layer for filesystem, associations, process/windowing, Shell, native apps, or Neutron.
 
 ## Rules
 
-- Preserve all compatible subsystem behavior when integrating changes; do not
-  replace an integration file wholesale with stale branch state.
-- Hosted filesystem access goes through the persistent background RPC boundary;
-  standalone preview may use browser-local repository fallback.
-- Association defaults use the raw FsService-backed store.
-- `IntegratedOpenService` coordinates native handlers and Kernel Elements; do
-  not add filename/game-specific dispatch.
-- Fakes are test seams, never proof of a real Kernel capability.
-- Authorization must fail closed when the required real service is unavailable.
-- `AGENT_HANDOFFS.md` is historical handoff context, not higher authority than
-  current scoped docs/contracts.
-- `MTN_0_2_CONTRACT_RECONCILIATION.md` constrains the cross-AppScope security
-  boundary; do not collapse provider semantics into MTN or vice versa.
+- Integrate through public contracts and preserve compatible behavior from all current subsystems; do not replace composition wholesale with stale branch state.
+- Hosted filesystem access stays behind the persistent background/RPC boundary; standalone preview may use approved local persistence.
+- Association/default/preference persistence must reuse approved authorities rather than new foreground stores.
+- Generic opening coordinates resolved handlers/runtimes; do not add filename/application-specific dispatch in composition.
+- Fakes are test/preview seams, never proof of a real Kernel or security capability.
+- Authorization/security integration must fail safely when the required real service is unavailable.
+- Historical handoff/design notes are context below current scoped docs/contracts.
+
+## Refactor direction
+
+Keep `services.ts` an explicit service graph. Move policy into owning subsystems, remove compatibility adapters once consumers are migrated, and avoid special-case integration branches that become alternate authorities.
 
 ## Validation
 
-Integration tests should prove service composition and real public contracts.
-For visible paths, add packaged browser tests; a source-level composition test
-does not prove the installed foreground uses the intended implementation.
+Use integration tests for service composition and public contracts. Use browser/package tests when the active entrypoint, hosted transport, built assets, workers, or real Kernel interaction are part of the behavior.

@@ -2,35 +2,24 @@
 
 ## Authority
 
-Shell owns Start, Search presentation, taskbar/tray, calendar, flyouts, pinning
-and shell preferences. It does not own generic filesystem opening.
+Shell owns Start/Search presentation, taskbar/tray, calendar, flyouts/context menus, pinning, shell preferences, and shell-level navigation/orchestration. It does not own generic filesystem opening, process storage, or Neutron installation/runtime authority.
 
-## Start
+## Rules
 
-- `/System/Start Menu` is the single filesystem-backed Start inventory.
-- Do not add a parallel hard-coded application list.
-- User rename/move/delete of Start entries must be respected by reconciliation.
-- System implementation folders must not leak into Start simply because they
-  exist under `/System`.
-- Runtime-only handlers such as js-dos must not appear as standalone Start apps.
+- Derive native tasks from process/window authorities rather than maintaining shadow process state.
+- Derive external application state from `NeutronBridge`; preserve uncertainty when the Kernel cannot authoritatively answer.
+- Start/Search inventories consume shared filesystem/application metadata rather than hard-coded parallel application catalogs.
+- Opening from Shell delegates through shared opening/filesystem/association/Neutron services.
+- Preferences persist through the approved preference store, not ad hoc foreground browser storage.
+- Reuse shared resource visuals and semantic classification rather than shell-specific filename/type inference.
+- Subscriptions/invalidation must keep derived task/search/start state current without requiring incidental user interaction.
 
-## Search
+Specific paths, suffix display bugs, individual runtime handlers, visual color fixes, or one-off Start entries belong in Issues/tests rather than this generic file.
 
-- Classify results with shared semantic resource policy.
-- `.neutron` projections are Applications, not Documents.
-- Hide implementation suffixes such as `.neutron` in application display names.
-- Do not expose internal yes/no runtime state labels as user-facing app chrome.
-- Opening results delegates to filesystem/association services; directories open
-  Explorer.
+## Refactor direction
 
-## Taskbar/preferences
-
-- Process/window/Neutron subscriptions must invalidate taskbar state promptly;
-  users must not need to click the desktop to make closed-app icons disappear.
-- Preferences persist through FsService metadata, not localStorage.
-- Use shared visual assets; do not reintroduce deprecated red pin/icon language.
+Reduce the number of state machines directly coordinated in `Shell.tsx`. Extract production controllers/models for deterministic Start/Search/taskbar/flyout actions and keep React responsible for browser event wiring/rendering.
 
 ## Validation
 
-Add packaged Playwright coverage for Start contents, Search classification/open,
-pin/unpin, close invalidation and click-away behavior.
+Keep deterministic model/preference/search/start/subscription tests. Use real-browser tests for keyboard/focus/click-away/context-menu/taskbar behavior and installed Neutron verification only where Kernel behavior is part of the claim.

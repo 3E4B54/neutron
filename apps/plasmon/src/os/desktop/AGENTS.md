@@ -1,14 +1,22 @@
 # Desktop agent instructions
 
-- Treat `/Desktop` as an FsService directory; do not add parallel persistence.
-- Preserve NodeId-keyed placement across rename/move.
-- Delegate generic opening to filesystem core/open dispatcher.
-- Never reintroduce Shell-owned shortcut execution.
-- Use shared visual presentation/shortcut overlays from `os/visual`.
-- Reuse FileManager selection/interaction semantics where applicable rather than
-  creating incompatible Desktop-only rules.
-- Protect modal pointer boundaries from Desktop marquee handling.
-- Add packaged browser regressions for user-visible Desktop failures.
+## Authority
 
-Desktop is a presentation layer. Filesystem policy, associations, process
-lifecycle and Kernel opening remain owned by their respective subsystems.
+`desktop/**` owns the desktop workspace presentation and desktop-specific layout state. It consumes filesystem/FileManager/opening authorities rather than replacing them.
+
+## Rules
+
+- Desktop contents come from `FsService`; do not add parallel file persistence.
+- Persist layout against stable node identity, not path/display name.
+- Reuse shared FileManager selection/file-operation/opening semantics where applicable.
+- Keep generic resource opening delegated to shared OS services.
+- Use shared visual primitives instead of creating Desktop-only resource/icon semantics.
+- Keep modal/dialog event boundaries from leaking into desktop pointer/marquee behavior.
+
+## Refactor direction
+
+Keep `Desktop.tsx` thin. Move deterministic layout/gesture decisions into production helpers and move shared file interaction improvements into FileManager rather than forking behavior here.
+
+## Validation
+
+Test layout/identity semantics below React. Use browser tests for real pointer/marquee/drag/focus/modal behavior and packaged Desktop workflows when DOM behavior is the claim.

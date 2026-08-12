@@ -1,24 +1,21 @@
 # Desktop
 
-The Desktop is the visual filesystem view of `/Desktop`. It is not a separate
-desktop database and it is not a launch authority.
+`desktop/**` is the Plasmon Desktop presentation over filesystem state. `Desktop.tsx` reuses the shared FileManager interaction surface and adds desktop-specific layout persistence from `layout.ts`.
 
-`Desktop.tsx` composes FileManager-style entry interaction over `FsService` and
-`FsEventSource`; `layout.ts` assigns/persists grid placement keyed by stable
-`NodeId`.
+The Desktop is not a separate file database, application registry, or launch authority. Filesystem contents come from `FsService`; opening and file operations route through the shared OS services used by other filesystem surfaces.
 
-## Invariants
+## State and layout
 
-- Desktop contents come from the filesystem.
-- Placement follows node identity, so rename does not relocate an item.
-- Newly created nodes receive a free slot before placement persistence finishes.
-- Double-click/open must use the shared filesystem-aware dispatcher. Shortcuts,
-  `.sys`, `.neutron`, directories and ordinary files must not have Desktop-only
-  launch semantics.
-- Shortcut presentation uses the target artwork plus the shared small shortcut
-  overlay; the overlay must not replace the whole icon.
-- Selection, marquee, rename and drag interactions must not leak through modal
-  dialogs such as Open With.
+Desktop placement is keyed by stable filesystem node identity rather than path/name. That lets a rename preserve placement. Layout helpers are deliberately separable from React so allocation/repositioning can be tested deterministically.
 
-Packaged Desktop behavior is important acceptance surface and should receive
-Playwright coverage for shortcut/open, selection and drag flows.
+`Desktop.tsx` should remain a relatively thin composition layer. Selection, file operations, context menus, generic opening, and common entry behavior belong in reusable FileManager/shared services rather than Desktop-only forks.
+
+## Refactor direction
+
+When Desktop and FileManager diverge, prefer improving their shared presentation/model layer. Keep desktop-only concerns limited to desktop workspace layout, background behavior, and desktop-specific interaction conventions.
+
+If pointer/marquee/drag behavior becomes complex, extract reusable production interaction helpers rather than burying geometry/state decisions in component handlers.
+
+## Testing
+
+Use fast tests for layout allocation, identity-based placement, and other deterministic helpers. Use real-browser tests for marquee/pointer drag, modal event boundaries, focus/keyboard behavior, and packaged workflows where the DOM is material. Manual review remains appropriate for icon spacing, density, and desktop interaction feel.

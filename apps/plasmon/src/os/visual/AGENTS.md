@@ -2,29 +2,23 @@
 
 ## Authority
 
-`visual/**` defines shared visual assets, sizing, presentation composition,
-shortcut overlays, media/native-app presentation and wallpaper primitives.
+`visual/**` defines shared visual tokens, sizing, resource/application/media presentation, overlays, fallback artwork, and wallpaper primitives. It is presentation-only.
 
 ## Rules
 
-- Use the shared semantic size tokens; do not create competing numeric icon
-  systems per surface.
-- Preserve developer/native artwork and media aspect ratio with `contain` rather
-  than crop-to-fill.
-- A shortcut keeps the target icon/artwork and adds a **small overlay** in the
-  conventional corner. The shortcut marker must not replace or dominate the
-  original icon.
-- `.sys`, application, folder/file/media and resource semantics should map to
-  shared visual assets consistently across Desktop, FileManager, Start/Search
-  and taskbar.
-- Do not invent DOS/Emulator system-app artwork as a way to create fake `.sys`
-  apps.
-- Visual parity work should use the accepted Plasmon GUI/reference behavior and
-  packaged screenshots, not merely unit snapshots.
-- Consumers should compose these primitives instead of hard-coding parallel
-  icon fallback/palette logic.
+- Use shared semantic tokens/sizing; do not create competing numeric systems per surface.
+- Semantic resource/application classification happens before the visual layer. Do not infer product meaning from filenames or private subsystem state here.
+- Preserve native/developer artwork and media aspect ratio unless a product-owned transformation explicitly says otherwise.
+- Compose overlays/fallbacks without erasing the underlying resource identity.
+- Consumers should reuse shared primitives instead of hard-coding parallel glyph/fallback/palette logic.
+- Keep presentation behavior independent of filesystem, process, association, and Kernel authority.
+
+Specific icon-family priorities, individual application artwork bugs, historic agent handoffs, or one-off color fixes belong in Issues/design records/tests rather than generic instructions.
+
+## Refactor direction
+
+Converge Desktop/FileManager/Shell/native-app presentation on this shared vocabulary. Keep semantic mapping upstream and visual composition reusable.
 
 ## Validation
 
-Keep component/token tests and add packaged visual/interaction regressions where
-a user review identifies a recurring presentation failure.
+Use component/token tests for deterministic presentation and browser/screenshot/manual review for actual image loading, layout, animation, focus, typography, and visual consistency.

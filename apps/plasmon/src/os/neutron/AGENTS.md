@@ -1,31 +1,26 @@
 # Neutron bridge agent instructions
 
-## Boundary
+## Authority
 
-This directory is Plasmon's adapter to **actual vanilla Neutron** behavior.
-Neutron remains authoritative for installation, AppScope isolation, package
-execution, tiles, capabilities and Kernel security.
+This directory adapts **actual vanilla Neutron** behavior for Plasmon. Neutron remains authoritative for installation, AppScope isolation, package execution, tiles, capabilities, and Kernel security.
 
 ## Rules
 
-- Expose only APIs/metadata verified in the Kernel contract or implementation.
-- `openElement()` delegates opening to Kernel and preserves established reuse
-  semantics.
-- Installed application projections in `/Apps` are filesystem views, not install
-  authority.
-- Runtime state may be tri-state internally; do not turn `yes`/`no` diagnostic
-  values into unwanted user-facing app labels.
-- Descriptor icon paths are package-local and safety-bounded. Never probe
-  arbitrary external URLs from untrusted metadata.
-- Preserve descriptor-first icon resolution and bounded compatibility fallback.
-- Cache metadata/icons until actual app description changes; runtime refresh
-  alone must not cause repeated icon probing.
-- If a `.neutron` MIME is exposed by Plasmon, use the owner-approved
-  `application/x-neutron`, not a Plasmon-invented package MIME.
-- Do not add Kernel capabilities or installation methods because a Plasmon UX
-  wants them; escalate missing Kernel behavior.
+- Expose only APIs/metadata verified in Neutron contracts or implementation.
+- Application opening/install requests delegate to the Kernel; do not create local substitutes for authenticated Kernel surfaces.
+- Preserve uncertainty when runtime/discovery APIs fail or are incomplete.
+- Isolate malformed/unavailable metadata so one application cannot poison unrelated discovery.
+- Treat package-provided paths/metadata as untrusted input and bound them before network/resource access.
+- Cache for efficiency without turning cache state into a new authority.
+- Keep external application projections/presentation separate from installation authority.
+- Escalate missing Kernel/security capabilities instead of inventing bridge shims.
+
+Specific MIME corrections, icon fallback filenames, current cache workarounds, or individual projection bugs belong in Issues/tests, not this generic file.
+
+## Refactor direction
+
+Keep parsing/codecs, metadata/icon resolution, cache/lifecycle logic, and public bridge operations separable. Retire compatibility adapters after active consumers have migrated rather than preserving parallel Neutron implementations.
 
 ## Validation
 
-Cover malformed discovery isolation, icon safety/bounds, lifecycle refresh,
-runtime-state uncertainty, and packaged Element projection/open behavior.
+Use fake-API adapter tests for discovery/opening/caching/error isolation and browser tests for lifecycle events. Use real installed Neutron verification when the claim depends on Kernel behavior.

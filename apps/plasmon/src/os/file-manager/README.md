@@ -1,26 +1,29 @@
-# Plasmon FileManager / Desktop Wave 2
+# FileManager
 
-This subsystem is the reusable browser-local filesystem presentation layer for Plasmon.
+`file-manager/**` is the reusable filesystem presentation and interaction layer used by Desktop and Explorer-style applications. It renders authoritative `FsService` state and coordinates selection, rename, clipboard operations, drag/drop, create/import/download, context commands, Properties/Open With presentation, and error reporting.
 
-## Invariants
+## Architecture
 
-- `FileManager` renders only data returned by `FsService`; it does not own a second file database.
-- Selection, desktop layout, drag groups, rename targets, and history identity use immutable `NodeId` values. Paths and names are presentation.
-- Directory refreshes are generation-gated so an older asynchronous list cannot overwrite a newer one.
-- `FsEventSource` is used only as invalidation; the current directory is re-read from `FsService`.
-- File operation clipboard state is an explicit `FileOperationClipboard` instance. It is never the system text clipboard and never a module-global singleton.
-- Copy/paste delegates to `fs.copy`; cut/paste delegates to `fs.move`; delete delegates to `fs.remove`; rename delegates to `fs.rename`; New Folder delegates to `fs.mkdir`.
-- File open delegates to the Wave 1 `OpenWithServiceModel` / `AssociationRegistry` / `OpenService`. React code does not reproduce extension/MIME/Atom precedence.
-- Directory open is a FileManager/Explorer navigation concern. Desktop may request `native:explorer` through the existing `ProcessController`.
-- Desktop is exactly a FileManager rooted at `/Desktop`. Missing `/Desktop` is created by resolving `/` and calling `fs.mkdir`.
-- Desktop coordinates are persisted in `/Desktop` metadata under `plasmon.desktop.positions.v1`, keyed by NodeId and written only on completed drag.
-- No Share or Copy Share Link command is exposed in Wave 2.
-- Native Explorer and Properties export metadata plus loader factories; they never instantiate a process/window/application registry.
+Deterministic behavior already lives in production helper modules such as:
 
-## Interaction model
+- `model.ts` — selection, marquee geometry, refresh gating, rename/open helpers, and file-operation state;
+- `clipboard.ts` — collision-aware copy/cut/paste behavior;
+- `create-import.ts`, `delete.ts`, `download.ts` — filesystem action helpers;
+- `keyboard.ts`, `drag.ts`, `drop-target.ts`, `rename.ts` — interaction decisions;
+- `properties.tsx` — Properties/Open With presentation.
 
-The shared FileManager implements click/Ctrl-or-Cmd/Shift selection, keyboard focus, select all, marquee selection, a movement threshold before pointer drag, selected-group transforms throttled through `requestAnimationFrame`, directory drops, inline rename, New Folder, cut/copy/paste/delete, context menus, Properties, and Open With.
+`FileManager.tsx` connects those models/actions to React state, DOM pointer/keyboard events, dialogs, and rendering.
 
-Explorer adds NodeId-based back/forward history, parent navigation, breadcrumbs/address entry, current-directory filtering, favorites, grid/list/details presentations, sort controls, and a status bar while reusing the same FileManager.
+FileManager is not a filesystem repository and must not grow private application-opening rules. Resource mutations go through filesystem/core services; generic opening goes through shared filesystem/association/opening services.
 
-Properties re-inspects `FsService` state and associations on refresh/event invalidation and exposes current name/type/extension/default handler/Atom identity/location/path/size/timestamps/content hash.
+## Refactor direction
+
+`FileManager.tsx` is a broad orchestration component. Continue extracting action availability/execution, async refresh coordination, context command models, and reusable interaction state into production modules where doing so makes behavior cheaper to test and shared by Desktop/Explorer.
+
+Do not split by historical feature wave or create separate Desktop/Explorer operation stacks. Preserve one set of filesystem actions and capability-aware commands, with React responsible mainly for rendering and translating browser events.
+
+## Testing
+
+Use fast tests for selection/range/marquee math, clipboard/collision naming, refresh ordering, command eligibility, rename/create/import/delete helpers, drag/drop decisions, and filesystem action outcomes. Use real-browser tests for pointer capture/drag, keyboard routing/editable targets, file chooser/import, object-URL download behavior, focus/dialog/context-menu interaction, and packaged visible workflows.
+
+When a UI bug is fundamentally a shared command/model bug, add the regression below React first instead of relying only on click-path coverage.
