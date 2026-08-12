@@ -11,7 +11,17 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
   const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (entry) => {
+    if (entry.type() === "error" || entry.type() === "warning") {
+      consoleErrors.push(`${entry.type()}: ${entry.text()}`);
+    }
+  });
+  page.on("requestfailed", (failed) => {
+    failedRequests.push(`${failed.url()} :: ${failed.failure()?.errorText ?? "unknown failure"}`);
+  });
 
   await page.goto(kernelUrl);
   await page.waitForFunction(
@@ -109,7 +119,21 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   const gameWindow = app.getByRole("dialog", { name: "js-dos" }).last();
   await expect(gameWindow).toBeVisible({ timeout: 20_000 });
   const player = gameWindow.getByLabel("DOS game");
-  await expect(player).toHaveAttribute("data-jsdos-ready", "true", { timeout: 60_000 });
+  try {
+    await expect(player).toHaveAttribute("data-jsdos-ready", "true", { timeout: 60_000 });
+  } catch (error) {
+    const runtimeStatus = await gameWindow.locator('[role="status"], [role="alert"]').allTextContents();
+    const canvases = await player.locator("canvas").count();
+    const original = error instanceof Error ? error.message : String(error);
+    throw new Error([
+      original,
+      `js-dos runtime status: ${JSON.stringify(runtimeStatus)}`,
+      `js-dos canvas count: ${canvases}`,
+      `browser console warnings/errors: ${JSON.stringify(consoleErrors)}`,
+      `failed browser requests: ${JSON.stringify(failedRequests)}`,
+      `page errors: ${JSON.stringify(pageErrors)}`,
+    ].join("\n"));
+  }
   await expect(player.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
 
   // The self-authored demo accepts SPACE as gameplay input. Browser automation
