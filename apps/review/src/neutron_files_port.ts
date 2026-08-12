@@ -36,16 +36,17 @@ export class NeutronFilesPort implements ReviewFilesPort {
   ): Promise<BinaryFileMetadata> {
     const normalized = normalizeMediaType(mediaType);
     const payload = data.slice(0);
+    const expectedByteLength = payload.byteLength;
     const expectedEtag = await sha256Hex(payload);
     const result = await this.callAttachments({
       target: FILES_TARGET,
       name: "writeBinary",
       arguments: { path, mediaType: normalized, createParents: true, ...condition } as JsonObject,
-    }, [{ name: "file", mediaType: attachmentMediaType(normalized), byteLength: payload.byteLength, data: payload }], {
+    }, [{ name: "file", mediaType: attachmentMediaType(normalized), byteLength: expectedByteLength, data: payload }], {
       ...(options.delegationToken ? { delegationToken: options.delegationToken } : {}),
     });
     const metadata = parseMetadata(result.value);
-    if (metadata.path !== path || metadata.mediaType !== normalized || metadata.byteLength !== payload.byteLength || metadata.etag !== expectedEtag || result.attachments.length !== 0) {
+    if (metadata.path !== path || metadata.mediaType !== normalized || metadata.byteLength !== expectedByteLength || metadata.etag !== expectedEtag || result.attachments.length !== 0) {
       throw invalidResponse("write result does not match requested file");
     }
     return metadata;
