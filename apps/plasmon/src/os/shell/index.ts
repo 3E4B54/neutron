@@ -7,6 +7,5 @@ export * from "./interactions.ts";
 export * from "./model.ts";
 export * from "./preferences.ts";
 export * from "./search.ts";
-export * from "./searchOpening.ts";
 export * from "./startMenu.ts";
 export * from "./subscriptions.ts";
