@@ -195,7 +195,7 @@ test("resource classification protects real sys/neutron metadata but not spoofed
   assert.equal(resourceCapabilities(sys).delete, false);
   assert.equal(classifyResource(neutron).kind, "neutron-app");
   assert.equal(resourceCapabilities(neutron).delete, false);
-  assert.equal(resourceCapabilities(neutron).uninstall, true);
+  assert.equal(resourceCapabilities(neutron).uninstall, false);
   assert.equal(classifyResource(spoof).kind, "ordinary-file");
   assert.equal(resourceCapabilities(spoof).delete, true);
 });
@@ -214,7 +214,7 @@ test("Neutron projections preserve NodeId while installed and public generic Del
   assert.equal(updated?.id, first.id);
 
   const managed = new ProtectedManagedFsService(raw);
-  await assert.rejects(() => managed.remove(first.id), /use Uninstall instead/u);
+  await assert.rejects(() => managed.remove(first.id), /installation state is managed by Neutron/u);
   assert.equal((await raw.resolvePath("/Apps/Mail.neutron"))?.id, first.id);
 
   await projections.reconcile([]);
