@@ -115,7 +115,7 @@ export function App() {
     </header>
 
     <section className="review-actions" aria-label="Review file and Atom actions">
-      <label>New review <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} /></label>
+      <label>New review <input aria-label="New review" value={newTitle} onChange={(event) => setNewTitle(event.target.value)} /></label>
       <button disabled={busy} onClick={createReview}>Create Atom</button>
       <label>File &gt; Open <input aria-label="Markdown or TODO path" value={importPath} onChange={(event) => setImportPath(event.target.value)} /></label>
       <button disabled={busy || !importPath.trim()} onClick={importReview}>Open Markdown/TODO</button>
