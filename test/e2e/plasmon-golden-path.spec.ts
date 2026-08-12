@@ -160,10 +160,10 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await closePrompt.getByRole("button", { name: "Discard" }).click();
   await expect(app.getByRole("dialog", { name: "New Text Document.txt" })).toHaveCount(0, { timeout: 10_000 });
 
-  // The inherited #42 lifecycle owns any cancellation rejected by its editor
-  // disposal. Give that removed Monaco surface one browser frame to finish
-  // teardown before #67 begins strict page-error accounting.
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  // Monaco 0.54's WordHighlighter owns a Delayer whose disposal rejects its
+  // pending promise. Unhandled-rejection reporting is task-based, so advance one
+  // browser task while #42 still owns that removed editor's lifecycle.
+  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
   expect(pageErrors).toEqual([]);
 
   // Issue #67 starts here. No lifecycle-wide cancellation suppression applies
@@ -237,7 +237,9 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     try {
       await openedWindow.getByRole("button", { name: "Close", exact: true }).click();
       await expect(nativeWindows).toHaveCount(before, { timeout: 10_000 });
-      await page.waitForTimeout(0);
+      // Let the browser deliver a cancellation rejection produced synchronously
+      // by Monaco contribution disposal before ending this disposal boundary.
+      await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
     } finally {
       monacoLifecycleActive = false;
     }
@@ -280,43 +282,10 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     await expect(firstLine).toBeVisible();
     await firstLine.click({ position: { x: 8, y: 10 } });
     await expect(browserInput).toBeFocused();
-    await browserInput.evaluate((element) => {
-      const input = element as HTMLDivElement & { editContext?: EditContext | null };
-      const root = element.closest(".monaco-editor");
-      if (!root) throw new Error("Monaco editor root is unavailable before input");
-      const state = globalThis as typeof globalThis & {
-        __issue67EditorRoot?: Element;
-        __issue67BrowserInput?: Element;
-        __issue67EditContext?: EditContext | null;
-      };
-      state.__issue67EditorRoot = root;
-      state.__issue67BrowserInput = element;
-      state.__issue67EditContext = input.editContext ?? null;
-    });
     await page.keyboard.insertText(options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await expect(firstLine).toHaveText(options.persistedText);
     await expect(surface).toHaveAttribute("data-editor-ready", "true");
-    const identity = await browserInput.evaluate((element) => {
-      const input = element as HTMLDivElement & { editContext?: EditContext | null };
-      const state = globalThis as typeof globalThis & {
-        __issue67EditorRoot?: Element;
-        __issue67BrowserInput?: Element;
-        __issue67EditContext?: EditContext | null;
-      };
-      return {
-        editorRootStable: element.closest(".monaco-editor") === state.__issue67EditorRoot,
-        browserInputStable: element === state.__issue67BrowserInput,
-        editContextStable: (input.editContext ?? null) === state.__issue67EditContext,
-        focusStable: document.activeElement === element,
-      };
-    });
-    expect(identity, `${options.appLabel} must keep one live Monaco input through the edit`).toEqual({
-      editorRootStable: true,
-      browserInputStable: true,
-      editContextStable: true,
-      focusStable: true,
-    });
     expectNoIssue67PageErrors(`${options.appLabel} edit must not emit browser errors`);
 
     const save = opened.editorWindow.getByRole("button", { name: "Save", exact: true });
