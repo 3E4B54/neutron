@@ -1,19 +1,15 @@
-# Explorer / FileManager.sys
+# Explorer
 
-Explorer is the native application wrapper around the shared FileManager UI.
+Explorer is the native application wrapper around the shared FileManager UI. It owns window-level filesystem navigation and view chrome while file operations and entry interaction remain in `os/file-manager/**`.
 
-`ExplorerApp.tsx` owns the window-level navigation chrome; `history.ts` and
-`navigation.ts` maintain directory history/address navigation. File operations
-and entry interaction remain in `os/file-manager/**`.
+`history.ts` and `navigation.ts` provide production navigation models. `ExplorerApp.tsx` composes Back/Forward/Up, breadcrumbs/address entry, favorites, current-folder filtering, view/sort controls, status, and the shared FileManager.
 
-## Invariants
+Explorer does not implement a second filesystem, file-operation stack, or association registry.
 
-- `FileManager.sys` represents this actual native application and must launch it
-  through the shared filesystem dispatcher. It must never fall through to Text.
-- Back/Forward navigation changes the current directory using filesystem
-  identity/history rather than browser navigation.
-- Address navigation resolves real filesystem directories.
-- Explorer does not implement a second filesystem or association registry.
+## Refactor direction
 
-Packaged acceptance includes double-clicking `FileManager.sys`, Back/Forward,
-typed addresses, and ordinary file/shortcut opening inside the window.
+Keep FileManager responsible for common entry/file actions and keep Explorer-specific code focused on navigation/view state. As Explorer grows, extract navigation/favorites/view-state controllers below React instead of turning `ExplorerApp.tsx` into a second FileManager implementation.
+
+## Testing
+
+Use fast tests for history/address/navigation and other deterministic view models. Use real-browser tests for address-bar focus/keyboard behavior, Back/Forward interaction, layout/view controls, and packaged opening flows that depend on the rendered window.

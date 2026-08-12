@@ -1,27 +1,17 @@
-# Text / Monaco Editor
+# Text / Monaco editor
 
-Text is the Plasmon native text/code editor. `MonacoEditorSurface.tsx` creates a
-real Monaco editor and reports readiness only after `monaco.editor.create`
-succeeds. Monaco workers are routed to packaged local worker entrypoints.
+Text is the Plasmon native text/code editor built around a packaged Monaco editor surface and an FsService-backed document session.
 
-`document.ts`/`useDocumentSession.ts` own FsService-backed loading, save,
-autosave, Save As, dirty/error/conflict behavior and reopen persistence.
+`document.ts` owns document loading, stable reads, dirty/save/autosave, conflict detection, reload/overwrite, Save As, and persistence semantics. `useDocumentSession.ts` adapts that production session to React. `MonacoEditorSurface.tsx` and the Monaco adapter/environment files own editor-engine initialization/workers and browser integration. `editorModel.ts`/`editorChrome.ts` hold reusable editor presentation/model helpers.
 
-## Product acceptance
+Filesystem persistence and document conflict semantics must remain independent of Monaco engine lifecycle so they can be tested without a browser.
 
-- Window title: `<filename> - Monaco Editor`.
-- Expose line/column and useful document status in desktop chrome.
-- Enable the Monaco minimap/text preview where product UX calls for it.
-- Make built-in capabilities such as Find discoverable through menu/UI as well
-  as keyboard shortcuts.
-- Language mode follows the file type/extension. Shared MIME metadata should be
-  expanded so known source files (for example `.js`) agree across Monaco,
-  Properties, Search and Open With.
-- User-customizable Monaco setup/preferences and runtime assets should have a
-  real `/System/Program Files/MonacoEditor` representation.
+## Refactor direction
 
-A source import is not acceptance; packaged UI must show the expected Monaco
-behavior and persistence.
+Continue sharing document-session, command, status, and editor-chrome infrastructure with Markdown/other document apps. Keep Monaco-specific adapters isolated from generic document semantics and expose mature editor capabilities through reusable command models/UI rather than app-specific shortcuts only.
 
-Tests include document, model/adapter, engine-readiness and packaged browser
-coverage.
+Shared language/type metadata should come from common association/content metadata rather than a Text-only extension table when other OS surfaces need the same answer.
+
+## Testing
+
+Use fast tests for document sessions, conflicts/save/reopen, editor models/commands, language/type mapping, and adapter configuration. Use real-browser/package tests for Monaco creation/readiness, workers/assets, focus/selection, keyboard commands, and rendered editor behavior.

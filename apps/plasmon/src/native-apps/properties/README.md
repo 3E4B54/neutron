@@ -1,14 +1,15 @@
 # Properties
 
-Properties is the native application wrapper for filesystem resource inspection.
+Properties is the native application wrapper for shared filesystem/resource inspection.
 
-The application delegates inspection to the FileManager/association services so
-path, MIME/type, effective default handler, Atom identity and content metadata
-are derived from the same canonical services used elsewhere.
+`PropertiesApp.tsx` is primarily presentation. Resource path/type/content/default-handler/logical metadata should be derived from filesystem and association services so Properties agrees with FileManager, Search, and opening behavior.
 
-Do not duplicate resource classification or association matching inside this
-app. Changes to MIME names, `.sys`/`.neutron` semantics, or handler defaults
-belong in filesystem/association policy and should automatically flow into
-Properties.
+Do not duplicate resource classification or association matching inside this application. Changes to shared semantics should flow into Properties through the owning service/model.
 
-`PropertiesApp.tsx` is presentation; `index.ts` registers the native app.
+## Refactor direction
+
+Keep Properties thin and reusable: move inspection/formatting models into shared FileManager/resource metadata code when multiple surfaces need them. Add app-specific presentation only where a dedicated Properties window genuinely needs different UI.
+
+## Testing
+
+Use fast tests for shared inspection/formatting models and association/resource metadata. Use browser tests for the native window/presentation only when focus, selection/copy, dialog, or rendered layout behavior is material.

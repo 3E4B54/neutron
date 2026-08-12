@@ -1,42 +1,41 @@
 # Plasmon native applications and runtime hosts
 
-This directory contains applications rendered inside Plasmon's native
-process/window system plus association-backed runtime hosts.
+`native-apps/**` contains applications rendered through Plasmon's native process/window system plus association-backed browser/runtime hosts.
 
-## Registration
+## Registration and boundaries
 
-`content-apps.ts` defines the native content application metadata, handlers and
-association rules. Integration registers those definitions with the
-`NativeApplicationRegistry` and `AssociationRegistry`.
+`content-apps.ts` defines shared built-in application metadata, handlers, and association rules. Integration registers those definitions with the native application and association registries. Individual apps should not create hidden parallel registries or own generic file-opening policy.
 
-A native process host does **not** automatically mean the program should have a
-`.sys` filesystem application. `.sys` is reserved for actual Plasmon-native
-system applications. Runtime handlers such as js-dos remain Program Files
-runtimes even though they use native windows.
+Native application UI consumes the same OS authorities as other surfaces:
 
-## Applications
+- filesystem content through `FsService`;
+- handler/default selection through associations/opening services;
+- lifecycle/windows through process/window services;
+- common resource/application presentation through the shared visual system;
+- Kernel application behavior through the Neutron boundary rather than local emulation.
 
-- `browser/` — URL/`.url` handling.
-- `explorer/` — FileManager.sys/Explorer native wrapper.
-- `markdown/` — Monaco editor plus sanitized Markdown preview.
-- `photos/` — image viewing.
-- `properties/` — native Properties wrapper.
-- `settings/` — Settings.
-- `text/` — Monaco editor/document session.
-- `video/` — browser-native video handling.
-- `jsdos/` — `.jsdos` runtime handler; **not** a `.sys` app.
+An association-backed runtime host can use a native process/window without automatically becoming a first-class user-launchable system application. Product identity and execution mechanism are separate concerns.
 
-Each first-class directory has a local README. Agent instructions normally
-inherit from this directory.
+## Application families
 
-## Persistence and opening
+- `browser/` — web URL/browser surface.
+- `explorer/` — native Explorer wrapper around shared FileManager behavior.
+- `text/` — Monaco-backed text/code editing and document sessions.
+- `markdown/` — Markdown editing plus sanitized preview on shared editor/session infrastructure.
+- `photos/` — browser-supported image viewing/navigation/fullscreen.
+- `video/` — browser media playback and URL/media capability handling.
+- `settings/` — settings/status surface over injected shared services.
+- `properties/` — native wrapper for shared filesystem/resource inspection.
+- `jsdos/` — association-backed packaged runtime/player integration.
 
-Documents are read/written through `FsService`. Opening and default-handler
-selection remain association/filesystem responsibilities. Native apps must not
-invent their own persistent browser stores for filesystem content.
+## Refactor direction
 
-## Packaged assets
+Build reusable application infrastructure instead of solving the same document/media/runtime problem in each app. Prefer shared document sessions/editor chrome, common media/object-URL helpers, reusable navigation models, shared settings capability seams, and consistent application chrome/presentation.
 
-Monaco CSS/workers and other mature engine assets must be present in the
-packaged output. Engine readiness must represent actual runtime initialization,
-not merely source import.
+Keep domain semantics below React when they can be deterministic. Browser engine adapters (Monaco, media elements, iframes, fullscreen, packaged scripts/workers) should remain isolated from filesystem/document/domain policy.
+
+Concrete titles, menu omissions, file-type corrections, runtime paths, and current acceptance bugs belong in Issues/tests, not in this overview.
+
+## Testing
+
+Use fast model/domain tests for document sessions, parsing/classification, navigation, settings summaries, URL/media normalization, and other deterministic semantics. Use real-browser/package tests for Monaco/workers, iframe/media behavior, fullscreen, object URLs, packaged runtime scripts/assets, focus/keyboard integration, and other browser-engine behavior. Manual review remains useful for application UX/polish.

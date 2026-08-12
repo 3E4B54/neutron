@@ -1,26 +1,15 @@
-# js-dos runtime
+# js-dos runtime host
 
-This directory hosts the `.jsdos` runtime integration and player.
+This directory integrates the packaged js-dos browser runtime and player as an association-backed content runtime.
 
-**js-dos is not a Plasmon `.sys` application.** It is an association-backed
-runtime/program represented under `/System/Program Files/js-dos`. It should not
-appear in Start as a standalone Plasmon system app merely because its player is
-rendered through `NativeProcessController`.
+`runtime.ts` owns browser-side runtime asset loading, global readiness, loader caching/retry, and runtime configuration. `JsDosPlayer.tsx` owns the rendered game/runtime surface. Handler/application metadata is exported through `index.ts` and registered by OS integration.
 
-## Open path
+Game bundles/content are data selected through the normal association/opening path. This directory should not become a game-name dispatcher or a parallel application catalog.
 
-```text
-.jsdos file
-  -> AssociationRegistry (`application/x-jsdos` / extension)
-  -> runtime:js-dos handler
-  -> NativeProcessController window host
-  -> JsDosPlayer
-```
+## Refactor direction
 
-There must be no game-name dispatch and no `DOS.sys` or `Games.sys`.
+Keep runtime loading/configuration independent of file association and process/window policy. If additional emulators/runtimes are added, prefer a reusable packaged-runtime host abstraction while allowing each runtime to own its genuine engine-specific lifecycle.
 
-`runtime.ts` loads the packaged js-dos runtime and `JsDosPlayer.tsx` hosts the
-game surface. Game content is data; see `../../games/`.
+## Testing
 
-Acceptance is packaged and behavioral: double-click a game bundle, the runtime
-starts, and the game is actually playable.
+Use fast tests for registration/configuration and deterministic helpers. Use package/browser tests for script/style asset presence, runtime global initialization, failure/retry, canvas/input behavior, and actual playable startup because those claims depend on a browser engine and packaged assets.

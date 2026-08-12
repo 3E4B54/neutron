@@ -1,35 +1,25 @@
 # Native applications agent instructions
 
+## Authority
+
+`native-apps/**` owns Plasmon-native application/domain UI and association-backed runtime hosts. Generic filesystem, association/opening, process/window, visual, and Neutron authority remain in their shared OS subsystems.
+
 ## Rules
 
-- Register application metadata/handlers through the shared native-app and
-  association registries; do not create hidden parallel registries.
-- `.sys` is only for actual Plasmon-native system applications.
-- Runtime handlers such as js-dos/EmulatorJS are not `.sys` apps and must not
-  appear as standalone Start applications unless product semantics explicitly
-  make them user-launchable apps.
-- Use `FsService` document sessions for persistent file content.
-- Keep one-off Open vs persisted default behavior in association services.
-- Reuse shared window/process/visual infrastructure.
-- Expose built-in editor/runtime capabilities through coherent UI/menu affordances
-  when the product expects discoverability; keyboard shortcuts alone are not
-  sufficient for mature desktop UX.
-- User-visible titles should identify the actual application/engine where
-  specified by product acceptance (for Monaco editors: `<filename> - Monaco Editor`).
-- Configurable runtime/editor assets and preferences that are part of the user
-  environment should project under `/System/Program Files` rather than empty
-  placeholder directories.
+- Register applications/handlers through the shared registries; do not create parallel application or association catalogs.
+- Read/write filesystem documents through `FsService` or shared document-session abstractions rather than app-private persistence.
+- Keep one-off opening/default selection in association/opening services rather than app-local file-type switches.
+- Reuse shared process/window/visual infrastructure.
+- Distinguish application/product identity from the mechanism used to host a runtime in a native window.
+- Browser/runtime capabilities that may be unavailable must fail clearly and safely rather than being simulated as working.
+- Shared type/language/media metadata should remain coherent across applications and OS consumers.
 
-## MIME/language consistency
+Specific filename suffixes, exact window titles, individual menu affordances, runtime installation paths, or current visual defects belong in Issues/tests unless they represent a lasting cross-app invariant.
 
-Extension/MIME/language detection must agree with shared association metadata.
-Do not let an editor highlight JavaScript while Properties/Search still report
-an unrelated generic MIME if the type is known.
+## Refactor direction
+
+Prefer reusable production models/services for document sessions, navigation, editor/media/runtime adapters, and settings/resource inspection. Keep React components focused on application presentation and browser-event integration.
 
 ## Validation
 
-Keep focused component/model tests, but add packaged browser regressions for
-visible editor menus, persistence/reopen, app title, native `.sys` launch, and
-runtime-handler behavior.
-
-Do not change the owner-frozen Plasmon manifest version.
+Use fast tests for deterministic domain/model behavior. Use real-browser/package tests for Monaco/workers, media/iframe/fullscreen/object URLs, packaged runtime assets, and other browser-dependent functionality. Do not change release/version metadata outside an explicit release task.
