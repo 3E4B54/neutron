@@ -67,6 +67,41 @@ describe("Review semantic transactions", () => {
       .rejects.toMatchObject({ code: "REVISION_CONFLICT" } satisfies Partial<ReviewEngineError>);
   });
 
+  test("concurrent commands with the same expected revision serialize so only one commits", async () => {
+    const { engine } = fixture();
+    const created = await engine.createAtom({ commandId: "create", title: "Gate", actor, items: [{ title: "Open" }] });
+    const itemId = (await engine.getAtom(created.atomId)).items[0]!.itemId;
+
+    const first = engine.apply({
+      atomId: created.atomId,
+      expectedRevision: created.revisionId,
+      commandId: "concurrent-first",
+      actor,
+      operation: { type: "review.set_result", itemId, result: "working" },
+    });
+    const second = engine.apply({
+      atomId: created.atomId,
+      expectedRevision: created.revisionId,
+      commandId: "concurrent-second",
+      actor,
+      operation: { type: "review.set_result", itemId, result: "not_working" },
+    });
+
+    const settled = await Promise.allSettled([first, second]);
+    const fulfilled = settled.filter((result): result is PromiseFulfilledResult<Awaited<typeof first>> => result.status === "fulfilled");
+    const rejected = settled.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toMatchObject({ code: "REVISION_CONFLICT" } satisfies Partial<ReviewEngineError>);
+
+    const committed = fulfilled[0]!.value;
+    expect(committed.sequence).toBe(2);
+    const current = await engine.getAtom(created.atomId);
+    expect(current.meta.currentRevision).toBe(committed.revisionId);
+    expect(current.meta.currentSequence).toBe(2);
+    expect(await engine.history(created.atomId)).toHaveLength(2);
+  });
+
   test("coordination changes never rewrite independent human evidence", async () => {
     const { engine } = fixture();
     const created = await engine.createAtom({ commandId: "create", title: "Gate", actor, items: [{ title: "Open" }] });
