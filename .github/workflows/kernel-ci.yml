@@ -80,6 +80,15 @@ jobs:
             npm ci
           '
 
+      - name: Materialize Motoko packages
+        if: steps.kernel_scope.outputs.run_kernel == 'true'
+        run: |
+          nix develop --command bash -lc '
+            set -euxo pipefail
+            cd apps/kernel
+            mops sources
+          '
+
       - name: Regenerate Certified Assets candidate binding
         if: steps.kernel_scope.outputs.run_kernel == 'true'
         run: |
