@@ -51,30 +51,30 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Package and run vanilla Review acceptance
+      - name: Install dependencies
+        run: nix develop --command bash -lc 'set -euxo pipefail; npm ci'
+      - name: Package Kernel
+        run: nix develop --command bash -lc 'set -euxo pipefail; npm --workspace neutron-kernel run package'
+      - name: Build design system
+        run: nix develop --command bash -lc 'set -euxo pipefail; npm --workspace neutron-design-system run build'
+      - name: Package Files for local acceptance
         run: |
           nix develop --command bash -lc '
             set -euxo pipefail
-            npm ci
-            npm --workspace neutron-kernel run package
-            npm --workspace neutron-design-system run build
-
-            # Review needs the normal Files app for its real File > Open/export
-            # boundary. Build a local test package from production VFS sources,
-            # but do not invoke Files release-evidence generation from this
-            # unrelated Issue lane.
-            (
-              cd apps/vfs
-              npm run validate
-              npm run build
-              npm run typecheck:clean
-              npm run mopack
-              npm run schema
-              bun ../../packages/neutron-scripts/src/pack.ts
-            )
-
-            npm --workspace neutron-review run package
-
+            cd apps/vfs
+            npm run validate
+            npm run build
+            npm run typecheck:clean
+            npm run mopack
+            npm run schema
+            bun ../../packages/neutron-scripts/src/pack.ts
+          '
+      - name: Package Review
+        run: nix develop --command bash -lc 'set -euxo pipefail; npm --workspace neutron-review run package'
+      - name: Provision and exercise packaged Review
+        run: |
+          nix develop --command bash -lc '
+            set -euxo pipefail
             npm run provision -- review-local.ndeploy.json serve > /tmp/review-pocketic.log 2>&1 &
             server_pid=$!
             trap '\''status=$?; kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; if [ "$status" -ne 0 ]; then cat /tmp/review-pocketic.log || true; fi; exit "$status"'\'' EXIT
