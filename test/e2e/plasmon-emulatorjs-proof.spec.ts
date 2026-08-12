@@ -69,9 +69,40 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
   const dialog = app.getByRole("dialog", { name: "EmulatorJS" });
   await expect(dialog).toBeVisible({ timeout: 20_000 });
   const host = dialog.locator('iframe[title="NES game"]');
-  await expect(host).toHaveAttribute("data-emulatorjs-ready", "true", { timeout: 90_000 });
-
   const emulator = app.frameLocator('iframe[title="NES game"]');
+
+  const runtimeState = async () => {
+    const [loaded, ready, bodyText] = await Promise.all([
+      host.getAttribute("data-emulatorjs-loaded"),
+      host.getAttribute("data-emulatorjs-ready"),
+      emulator.locator("body").innerText().catch(() => "<body unavailable>"),
+    ]);
+    return JSON.stringify({
+      loaded,
+      ready,
+      body: bodyText.replace(/\s+/gu, " ").trim().slice(0, 600),
+      requests: runtimeRequests.slice(-12),
+      httpErrors: runtimeHttpErrors.slice(-8),
+      failedRequests: failedRuntimeRequests.slice(-8),
+      externalRequests: externalRuntimeRequests.slice(-8),
+      pageErrors: pageErrors.slice(-8),
+    });
+  };
+
+  await expect.poll(
+    async () => await host.getAttribute("data-emulatorjs-loaded") === "true"
+      ? "loaded"
+      : await runtimeState(),
+    { timeout: 30_000, message: "EmulatorJS loader should initialize from packaged assets" },
+  ).toBe("loaded");
+
+  await expect.poll(
+    async () => await host.getAttribute("data-emulatorjs-ready") === "true"
+      ? "ready"
+      : await runtimeState(),
+    { timeout: 90_000, message: "EmulatorJS core and NES fixture should start" },
+  ).toBe("ready");
+
   await expect(emulator.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
 
   expect(runtimeRequests.some((path) => path.endsWith("/data/loader.js"))).toBe(true);
