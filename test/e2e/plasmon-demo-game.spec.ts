@@ -31,8 +31,11 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   await expect(page.locator('[data-tid="launcher"]')).toBeVisible();
   await page.locator(`[data-tid="launcher-tile-${APP_ID}-${TILE_ID}"]`).click();
 
+  // The fixture flag is startup configuration. Apply it as soon as Kernel has
+  // attached the real application iframe, before waiting for an unflagged
+  // Plasmon document to boot and initialize the filesystem first.
   const frame = page.locator(`iframe[data-app-id="${APP_ID}"][data-tile-id="${TILE_ID}"]`).first();
-  await expect(frame).toBeVisible();
+  await expect(frame).toBeAttached();
   const source = await frame.getAttribute("src");
   if (!source) throw new Error("Installed Plasmon tile has no iframe source");
 
