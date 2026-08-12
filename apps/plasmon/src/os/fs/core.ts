@@ -20,7 +20,6 @@ import {
 import { FilesystemOpenDispatcher } from "./openDispatcher.ts";
 import {
   ManagedProgramFilesService,
-  reconcileProgramFilesRoot,
   type ProgramFilesService,
 } from "./programFiles.ts";
 import { ProtectedManagedFsService } from "./protectedService.ts";
@@ -89,10 +88,6 @@ export function createFilesystemCore(options: FilesystemCoreOptions): Filesystem
       ...(options.durableSeeds ? { durableSeeds: options.durableSeeds } : {}),
       ...(options.demoSeeds ? { demoSeeds: options.demoSeeds } : {}),
     });
-    // Program Files has its own versioned reconciliation seam. Keep it in the
-    // canonical core startup even though legacy bootstrap already creates the
-    // directory, so metadata/version repair is guaranteed for every consumer.
-    await reconcileProgramFilesRoot(options.fs);
     await reconcileCoreDesktopSeeds(options.fs);
     let neutronProjectionError: string | null = null;
     try {
