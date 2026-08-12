@@ -61,6 +61,7 @@ export function PlasmonOS({ services: provided }: PlasmonOSProps) {
           <Desktop
             fs={services.fs}
             openAuthority={services.filesystem.open}
+            trashAuthority={services.filesystem.trash}
             fsEvents={services.fsEvents}
             process={services.process}
             associations={services.associations}
