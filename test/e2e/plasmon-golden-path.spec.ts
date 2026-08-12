@@ -75,8 +75,32 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
   await rootShortcut.dblclick();
 
   await expect(nativeWindows).toHaveCount(initialWindowCount + 1, { timeout: 20_000 });
-  const explorerWindowCandidate = nativeWindows.last();
-  const explorerWindowId = await explorerWindowCandidate.getAttribute("data-window-id");
+  const dialog = nativeWindows.last();
+  await expect(dialog).toBeVisible();
+  const titlebar = dialog.locator(".plasmon-window__titlebar");
+  const workspace = await app.locator(".plasmon-window-layer").first().boundingBox();
+  if (!workspace) throw new Error("Plasmon WindowLayer has no browser bounds");
+
+  const dragTitlebarTo = async (clientX: number): Promise<void> => {
+    const box = await titlebar.boundingBox();
+    if (!box) throw new Error("Native window titlebar has no browser bounds");
+    const titlebarY = box.y + Math.min(16, box.height / 2);
+    await page.mouse.move(box.x + Math.min(120, box.width / 2), titlebarY);
+    await page.mouse.down();
+    await page.mouse.move(clientX, titlebarY, { steps: 5 });
+    await page.mouse.up();
+  };
+
+  // Preserve the pre-existing #43 packaged edge-snap journey before opening
+  // editor windows so #67 does not perturb that established browser boundary.
+  await dragTitlebarTo(workspace.x + 1);
+  await expect(dialog).toHaveAttribute("data-window-snap", "left");
+
+  await dragTitlebarTo(workspace.x + workspace.width - 1);
+  await expect(dialog).toHaveAttribute("data-window-snap", "right");
+  expect(pageErrors).toEqual([]);
+
+  const explorerWindowId = await dialog.getAttribute("data-window-id");
   if (!explorerWindowId) throw new Error("Explorer window has no stable data-window-id");
   const explorerWindow = app.locator(
     `.plasmon-window-layer [data-window-id="${explorerWindowId}"]`,
@@ -133,6 +157,11 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     await expect(nativeWindows).toHaveCount(before, { timeout: 10_000 });
   };
 
+  await page.context().grantPermissions(
+    ["clipboard-read", "clipboard-write"],
+    { origin: new URL(kernelUrl).origin },
+  );
+
   const exercisePackagedEditor = async (options: {
     createButton: "New Text Document" | "New Markdown Document";
     generatedName: "New Text Document" | "New Markdown Document";
@@ -156,8 +185,14 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     }).first();
     await monaco.click();
     await expect(editContext).toBeFocused();
-    await page.keyboard.insertText(options.persistedText);
+    await page.evaluate(
+      async (text) => navigator.clipboard.writeText(text),
+      options.persistedText,
+    );
+    await page.keyboard.press("Control+V");
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
+    await expect(opened.editorWindow.locator(".view-line").first()).toHaveText(options.persistedText);
+
     await opened.editorWindow.getByRole("button", { name: "Save", exact: true }).click();
     await expect(opened.editorWindow.getByText("Saved", { exact: true })).toBeVisible();
     await expect(opened.editorWindow.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
@@ -165,14 +200,14 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
 
     const reopened = await openDocument(entry, options.appLabel);
     await waitForUsableMonaco(reopened.editorWindow, `${options.appLabel} after reopen`);
-    await expect(reopened.editorWindow.locator(".view-lines")).toContainText(options.persistedText);
+    await expect(reopened.editorWindow.locator(".view-line").first()).toHaveText(options.persistedText);
     await closeDocument(reopened.before, reopened.editorWindow);
   };
 
   // Issue #67 browser/package boundary: create real filesystem documents through
   // Explorer, open through canonical associations/process/windowing, exercise the
   // real packaged Monaco surface, save through the production document session,
-  // then close/reopen to prove filesystem persistence rather than component state.
+  // then close/reopen to prove exact filesystem persistence rather than component state.
   await exercisePackagedEditor({
     createButton: "New Text Document",
     generatedName: "New Text Document",
@@ -190,25 +225,6 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     persistedText: "packaged markdown persisted",
   });
 
-  const titlebar = explorerWindow.locator(".plasmon-window__titlebar");
-  const workspace = await app.locator(".plasmon-window-layer").first().boundingBox();
-  if (!workspace) throw new Error("Plasmon WindowLayer has no browser bounds");
-
-  const dragTitlebarTo = async (clientX: number): Promise<void> => {
-    const box = await titlebar.boundingBox();
-    if (!box) throw new Error("Native window titlebar has no browser bounds");
-    const titlebarY = box.y + Math.min(16, box.height / 2);
-    await page.mouse.move(box.x + Math.min(120, box.width / 2), titlebarY);
-    await page.mouse.down();
-    await page.mouse.move(clientX, titlebarY, { steps: 5 });
-    await page.mouse.up();
-  };
-
-  await dragTitlebarTo(workspace.x + 1);
-  await expect(explorerWindow).toHaveAttribute("data-window-snap", "left");
-
-  await dragTitlebarTo(workspace.x + workspace.width - 1);
-  await expect(explorerWindow).toHaveAttribute("data-window-snap", "right");
   expect(pageErrors).toEqual([]);
 });
 
