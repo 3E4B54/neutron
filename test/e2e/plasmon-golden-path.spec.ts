@@ -5,7 +5,7 @@ import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src
 const APP_ID = "plasmon";
 const TILE_ID = "main";
 
-test("packaged Plasmon is registered, serves browser assets, boots its real tile, renders Recycle Bin, and supports native edge snapping", async ({ page, request }) => {
+test("packaged Plasmon boots real native/browser boundaries", async ({ page, request }) => {
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
   const pageErrors: string[] = [];
@@ -75,9 +75,108 @@ test("packaged Plasmon is registered, serves browser assets, boots its real tile
   await rootShortcut.dblclick();
 
   await expect(nativeWindows).toHaveCount(initialWindowCount + 1, { timeout: 20_000 });
-  const dialog = nativeWindows.last();
-  await expect(dialog).toBeVisible();
-  const titlebar = dialog.locator(".plasmon-window__titlebar");
+  const explorerWindow = nativeWindows.last();
+  await expect(explorerWindow.getByLabel("File Explorer", { exact: true })).toBeVisible();
+
+  const createDocument = async (
+    createButton: "New Text Document" | "New Markdown Document",
+    generatedName: "New Text Document" | "New Markdown Document",
+    fileName: string,
+  ) => {
+    await explorerWindow.getByRole("button", { name: createButton, exact: true }).click();
+    const rename = explorerWindow.getByRole("textbox", { name: new RegExp(`^Rename ${generatedName}`) }).first();
+    await expect(rename).toBeVisible();
+    await rename.fill(fileName);
+    await rename.press("Enter");
+    const entry = explorerWindow.locator("[data-fm-node-id]", { hasText: fileName }).first();
+    await expect(entry).toBeVisible();
+    return entry;
+  };
+
+  const openDocument = async (entry: ReturnType<typeof explorerWindow.locator>, appLabel: string) => {
+    const before = await nativeWindows.count();
+    await entry.dblclick();
+    await expect(nativeWindows).toHaveCount(before + 1, { timeout: 20_000 });
+    const editorWindow = nativeWindows.last();
+    await expect(editorWindow.getByLabel(appLabel, { exact: true })).toBeVisible();
+    return { before, editorWindow };
+  };
+
+  const waitForUsableMonaco = async (editorWindow: ReturnType<typeof nativeWindows.last>, label: string) => {
+    const surface = editorWindow.locator('[data-editor-engine="monaco"]').first();
+    await expect(surface).toBeVisible();
+    try {
+      await expect(surface, `${label} should reach packaged Monaco readiness`).toHaveAttribute(
+        "data-editor-ready",
+        "true",
+        { timeout: 30_000 },
+      );
+    } catch (cause: unknown) {
+      const alert = editorWindow.getByRole("alert").filter({ hasText: "Monaco failed to load" }).first();
+      const details = await alert.textContent({ timeout: 500 }).catch(() => null);
+      throw new Error(
+        `${label} packaged Monaco did not become usable${details ? `: ${details}` : `: ${cause instanceof Error ? cause.message : String(cause)}`}`,
+      );
+    }
+    const monaco = editorWindow.locator(".monaco-editor").first();
+    await expect(monaco).toBeVisible();
+    return monaco;
+  };
+
+  const closeDocument = async (before: number, editorWindow: ReturnType<typeof nativeWindows.last>) => {
+    await editorWindow.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(nativeWindows).toHaveCount(before, { timeout: 10_000 });
+  };
+
+  const exercisePackagedEditor = async (options: {
+    createButton: "New Text Document" | "New Markdown Document";
+    generatedName: "New Text Document" | "New Markdown Document";
+    fileName: string;
+    appLabel: "Text editor" | "Markdown editor";
+    sourceLabel: "Text content" | "Markdown source";
+    persistedText: string;
+  }) => {
+    const entry = await createDocument(options.createButton, options.generatedName, options.fileName);
+    const opened = await openDocument(entry, options.appLabel);
+    const monaco = await waitForUsableMonaco(opened.editorWindow, options.appLabel);
+    await expect(opened.editorWindow.getByLabel(options.sourceLabel, { exact: true })).toBeVisible();
+
+    await monaco.click({ position: { x: 80, y: 48 } });
+    await page.keyboard.insertText(options.persistedText);
+    await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
+    await opened.editorWindow.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(opened.editorWindow.getByText("Saved", { exact: true })).toBeVisible();
+    await expect(opened.editorWindow.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await closeDocument(opened.before, opened.editorWindow);
+
+    const reopened = await openDocument(entry, options.appLabel);
+    await waitForUsableMonaco(reopened.editorWindow, `${options.appLabel} after reopen`);
+    await expect(reopened.editorWindow.locator(".view-lines")).toContainText(options.persistedText);
+    await closeDocument(reopened.before, reopened.editorWindow);
+  };
+
+  // Issue #67 browser/package boundary: create real filesystem documents through
+  // Explorer, open through canonical associations/process/windowing, exercise the
+  // real packaged Monaco surface, save through the production document session,
+  // then close/reopen to prove filesystem persistence rather than component state.
+  await exercisePackagedEditor({
+    createButton: "New Text Document",
+    generatedName: "New Text Document",
+    fileName: "Packaged Monaco Text.txt",
+    appLabel: "Text editor",
+    sourceLabel: "Text content",
+    persistedText: "packaged text persisted",
+  });
+  await exercisePackagedEditor({
+    createButton: "New Markdown Document",
+    generatedName: "New Markdown Document",
+    fileName: "Packaged Monaco Markdown.md",
+    appLabel: "Markdown editor",
+    sourceLabel: "Markdown source",
+    persistedText: "packaged markdown persisted",
+  });
+
+  const titlebar = explorerWindow.locator(".plasmon-window__titlebar");
   const workspace = await app.locator(".plasmon-window-layer").first().boundingBox();
   if (!workspace) throw new Error("Plasmon WindowLayer has no browser bounds");
 
@@ -92,10 +191,10 @@ test("packaged Plasmon is registered, serves browser assets, boots its real tile
   };
 
   await dragTitlebarTo(workspace.x + 1);
-  await expect(dialog).toHaveAttribute("data-window-snap", "left");
+  await expect(explorerWindow).toHaveAttribute("data-window-snap", "left");
 
   await dragTitlebarTo(workspace.x + workspace.width - 1);
-  await expect(dialog).toHaveAttribute("data-window-snap", "right");
+  await expect(explorerWindow).toHaveAttribute("data-window-snap", "right");
   expect(pageErrors).toEqual([]);
 });
 
