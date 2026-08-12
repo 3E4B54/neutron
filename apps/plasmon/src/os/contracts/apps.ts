@@ -23,11 +23,6 @@ export interface NativeAppDefinition {
   associations: AssociationRule[];
 }
 
-/** Compatibility default: existing native definitions remain user-launchable applications. */
-export function isUserLaunchableNativeApplication(definition: NativeAppDefinition): boolean {
-  return definition.runtimeOnly !== true;
-}
-
 export interface NativeAppRegistry {
   register(definition: NativeAppDefinition): void;
   get(id: string): NativeAppDefinition | null;
