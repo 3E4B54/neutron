@@ -19,6 +19,7 @@ An association-backed runtime host can use a native process/window without autom
 ## Application families
 
 - `browser/` — web URL/browser surface.
+- `emulatorjs/` — association-backed packaged EmulatorJS host for supported ROM resources.
 - `explorer/` — native Explorer wrapper around shared FileManager behavior.
 - `text/` — Monaco-backed text/code editing and document sessions.
 - `markdown/` — Markdown editing plus sanitized preview on shared editor/session infrastructure.
