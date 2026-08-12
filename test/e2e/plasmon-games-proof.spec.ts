@@ -56,6 +56,10 @@ test("normal boot stays clean and explicitly imported Doom opens through js-dos"
   await expect(dialog).toBeVisible({ timeout: 20_000 });
   const player = dialog.getByLabel("DOS game");
   await expect(player).toHaveAttribute("data-jsdos-ready", "true", { timeout: 90_000 });
+  console.log("js-dos ready root:", await player.evaluate((node) => ({
+    childCount: node.childElementCount,
+    html: node.innerHTML.slice(0, 2000),
+  })));
 
   const canvas = dialog.locator("canvas").first();
   await expect(canvas).toBeVisible();
