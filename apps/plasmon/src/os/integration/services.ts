@@ -24,6 +24,7 @@ import {
   createFilesystemCore,
   createNeutronFsClient,
   type FilesystemCoreServices,
+  type FilesystemSeedSpec,
   type FsRepository,
   type RepositoryCommit,
   type RepositoryState,
@@ -82,6 +83,8 @@ export interface CreatePlasmonServicesOptions {
   neutron?: NeutronBridge;
   /** Optional window authority, primarily useful for deterministic headless composition. */
   windows?: WindowManager;
+  /** Explicit development/acceptance content only. Normal production boot omits demo seeds. */
+  demoSeeds?: readonly FilesystemSeedSpec[];
 }
 
 export type FilesystemFrontendMode = "hosted" | "standalone";
@@ -262,6 +265,7 @@ export function createPlasmonServices(
     associations,
     openService,
     process,
+    ...(options.demoSeeds ? { demoSeeds: options.demoSeeds } : {}),
   });
   const fs = filesystem.fs;
   nativeApps.setLoader(
