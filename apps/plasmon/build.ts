@@ -7,6 +7,10 @@ import { dirname, join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import type { BuildOptions } from "esbuild";
+import {
+  PACKAGED_DEMO_GAME_FILENAME,
+  createPlasmonDemoGameBundle,
+} from "./src/games/demoFixtureBundle.ts";
 import { assertMatureNativeAppBundle, cacheBustEntryAssets } from "./src/native-apps/packaging.ts";
 
 const mainOutfile = "./dist/web/main.js";
@@ -19,9 +23,7 @@ const devMode = args[0] === "dev";
 const JS_DOS_VERSION = "8.4.1";
 const JS_DOS_RELEASE_URL = `https://github.com/caiiiycuk/js-dos/releases/download/v${JS_DOS_VERSION}/release.zip`;
 const JS_DOS_RELEASE_SHA256 = "26118692bbb180aec78ec1697eb1ea6b28ff410101870cfa3e68309914c7eaa6";
-const DOOM_SOURCE_URL = "https://raw.githubusercontent.com/GG-O-BP/mendix-doom/c42008f2f9542854a921104c65adc7f2105099aa/src/assets/doom.jsdos";
-const DOOM_GIT_BLOB_SHA1 = "421f4c1ace76f33737bfcb87fc51b04f39aa6c3a";
-const PACKAGED_JS_DOS_ROOT = "/System/Program Files/js-dos/";
+const PACKAGED_JS_DOS_ROOT = "./System/Program Files/js-dos/";
 let proofAssetsPromise: Promise<void> | null = null;
 
 const EMULATORJS_VERSION = "4.2.3";
@@ -76,13 +78,6 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
-}
-
-function gitBlobSha1(bytes: Uint8Array): string {
-  const hash = createHash("sha1");
-  hash.update(`blob ${bytes.length}\0`);
-  hash.update(bytes);
-  return hash.digest("hex");
 }
 
 function findZipEnd(bytes: Uint8Array): number {
@@ -155,16 +150,10 @@ async function rebaseJsDosRelease(runtimeDirectory: string): Promise<void> {
 async function installPlayableProofAssets(): Promise<void> {
   if (proofAssetsPromise) return proofAssetsPromise;
   proofAssetsPromise = (async () => {
-    const [releaseZip, doomBundle] = await Promise.all([
-      fetchBytes(JS_DOS_RELEASE_URL),
-      fetchBytes(DOOM_SOURCE_URL),
-    ]);
+    const releaseZip = await fetchBytes(JS_DOS_RELEASE_URL);
 
     if (sha256(releaseZip) !== JS_DOS_RELEASE_SHA256) {
       throw new Error("Pinned js-dos release digest mismatch");
-    }
-    if (gitBlobSha1(doomBundle) !== DOOM_GIT_BLOB_SHA1) {
-      throw new Error("Pinned Doom hackathon bundle Git blob digest mismatch");
     }
 
     const runtimeDirectory = "./dist/web/System/Program Files/js-dos";
@@ -184,9 +173,9 @@ async function installPlayableProofAssets(): Promise<void> {
       `${JSON.stringify({ runtime: "js-dos", version: JS_DOS_VERSION, releaseSha256: JS_DOS_RELEASE_SHA256 }, null, 2)}\n`,
     );
 
-    const gamePath = "./dist/web/Games/DOS Bundles/Doom.jsdos";
-    await mkdir(dirname(gamePath), { recursive: true });
-    await writeFile(gamePath, doomBundle);
+    const fixturePath = join("./dist/web/fixtures", PACKAGED_DEMO_GAME_FILENAME);
+    await mkdir(dirname(fixturePath), { recursive: true });
+    await writeFile(fixturePath, createPlasmonDemoGameBundle());
   })();
   return proofAssetsPromise;
 }
