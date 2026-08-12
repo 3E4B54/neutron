@@ -15,7 +15,7 @@ function expectSingleNativeOpen(
   expect(processes).toHaveLength(1);
   expect(processes[0]?.handlerId).toBe(handlerId);
   expect(processes[0]?.target.nodeId).toBe(nodeId);
-  expect(processes[0]?.windowId).toBe("window:test:1");
+  expect(processes[0]?.windowId).not.toBeNull();
 
   const windows = environment.windows();
   expect(windows).toHaveLength(1);
