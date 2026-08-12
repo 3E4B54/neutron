@@ -159,6 +159,11 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await expect(closePrompt).toBeVisible({ timeout: 5_000 });
   await closePrompt.getByRole("button", { name: "Discard" }).click();
   await expect(app.getByRole("dialog", { name: "New Text Document.txt" })).toHaveCount(0, { timeout: 10_000 });
+
+  // The inherited #42 lifecycle owns any cancellation rejected by its editor
+  // disposal. Give that removed Monaco surface one browser frame to finish
+  // teardown before #67 begins strict page-error accounting.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   expect(pageErrors).toEqual([]);
 
   // Issue #67 starts here. No lifecycle-wide cancellation suppression applies
