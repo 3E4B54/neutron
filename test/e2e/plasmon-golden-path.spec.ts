@@ -5,15 +5,51 @@ import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src
 const APP_ID = "plasmon";
 const TILE_ID = "main";
 
+type BrowserPageError = {
+  name: string;
+  message: string;
+  stack?: string;
+};
+
 test("packaged Plasmon boots its real tile and protects native desktop workflows", async ({ page, request }) => {
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
-  const pageErrors: Array<{ name: string; message: string; stack?: string }> = [];
+  const pageErrors: BrowserPageError[] = [];
   page.on("pageerror", (error) => pageErrors.push({
     name: error.name,
     message: error.message,
     stack: error.stack,
   }));
+
+  const expectNoPageErrors = (label: string): void => {
+    expect(pageErrors, label).toEqual([]);
+  };
+
+  // Monaco cancels in-flight editor work while its disposable graph is torn
+  // down. The packaged runtime proves that boundary as a single Canceled error
+  // whose stack starts in cancellation and immediately enters disposal. Consume
+  // only that exact boundary signal; unrelated errors and cancellations elsewhere
+  // remain fatal through the global pageErrors collector.
+  const expectOnlyMonacoDisposeCancellation = async (
+    label: string,
+    dispose: () => Promise<void>,
+  ): Promise<void> => {
+    expectNoPageErrors(`${label} must begin without unexplained browser errors`);
+    await dispose();
+    await page.waitForTimeout(0);
+
+    const disposalErrors = pageErrors.splice(0);
+    expect(disposalErrors, `${label} may emit only the proven Monaco disposal cancellation`).toHaveLength(1);
+    const [error] = disposalErrors;
+    expect(error).toMatchObject({ name: "Canceled", message: "Canceled" });
+
+    const stack = error?.stack ?? "";
+    expect(stack, `${label} cancellation must retain its disposal stack`).toContain("Canceled: Canceled");
+    const cancelIndex = stack.indexOf(".cancel (");
+    const disposeIndex = stack.indexOf(".dispose (");
+    expect(cancelIndex, `${label} cancellation must originate from cancel()`).toBeGreaterThanOrEqual(0);
+    expect(disposeIndex, `${label} cancellation must flow into dispose()`).toBeGreaterThan(cancelIndex);
+  };
 
   await page.goto(kernelUrl);
   await page.waitForFunction(
@@ -132,6 +168,7 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await closePrompt.getByRole("button", { name: "Cancel" }).click();
   await expect(closePrompt).not.toBeVisible();
   await expect(editorWindow).toBeVisible();
+  expectNoPageErrors("cancelled dirty close must not emit browser errors");
 
   // Dirty it again so the second close remains deterministic even if autosave
   // had time to run after Cancel.
@@ -140,10 +177,12 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   await expect(editorWindow.getByText("Modified", { exact: true })).toBeVisible();
   await closeEditor.click();
   await expect(closePrompt).toBeVisible({ timeout: 5_000 });
-  await closePrompt.getByRole("button", { name: "Discard" }).click();
-  await expect(app.getByRole("dialog", { name: "New Text Document.txt" })).toHaveCount(0, { timeout: 10_000 });
+  await expectOnlyMonacoDisposeCancellation("discarded dirty Text editor", async () => {
+    await closePrompt.getByRole("button", { name: "Discard" }).click();
+    await expect(app.getByRole("dialog", { name: "New Text Document.txt" })).toHaveCount(0, { timeout: 10_000 });
+  });
 
-  expect(pageErrors).toEqual([]);
+  expectNoPageErrors("dirty-close journey must leave no unexplained browser errors");
 
   const explorerWindowId = await dialog.getAttribute("data-window-id");
   if (!explorerWindowId) throw new Error("Explorer window has no stable data-window-id");
@@ -197,9 +236,15 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     return monaco;
   };
 
-  const closeDocument = async (before: number, openedWindow: ReturnType<typeof nativeWindows.last>) => {
-    await openedWindow.getByRole("button", { name: "Close", exact: true }).click();
-    await expect(nativeWindows).toHaveCount(before, { timeout: 10_000 });
+  const closeDocument = async (
+    before: number,
+    openedWindow: ReturnType<typeof nativeWindows.last>,
+    label: string,
+  ) => {
+    await expectOnlyMonacoDisposeCancellation(label, async () => {
+      await openedWindow.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(nativeWindows).toHaveCount(before, { timeout: 10_000 });
+    });
   };
 
   const exercisePackagedEditor = async (options: {
@@ -263,16 +308,19 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     }, options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await expect(firstLine).toHaveText(options.persistedText);
+    expectNoPageErrors(`${options.appLabel} edit must not emit browser errors`);
 
     await opened.editorWindow.getByRole("button", { name: "Save", exact: true }).click();
     await expect(opened.editorWindow.getByText("Saved", { exact: true })).toBeVisible();
     await expect(opened.editorWindow.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
-    await closeDocument(opened.before, opened.editorWindow);
+    expectNoPageErrors(`${options.appLabel} save must not emit browser errors`);
+    await closeDocument(opened.before, opened.editorWindow, `${options.appLabel} saved close`);
 
     const reopened = await openDocument(entry, options.appLabel);
     await waitForUsableMonaco(reopened.editorWindow, `${options.appLabel} after reopen`);
     await expect(reopened.editorWindow.locator(".view-line").first()).toHaveText(options.persistedText);
-    await closeDocument(reopened.before, reopened.editorWindow);
+    expectNoPageErrors(`${options.appLabel} reopen must not emit browser errors`);
+    await closeDocument(reopened.before, reopened.editorWindow, `${options.appLabel} reopened close`);
   };
 
   // Issue #67 browser/package boundary: create real filesystem documents through
@@ -296,7 +344,7 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     persistedText: "packaged markdown persisted",
   });
 
-  expect(pageErrors).toEqual([]);
+  expectNoPageErrors("packaged golden path must finish without unexplained browser errors");
 });
 
 declare global {
