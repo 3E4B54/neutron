@@ -23,6 +23,7 @@ import type {
 import {
   FileManager,
   FileOperationClipboard,
+  type FileManagerOpenAuthority,
   type FileManagerPresentation,
   type FileManagerSnapshot,
 } from "../../os/file-manager/index.ts";
@@ -40,6 +41,7 @@ export interface ExplorerAppProps {
   fsEvents?: FsEventSource;
   associations: AssociationRegistry;
   openService: OpenService;
+  openAuthority: FileManagerOpenAuthority;
   clipboard?: FileOperationClipboard;
 }
 
@@ -74,6 +76,7 @@ export function ExplorerApp({
   fsEvents,
   associations,
   openService,
+  openAuthority,
   clipboard: providedClipboard,
 }: ExplorerAppProps) {
   const clipboard = useMemo(() => providedClipboard ?? new FileOperationClipboard(), [providedClipboard]);
@@ -276,6 +279,7 @@ export function ExplorerApp({
             <FileManager
               directoryId={location.nodeId}
               fs={fs}
+              openAuthority={openAuthority}
               {...(fsEvents ? { fsEvents } : {})}
               associations={associations}
               openService={openService}
