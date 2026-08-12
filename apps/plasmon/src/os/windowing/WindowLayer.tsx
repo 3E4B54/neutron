@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { WindowManager, WindowState } from "../contracts/window.ts";
 import type { WindowViewport } from "./geometry.ts";
 import { useWindowStates } from "./useWindowStates.ts";
@@ -22,13 +22,7 @@ function viewportAware(manager: WindowManager): ViewportAwareWindowManager | nul
 export function WindowLayer({ manager, renderWindow, className }: WindowLayerProps): ReactNode {
   const layerRef = useRef<HTMLDivElement | null>(null);
   const windows = useWindowStates(manager);
-  const activeId = useMemo(() => {
-    let active: WindowState | undefined;
-    for (const state of windows) {
-      if (!state.minimized && (!active || state.z > active.z)) active = state;
-    }
-    return active?.id;
-  }, [windows]);
+  const activeId = manager.focusSnapshot().focusedId;
 
   useEffect(() => {
     const layer = layerRef.current;
