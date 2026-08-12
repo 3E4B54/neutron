@@ -1,43 +1,25 @@
-# Plasmon native applications and runtime hosts
+# Native Apps
 
-`native-apps/**` contains applications rendered through Plasmon's native process/window system plus association-backed browser/runtime hosts.
+`native-apps` contains first-party window content that is integrated directly into the Plasmon desktop.
 
-## Registration and boundaries
+Current examples:
 
-`content-apps.ts` defines shared built-in application metadata, handlers, and association rules. Integration registers those definitions with the native application and association registries. Individual apps should not create hidden parallel registries or own generic file-opening policy.
+- `file-manager/` — the first-party filesystem browser and file action surface;
+- `notepad/` — text editing surface;
+- `photos/` — image viewing surface;
+- `jsdos/` — first game runtime integration, association-driven through `.jsdos`;
+- `emulatorjs/` — association-driven EmulatorJS runtime for the first NES (`.nes`) slice.
 
-Native application UI consumes the same OS authorities as other surfaces:
+These programs are not all `*.sys` package applications. File handlers and runtime hosts remain ordinary association targets when the architecture calls for them.
 
-- filesystem content through `FsService`;
-- handler/default selection through associations/opening services;
-- lifecycle/windows through process/window services;
-- common resource/application presentation through the shared visual system;
-- Kernel application behavior through the Neutron boundary rather than local emulation.
+Keep native app presentation code separate from the service boundary. Filesystem authority stays in `FsService`; open/routing decisions stay in the association and process layers.
 
-An association-backed runtime host can use a native process/window without automatically becoming a first-class user-launchable system application. Product identity and execution mechanism are separate concerns.
+## Package-structure fast lanes
 
-## Application families
+Repository-level architecture tests already enforce the expected `README.md`/`AGENTS.md` pairings for app subtrees that require local documentation. When a new component family is added under `native-apps/`, run the relevant repository-sensitive structure test before relying on the combined Fast CI result.
 
-- `browser/` — web URL/browser surface.
-- `emulatorjs/` — association-backed packaged EmulatorJS host for supported ROM resources.
-- `explorer/` — native Explorer wrapper around shared FileManager behavior.
-- `text/` — Monaco-backed text/code editing and document sessions.
-- `markdown/` — Markdown editing plus sanitized preview on shared editor/session infrastructure.
-- `photos/` — browser-supported image viewing/navigation/fullscreen.
-- `video/` — browser media playback and URL/media capability handling.
-- `settings/` — settings/status surface over injected shared services.
-- `properties/` — native wrapper for shared filesystem/resource inspection.
-- `recycle-bin/` — native restore/permanent-delete/empty surface over the canonical filesystem Trash service.
-- `jsdos/` — association-backed packaged runtime/player integration.
+## Document close and persistence
 
-## Refactor direction
+App-owned dirty-buffer and close-confirmation mechanics belong inside the relevant native-app family once the shell-level document-dirty contract has been consumed. The first concrete example is `notepad/`, where edits are written through the resolved `FsService` and titlebar/window close requests query the same app-owned dirty state before the shell closes the window.
 
-Build reusable application infrastructure instead of solving the same document/media/runtime problem in each app. Prefer shared document sessions/editor chrome, common media/object-URL helpers, reusable navigation models, shared settings capability seams, and consistent application chrome/presentation.
-
-Keep domain semantics below React when they can be deterministic. Browser engine adapters (Monaco, media elements, iframes, fullscreen, packaged scripts/workers) should remain isolated from filesystem/document/domain policy.
-
-Concrete titles, menu omissions, file-type corrections, runtime paths, and current acceptance bugs belong in Issues/tests, not in this overview.
-
-## Testing
-
-Use fast model/domain tests for document sessions, parsing/classification, navigation, settings summaries, URL/media normalization, Trash-surface actions, and other deterministic semantics. Use real-browser/package tests for Monaco/workers, iframe/media behavior, fullscreen, object URLs, packaged runtime scripts/assets, native application rendering, focus/keyboard integration, and other browser-engine behavior. Manual review remains useful for application UX/polish.
+Keep generic close prompting out of `native-apps/`; the window model only brokers the close request and asks the app whether confirmation is required.
