@@ -8,11 +8,11 @@ The initial supported resource is an iNES `.nes` ROM. Association matching selec
 
 Packaged runtime data lives under `/System/Program Files/EmulatorJS`. The host resolves that path relative to the installed Plasmon document so it continues to work when Neutron serves Plasmon below `/app/plasmon/`.
 
-EmulatorJS 4.2.3 uses global `EJS_*` configuration. Each process therefore gets its own ordinary blank iframe so runtime globals, WASM, audio, timers, and engine state are isolated per native window. The host populates that iframe document directly, assigns the `EJS_*` configuration and lifecycle callbacks on its `contentWindow`, and injects the packaged `loader.js` into that same document. Only the ROM bytes use a Blob URL.
+EmulatorJS 4.2.3 uses global `EJS_*` configuration. Each process therefore gets its own ordinary blank iframe so runtime globals, WASM, audio, timers, and engine state are isolated per native window. Following the proven daedalOS boundary, the runtime host owns that iframe imperatively: it creates and appends the element into a stable React-owned container, populates its document directly, assigns the `EJS_*` configuration and lifecycle callbacks on its `contentWindow`, and injects the packaged `loader.js` into that same document. React owns the surrounding container, not the runtime document. Only the ROM bytes use a Blob URL.
 
-Do not replace this with a navigated `srcdoc` or Blob-hosted runtime document without packaged-browser evidence. Chromium may treat packaged runtime scripts loaded from an opaque nested document as cross-origin and block them before EmulatorJS initializes. The direct blank-iframe/contentWindow pattern keeps runtime assets on the Plasmon application origin while preserving one-engine-per-process isolation.
+Do not replace this with a navigated `srcdoc` or Blob-hosted runtime document without packaged-browser evidence. Chromium may treat packaged runtime scripts loaded from an opaque nested document as cross-origin and block them before EmulatorJS initializes. Likewise, do not move the runtime document back under declarative React iframe ownership without browser evidence: the runtime needs one exact iframe/document instance from creation through teardown. The direct blank-iframe/contentWindow pattern keeps runtime assets on the Plasmon application origin while preserving one-engine-per-process isolation.
 
-Unmounting the host terminates EmulatorJS when available, removes the iframe, and revokes the ROM object URL; no shared emulator framework is introduced.
+Unmounting the host terminates EmulatorJS when available, removes the exact runtime iframe, and revokes the ROM object URL; no shared emulator framework is introduced.
 
 The host disables EmulatorJS local settings/database caches where the public configuration supports it. Plasmon's filesystem remains authoritative for the ROM resource and any durable product state.
 
