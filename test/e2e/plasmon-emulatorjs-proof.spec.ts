@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { localCanisterOrigin } from "neutron-tools/src/runtime.js";
 import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src/local_session.ts";
 
@@ -77,7 +77,7 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
   const host = dialog.locator('iframe[title="NES game"]');
   const emulator = app.frameLocator('iframe[title="NES game"]');
 
-  const optionalText = async (locator: ReturnType<typeof dialog.locator>): Promise<string | null> => {
+  const optionalText = async (locator: Locator): Promise<string | null> => {
     if (await locator.count() === 0) return null;
     return await locator.first().textContent();
   };
