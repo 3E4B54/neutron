@@ -46,9 +46,11 @@ export class NeutronFilesPort implements ReviewFilesPort {
       ...(options.delegationToken ? { delegationToken: options.delegationToken } : {}),
     });
     const metadata = parseMetadata(result.value);
-    if (metadata.path !== path || metadata.mediaType !== normalized || metadata.byteLength !== expectedByteLength || metadata.etag !== expectedEtag || result.attachments.length !== 0) {
-      throw invalidResponse("write result does not match requested file");
-    }
+    if (metadata.path !== path) throw invalidResponse("write path does not match the requested file");
+    if (metadata.mediaType !== normalized) throw invalidResponse("write mediaType does not match the requested media type");
+    if (metadata.byteLength !== expectedByteLength) throw invalidResponse("write byteLength does not match the requested bytes");
+    if (metadata.etag !== expectedEtag) throw invalidResponse("write etag does not match the requested bytes");
+    if (result.attachments.length !== 0) throw invalidResponse("write unexpectedly returned attachments");
     return metadata;
   }
 }
@@ -87,7 +89,7 @@ function stringField(value: JsonObject, key: string): string {
 }
 
 function invalidResponse(reason: string): FilePortError {
-  return new FilePortError("FILES_INVALID_RESPONSE", "Files returned data that failed Review integrity validation", { reason });
+  return new FilePortError("FILES_INVALID_RESPONSE", `Files returned data that failed Review integrity validation: ${reason}`, { reason });
 }
 
 function isObject(value: JsonValue): value is JsonObject {
