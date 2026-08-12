@@ -22,5 +22,5 @@ test("FileManager passes its association registry into FileEntry presentation", 
   const end = source.indexOf("/>", start);
   expect(start).toBeGreaterThanOrEqual(0);
   expect(end).toBeGreaterThan(start);
-  expect(source.slice(start, end)).toContain("associations");
+  expect(source.slice(start, end)).toContain("{...(associations ? { associations } : {})}");
 });
