@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { FsRpcClient } from "../src/os/fs/index.ts";
+import {
+  FS_ASSOCIATION_DEFAULTS_METADATA_KEY,
+  associationTypeKey,
+} from "../src/os/associations/index.ts";
+import { FsRpcClient, MemoryFsRepository } from "../src/os/fs/index.ts";
 import { createFilesystemService, createPlasmonServices } from "../src/os/integration/services.ts";
 
 test("Wave 2 composition registers native apps, loaders, and content handlers", async () => {
@@ -46,6 +50,51 @@ test("Wave 2 associations prefer Markdown and honor explicit shortcut handlers w
   const currentShortcut = await services.fs.stat(shortcut.id);
   const probe = await services.fs.read(shortcut.id);
   expect((await services.associations.resolve(currentShortcut, probe))[0]?.id).toBe("native:video");
+});
+
+test("production composition persists association defaults through the filesystem authority", async () => {
+  const repository = new MemoryFsRepository();
+  const first = createPlasmonServices({ filesystemRepository: repository });
+
+  try {
+    await first.filesystem.ready;
+    const documents = await first.fs.resolvePath("/Documents");
+    expect(documents?.kind).toBe("directory");
+    if (!documents || documents.kind !== "directory") throw new Error("Documents directory is unavailable");
+
+    const markdown = await first.fs.createFile(documents.id, "association-default.md", {
+      mime: "text/markdown",
+    });
+    expect((await first.associations.resolve(markdown))[0]?.id).toBe("native:markdown");
+
+    await first.associations.setUserDefault(
+      associationTypeKey.extension(".md"),
+      "native:text",
+    );
+
+    const root = await first.fs.resolvePath("/");
+    expect(root?.metadata[FS_ASSOCIATION_DEFAULTS_METADATA_KEY]).toEqual({
+      version: 1,
+      defaults: { "extension:.md": "native:text" },
+    });
+  } finally {
+    first.filesystem.dispose();
+  }
+
+  const second = createPlasmonServices({ filesystemRepository: repository });
+  try {
+    await second.filesystem.ready;
+    const markdown = await second.fs.resolvePath("/Documents/association-default.md");
+    expect(markdown?.kind).toBe("file");
+    if (!markdown || markdown.kind !== "file") throw new Error("Persisted Markdown file is unavailable");
+
+    expect((await second.associations.resolve(markdown)).map(({ id }) => id).slice(0, 2)).toEqual([
+      "native:text",
+      "native:markdown",
+    ]);
+  } finally {
+    second.filesystem.dispose();
+  }
 });
 
 test("Kernel-hosted Wave 2 composition uses the background filesystem RPC client", () => {

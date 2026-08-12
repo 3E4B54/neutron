@@ -31,7 +31,6 @@ import {
   marqueeSelection,
   moveNodesToDirectory,
   normalizeRect,
-  openNodeWithAssociations,
   reconcileSelection,
   renameNode,
   selectAll,
@@ -39,6 +38,7 @@ import {
   type RectLike,
   type SelectionState,
 } from "./model.ts";
+import { activateFileManagerNode, type FileManagerOpenAuthority } from "./activation.ts";
 import { pasteClipboardCollisionAware } from "./clipboard.ts";
 import {
   createDocument,
@@ -69,6 +69,7 @@ export interface FileManagerSnapshot {
 export interface FileManagerProps {
   directoryId: NodeId;
   fs: FsService;
+  openAuthority: FileManagerOpenAuthority;
   fsEvents?: FsEventSource;
   associations?: AssociationRegistry;
   openService?: OpenService;
@@ -99,6 +100,7 @@ function errorMessage(cause: unknown): string {
 export function FileManager({
   directoryId,
   fs,
+  openAuthority,
   fsEvents,
   associations,
   openService,
@@ -223,25 +225,16 @@ export function FileManager({
   const openNode = useCallback(async (node: FsNode) => {
     setContextMenu(null);
     try {
-      if (node.kind === "directory") {
-        if (onOpenDirectory) await onOpenDirectory(node);
-        else {
-          if (!process) throw new Error("Explorer process service is unavailable");
-          const id = await process.open("native:explorer", { nodeId: node.id });
-          if (!id) throw new Error("Explorer is not registered yet");
-        }
-      } else {
-        if (readSharedShortcut(node)) {
-          throw new Error("Shortcut launch dispatch is owned by Shell; FileManager preserves the shortcut resource without dereferencing its target");
-        }
-        if (!associations || !openService) throw new Error("File association/open service is unavailable");
-        await openNodeWithAssociations(fs, associations, openService, node.id);
-      }
+      await activateFileManagerNode(
+        openAuthority,
+        node,
+        onOpenDirectory ? { onOpenDirectory } : {},
+      );
       setError(null);
     } catch (cause: unknown) {
       setError(errorMessage(cause));
     }
-  }, [associations, fs, onOpenDirectory, openService, process]);
+  }, [onOpenDirectory, openAuthority]);
 
   const startRename = (node: FsNode) => {
     setContextMenu(null);
