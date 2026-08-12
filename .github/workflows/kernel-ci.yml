@@ -80,31 +80,6 @@ jobs:
             npm ci
           '
 
-      - name: Materialize Motoko packages
-        if: steps.kernel_scope.outputs.run_kernel == 'true'
-        run: |
-          nix develop --command bash -lc '
-            set -euxo pipefail
-            cd apps/kernel
-            mops sources
-          '
-
-      - name: Regenerate Certified Assets candidate binding
-        if: steps.kernel_scope.outputs.run_kernel == 'true'
-        run: |
-          nix develop --command bash -lc '
-            set -euxo pipefail
-            npm --workspace neutron-kernel run certified-assets:candidate-binding:write
-          '
-
-      - name: Upload regenerated candidate binding
-        if: steps.kernel_scope.outputs.run_kernel == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: certified-assets-candidate-binding
-          path: apps/kernel/certified-assets-candidate-binding.json
-          if-no-files-found: error
-
       # Package first because the kernel test suite validates generated
       # artifacts produced by the normal packaging pipeline. Do not run a
       # separate build here: package already performs the build.
