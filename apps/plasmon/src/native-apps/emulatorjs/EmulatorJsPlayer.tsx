@@ -47,8 +47,7 @@ function messageFor(state: PlayerState): string {
  * lifecycle abstraction.
  */
 export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps) {
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const [frameLoaded, setFrameLoaded] = useState(false);
+  const runtimeCleanupRef = useRef<(() => void) | null>(null);
   const [rom, setRom] = useState<LoadedRom | null>(null);
   const [state, setState] = useState<PlayerState>("loading");
   const [detail, setDetail] = useState<string | null>(null);
@@ -57,7 +56,8 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
     let disposed = false;
     let objectUrl: string | null = null;
 
-    setFrameLoaded(false);
+    runtimeCleanupRef.current?.();
+    runtimeCleanupRef.current = null;
     setRom(null);
     setState("loading");
     setDetail(null);
@@ -75,12 +75,6 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
         objectUrl = null;
         return;
       }
-
-      // The iframe key changes from "empty" to the ROM object URL below. Its
-      // previous load event may already have set frameLoaded=true while the
-      // filesystem read was in flight. Clear that stale readiness before
-      // mounting the replacement iframe so bootstrap waits for its own load.
-      setFrameLoaded(false);
       setRom({ name: node.name, url: objectUrl });
     };
 
@@ -92,16 +86,21 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
 
     return () => {
       disposed = true;
+      runtimeCleanupRef.current?.();
+      runtimeCleanupRef.current = null;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [fs, target.nodeId]);
 
-  useEffect(() => {
-    if (!rom || !frameLoaded) return;
-    const frame = frameRef.current;
-    const runtimeWindow = frame?.contentWindow as EmulatorJsWindow | null;
-    const runtimeDocument = frame?.contentDocument;
-    if (!frame || !runtimeWindow || !runtimeDocument) {
+  const startRuntime = (frame: HTMLIFrameElement) => {
+    if (!rom) return;
+
+    runtimeCleanupRef.current?.();
+    runtimeCleanupRef.current = null;
+
+    const runtimeWindow = frame.contentWindow as EmulatorJsWindow | null;
+    const runtimeDocument = frame.contentDocument;
+    if (!runtimeWindow || !runtimeDocument) {
       setState("error");
       setDetail("EmulatorJS iframe is unavailable");
       return;
@@ -168,9 +167,11 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
 
     timeout = setTimeout(() => fail("EmulatorJS did not start within 60 seconds"), 60_000);
 
-    return () => {
+    runtimeCleanupRef.current = () => {
+      if (disposed) return;
       disposed = true;
       if (timeout) clearTimeout(timeout);
+      timeout = null;
       runtimeWindow.removeEventListener("error", onWindowError);
       runtimeWindow.removeEventListener("unhandledrejection", onUnhandledRejection);
       delete runtimeWindow.EJS_ready;
@@ -180,21 +181,22 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       delete frame.dataset.emulatorjsReady;
       script.remove();
     };
-  }, [frameLoaded, rom]);
+  };
 
   return (
     <div
       style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", background: "#000" }}
     >
-      <iframe
-        key={rom?.url ?? "empty"}
-        ref={frameRef}
-        srcDoc={createEmulatorJsFrameDocument()}
-        title="NES game"
-        aria-label="NES game"
-        onLoad={() => setFrameLoaded(true)}
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0, background: "#000" }}
-      />
+      {rom ? (
+        <iframe
+          key={rom.url}
+          srcDoc={createEmulatorJsFrameDocument()}
+          title="NES game"
+          aria-label="NES game"
+          onLoad={(event) => startRuntime(event.currentTarget)}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0, background: "#000" }}
+        />
+      ) : null}
       {state !== "ready" ? (
         <div
           role={state === "error" ? "alert" : "status"}
