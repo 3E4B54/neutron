@@ -23,9 +23,15 @@ export interface WindowState extends WindowGeometry {
   restoreGeometry?: WindowGeometry;
 }
 
+export interface WindowFocusSnapshot {
+  focusedId: WindowId | null;
+  mru: readonly WindowId[];
+}
+
 export interface WindowManager {
   create(processId: ProcessId, initial: WindowCreateOptions): WindowId;
   focus(id: WindowId): void;
+  focusSnapshot(): WindowFocusSnapshot;
   move(id: WindowId, x: number, y: number): void;
   resize(id: WindowId, width: number, height: number): void;
   minimize(id: WindowId): void;
