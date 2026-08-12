@@ -4,7 +4,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { createOwnedEditorModel, syncEditorModelValue, type OwnedEditorModel } from "./editorModel.ts";
+import { createEditorSurfaceModelOwner, syncEditorModelValue, type OwnedEditorModel } from "./editorModel.ts";
 import { installMonacoEnvironment } from "./monacoEnvironment.ts";
 
 export const MONACO_ENGINE_NAME = "Monaco";
@@ -35,8 +35,6 @@ type MonacoEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
 type MonacoModel = import("monaco-editor").editor.ITextModel;
 type MonacoDisposable = import("monaco-editor").IDisposable;
 
-let nextSurfaceInstanceId = 1;
-
 /** Thin React lifecycle adapter around Monaco. Each live surface owns its model. */
 export function MonacoEditorSurface({
   modelKey,
@@ -53,8 +51,6 @@ export function MonacoEditorSurface({
   const editorRef = useRef<MonacoEditor | null>(null);
   const modelRef = useRef<MonacoModel | null>(null);
   const monacoRef = useRef<MonacoApi | null>(null);
-  const surfaceInstanceIdRef = useRef<number | null>(null);
-  if (surfaceInstanceIdRef.current === null) surfaceInstanceIdRef.current = nextSurfaceInstanceId++;
   const applyingExternalValueRef = useRef(false);
   const onChangeRef = useRef(onChange);
   const onCursorChangeRef = useRef(onCursorChange);
@@ -80,9 +76,8 @@ export function MonacoEditorSurface({
       .then((monaco) => {
         if (cancelled || !containerRef.current) return;
         monacoRef.current = monaco;
-        const created = createOwnedEditorModel(
+        const created = createEditorSurfaceModelOwner(
           modelKey,
-          surfaceInstanceIdRef.current!,
           (uri) => monaco.editor.createModel(value, language, monaco.Uri.parse(uri)),
         );
         const createdModel = created.model;
@@ -115,10 +110,6 @@ export function MonacoEditorSurface({
             if (!applyingExternalValueRef.current) onChangeRef.current(createdModel.getValue());
           }),
           createdEditor.onDidChangeCursorSelection((event) => {
-            // ICursorSelectionChangedEvent exposes the active cursor through
-            // its Selection. Reading a non-existent event.position works only
-            // by accident at compile time and throws once the real packaged
-            // Monaco surface emits a selection event.
             onCursorChangeRef.current?.({
               line: event.selection.positionLineNumber,
               column: event.selection.positionColumn,
