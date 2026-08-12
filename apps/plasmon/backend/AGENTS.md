@@ -2,29 +2,29 @@
 
 ## Scope
 
-Applies to `apps/plasmon/backend/**`. Also follow `apps/plasmon/AGENTS.md` and
-repository-level release/migration rules.
+Applies to `apps/plasmon/backend/**`. Also follow `apps/plasmon/AGENTS.md` and repository-level release, package, and migration rules.
+
+## Authority
+
+This directory owns Plasmon's Motoko backend methods, managed-memory schema modules, and explicit durable-state migrations. It does not own Desktop/filesystem semantics, native application state, resource-opening policy, Neutron installation/runtime authority, or cross-AppScope authorization policy.
 
 ## Rules
 
-- Treat released schema modules under `memory/**` as immutable.
-- Add schema versions and explicit migrations; never rewrite released durable
-  history.
-- Keep `neutron.json` memory declarations consistent with backend schema usage.
-- Do not move the browser-local Plasmon filesystem into this backend. Hosted
-  filesystem persistence belongs to the persistent background surface.
-- Do not introduce sharing/MTN backend code from historical branches without an
-  explicit task and security review.
-- Do not invent Kernel capabilities from the backend.
-- Keep app methods consistent with generated method-schema/package tests.
-
-## Version authority
-
-Do **not** bump the Plasmon manifest release version. It remains owner-frozen at
-100 until the owner explicitly authorizes a different version.
+- Treat released managed-memory schema modules as immutable history.
+- Evolve durable state by adding schema versions and explicit forward migrations.
+- Keep `neutron.json` method and memory declarations aligned with backend implementation.
+- Do not move canonical Plasmon filesystem authority into Motoko merely to simplify frontend code; follow the filesystem/integration contracts.
+- Do not invent Kernel capabilities or security semantics here. Escalate required Neutron capability changes to the owning boundary.
+- Keep backend APIs narrow and domain-oriented. Avoid turning the backend into a catch-all coordinator for UI/application concerns.
 
 ## Validation
 
-For backend changes, run package/schema generation plus migration tests
-appropriate to the change. A durable schema change requires clean-init and
-supported-upgrade-path evidence, not compilation alone.
+Use the smallest applicable package/schema/migration checks for the change. Durable-state changes require evidence for clean initialization and every supported upgrade path, not compilation alone.
+
+Run the Plasmon fast suite when backend-facing TypeScript/contracts are affected:
+
+```sh
+npm --workspace neutron-plasmon test
+```
+
+Use package-level verification when generated method schemas, package metadata, or packaged backend behavior are part of the acceptance claim.

@@ -2,38 +2,30 @@
 
 ## Scope and authority
 
-These rules apply to `src/games/**`. Also follow the parent `src/AGENTS.md` and OS/filesystem/association instructions for any cross-boundary work.
+Applies to `src/games/**`. Also follow the parent `src/AGENTS.md` and the nearest filesystem, association, runtime, and testing instructions for cross-boundary work.
 
-Games owns game-specific content/bootstrap concerns. It does not own generic resource opening, filesystem persistence, application installation, or emulator/system-app facades.
+Games owns game-specific content/bootstrap concerns. It does not own generic resource opening, filesystem persistence, process/window policy, application installation, or emulator/system-app facades.
 
-## Required rules
+## Rules
 
-- Keep game launch data-driven through the shared open dispatcher and `AssociationRegistry`.
-- Never add game-name or filename-specific launch behavior to Shell, Desktop, FileManager, integration, or the open dispatcher.
-- `.jsdos` resolves to the js-dos runtime. js-dos is not `.sys` and must not be exposed as `DOS.sys`, `Games.sys`, or a fake native application.
-- Temporary proof/demo seeds must stay clearly marked and separable from durable product defaults.
-- Do not treat an asset existing in build output as proof that packaged Neutron serves it correctly.
-- Preserve licensing/redistribution status for bundled game content. Do not silently convert unverified proof content into a permanent shipped asset.
-- Game saves and user state must use the intended Plasmon filesystem/runtime persistence model rather than browser-local storage becoming an undocumented authority.
+- Keep launch behavior data-driven through shared resource-opening and association authorities.
+- Do not add game-name or filename-specific behavior to Shell, Desktop, FileManager, integration, or generic opening code.
+- Reuse canonical filesystem, process, windowing, visual, and runtime services instead of creating game-specific copies.
+- Keep temporary/demo/bootstrap content clearly separable from durable product defaults.
+- Preserve licensing and redistribution metadata for bundled content.
+- Keep game saves and durable user state behind the intended Plasmon/runtime persistence authority.
+- Do not treat build-output existence as installed-runtime acceptance.
 
-## Acceptance and tests
+## Testing
 
-The packaged acceptance path must prove the complete user workflow:
+Test deterministic game-domain behavior with the fast Bun lane wherever practical:
 
-```text
-game visible/reachable
--> double-click
--> generic open dispatch
--> association selects runtime
--> runtime window starts
--> game loads
--> user input works / game is playable
+```sh
+npm --workspace neutron-plasmon test
 ```
 
-Add Playwright/browser coverage for this path where possible. A build test that only sees `Doom.jsdos` on disk is insufficient.
-
-The known packaged `Doom.jsdos` HTTP 503 is required regression work until explicitly deferred.
+Use focused tests while iterating. Add package/browser coverage only when the acceptance claim depends on installed asset serving, runtime initialization, real browser input/media/fullscreen behavior, or playability.
 
 ## Escalate
 
-Escalate redistribution/licensing uncertainty, a required Kernel serving capability that vanilla Neutron does not provide, or any proposal that would require a game-specific dispatch exception.
+Escalate licensing uncertainty, missing Neutron serving/runtime capability, or any proposal that would require a game-specific exception in a generic OS authority.

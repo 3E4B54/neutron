@@ -1,8 +1,8 @@
 # Plasmon test lanes
 
-The canonical agent testing protocol is [`../TESTING.md`](../TESTING.md). This directory contains Plasmon-level contract, integration, packaging, and regression tests that span multiple source subsystems. Most focused implementation tests remain colocated with the production code they exercise under `src/**`.
+The canonical testing protocol is [`../TESTING.md`](../TESTING.md). This directory contains Plasmon-level contract, integration, packaging, and regression tests that span multiple source subsystems. Focused implementation tests should normally remain colocated with the production code they exercise.
 
-The development rule is simple: keep deterministic OS/application semantics in production models, services, controllers, and commands that Bun can exercise directly; reserve package/browser/manual testing for boundaries that actually require them.
+The architectural testing rule is: keep deterministic application/OS semantics in production models, services, controllers, and commands that Bun can exercise directly; reserve package/browser/manual testing for boundaries that genuinely require them.
 
 ## Fast development lane
 
@@ -12,20 +12,13 @@ From the repository root:
 npm --workspace neutron-plasmon test
 ```
 
-This is the required pre-handoff Plasmon fast suite. It runs colocated `src/**` tests plus the package-independent tests in this directory:
+This is the required pre-handoff Plasmon fast suite. It is package-independent and intentionally avoids Kernel/Motoko/package/browser work.
 
-- `os-contracts.test.ts` — shared OS contract expectations.
-- `platform.test.ts` — compatibility/regression coverage around historical platform behavior.
-- `storage-security-regression.test.ts` — persistence/security wiring regressions.
-- `wave2-integration.test.ts` — cross-subsystem integration expectations.
+Do not use repository-root `npm test` as the ordinary Plasmon edit/test loop; it exercises unrelated Neutron workspaces.
 
-It deliberately excludes `package.test.ts` because that file reads generated build output.
+## Focused tests
 
-Do not use repository-root `npm test` as the ordinary Plasmon edit/test loop. It exercises unrelated Neutron workspaces.
-
-## Focused subsystem tests
-
-Run the smallest relevant Bun filter while iterating. From `apps/plasmon/`, examples include:
+Run the smallest relevant Bun filter while iterating, for example from `apps/plasmon/`:
 
 ```sh
 bun test src/os/fs
@@ -36,60 +29,32 @@ bun test src/os/windowing
 bun test src/native-apps
 ```
 
-Specific files may be run directly, for example:
-
-```sh
-bun test ./src/os/file-manager/model.test.ts
-```
-
-Prefer executable behavior over source-string assertions. If source inspection is unavoidable, assert the smallest durable relationship rather than variable names or obsolete call spelling.
+Prefer executable behavior over source-string assertions. If source inspection is unavoidable, assert the smallest durable relationship rather than local naming or incidental implementation shape.
 
 ## Package lane
 
-`package.test.ts` verifies manifest/package/build-output relationships and therefore belongs to the separate package lane:
+Use:
 
 ```sh
 npm --workspace neutron-plasmon run test:package
 ```
 
-The Plasmon release version remains owner-frozen at **100** until explicitly changed. Tests must not be weakened to excuse an unauthorized manifest bump.
-
-Build-output presence is not installed-runtime proof. A file can exist in `dist/` and still fail to be served by Neutron.
+when generated build/package output is part of the acceptance claim. Build-output presence is not installed-runtime proof.
 
 ## Browser / Playwright lane
 
-Use the repository's real Neutron E2E/Playwright infrastructure when the acceptance claim depends on an installed package or browser behavior. Do not create a mock-only browser test and describe it as packaged acceptance.
+Use real browser/Neutron automation only when the claim depends on browser or installed-package behavior, such as packaged HTTP serving, focus/pointer/hit-testing, workers, media, downloads, fullscreen, iframe/runtime initialization, or other browser-owned boundaries.
 
-Browser coverage is appropriate for boundaries such as:
+Keep Playwright intentionally small and semantic. Stable tests should target user intent and durable roles/identifiers rather than CSS geometry or transient visual structure.
 
-- booting the installed package;
-- packaged HTTP asset serving;
-- Desktop/FileManager event propagation that depends on the DOM;
-- `.sys` / `.neutron` launch wiring across the installed environment;
-- taskbar/window pointer and focus behavior;
-- Monaco browser workers/runtime readiness;
-- a packaged game asset being served and becoming playable.
+## Cross-surface workflow tests
 
-Ordinary filesystem, selection, navigation, association policy, process state, and command semantics should be proven headlessly when practical and then connected to React through thin adapters.
+A major goal of the Plasmon harness is to test the same production authority through every relevant surface. When Desktop, FileManager, Start, Search, or native applications expose the same operation, prefer shared headless workflow tests over duplicating browser scripts.
 
-## Cross-surface tests
+Tests should call the same production models/controllers/commands that React adapters call; do not create a second fake implementation that merely imitates the UI.
 
-When one shared service affects Desktop, FileManager, Start, Search, or multiple native apps, test the affected entry surfaces against the same production authority. A major Plasmon regression class has been identical resources behaving differently depending on which UI surface invoked them.
+## CI and handoff
 
-Negative cases also matter: protected resources, projections, authorization boundaries, persistence rules, and forbidden operations should prove what must **not** happen.
+`Plasmon Fast CI` executes the same fast command used locally. Agents without Bun must push their branch, use that workflow as the feedback loop, and report the exact CI result.
 
-## CI
-
-`Plasmon Fast CI` runs on relevant branch pushes and pull requests and executes exactly:
-
-```sh
-npm --workspace neutron-plasmon test
-```
-
-It intentionally does not install Nix, run Kernel/Motoko tests, package Plasmon, or run Playwright. Agents without local Bun must use this workflow as their development feedback loop and report the CI result.
-
-## Manual packaged review
-
-Manual review remains necessary for interaction and visual details not represented by stable automation. A repeatable escaped regression should gain the lowest-level reliable automated coverage possible, plus browser coverage when the failure truly depends on that boundary.
-
-A green fast suite does not supersede a failing packaged workflow or owner review finding.
+A green fast suite does not supersede a failing package/browser/manual acceptance path. Escaped repeatable failures should gain the lowest-level reliable automated coverage possible.
