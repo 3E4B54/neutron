@@ -6,11 +6,13 @@ import {
 } from "neutron-scripts/src/method_schema.js";
 import { type NeutronManifest } from "neutron-tools/src/schema.js";
 import { validate_neutron_conf } from "neutron-tools/src/validate_schema.js";
+import { createPlasmonDemoGameBundle } from "../src/games/demoFixtureBundle.ts";
 
 const manifestUrl = new URL("../neutron.json", import.meta.url);
 const backendUrl = new URL("../backend/main.mo", import.meta.url);
 const htmlUrl = new URL("../dist/web/index.html", import.meta.url);
 const cssUrl = new URL("../dist/web/main.css", import.meta.url);
+const demoGameUrl = new URL("../dist/web/fixtures/PlasmonDemo.jsdos", import.meta.url);
 
 async function readManifest(): Promise<NeutronManifest> {
   return JSON.parse(await readFile(manifestUrl, "utf8")) as NeutronManifest;
@@ -80,4 +82,12 @@ test("plasmon bundles the shared design system stylesheet", async () => {
   expect(css).toContain(".nt-app");
   expect(css).toContain(".nt-button");
   expect(css).toContain("--nt-bg-panel");
+});
+
+test("plasmon package contains the deterministic redistributable js-dos demo fixture", async () => {
+  const packaged = new Uint8Array(await readFile(demoGameUrl));
+  const expected = createPlasmonDemoGameBundle();
+
+  expect(packaged.length).toBeGreaterThan(0);
+  expect(Array.from(packaged)).toEqual(Array.from(expected));
 });
