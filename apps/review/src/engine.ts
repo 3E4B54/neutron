@@ -19,6 +19,11 @@ import {
 import type { ReviewPersistence } from "./persistence.ts";
 
 const CHECKPOINT_INTERVAL = 20;
+const TEST_RESULTS = new Set(["not_tested", "working", "not_working", "needs_polish"]);
+const DESIRED_VALUES = new Set<unknown>(["must", "high", "normal", "later", null]);
+const EFFORT_VALUES = new Set<unknown>(["tiny", "small", "medium", "big", "really_big", null]);
+const WORK_STATES = new Set(["untriaged", "needs_design", "ready", "in_progress", "blocked", "needs_retest", "done", "deferred"]);
+const ACTOR_TYPES = new Set(["human", "ai", "system"]);
 
 export class ReviewEngineError extends Error {
   constructor(readonly code: string, message: string, readonly details?: Record<string, unknown>) {
@@ -303,14 +308,63 @@ function normalizeOperation(
   id: (kind: "atom" | "item" | "comment" | "revision") => string,
 ): ReviewOperation {
   if (!operation || typeof operation !== "object") throw new ReviewEngineError("INVALID_OPERATION", "Review operation is required");
-  if (operation.type === "review.create_item" && !operation.itemId) return { ...cloneState(operation), itemId: id("item") };
-  if (operation.type === "comment.add" && !operation.commentId) return { ...cloneState(operation), commentId: id("comment") };
-  if (operation.type === "review.set_coordination") {
-    const allowed = new Set(["desired", "effort", "owner", "workState", "blockedBy", "dependsOn"]);
-    for (const key of Object.keys(operation.patch)) if (!allowed.has(key)) throw new ReviewEngineError("INVALID_OPERATION", `Unknown coordination field ${key}`);
-    if (Object.keys(operation.patch).length === 0) throw new ReviewEngineError("INVALID_OPERATION", "Coordination patch cannot be empty");
+  const type = (operation as { type?: unknown }).type;
+  if (typeof type !== "string") throw new ReviewEngineError("INVALID_OPERATION", "Review operation type is required");
+  if (type === "review.create_item") {
+    const value = operation as Extract<ReviewOperation, { type: "review.create_item" }>;
+    const normalized = cloneState(value);
+    cleanText(normalized.title, "item title", 500);
+    if (normalized.descriptionMarkdown !== undefined) optionalCleanText(normalized.descriptionMarkdown, 20_000);
+    if (!normalized.itemId) normalized.itemId = id("item");
+    else cleanText(normalized.itemId, "itemId", 240);
+    return normalized;
   }
-  return cloneState(operation);
+  if (type === "review.update_item_text") {
+    const value = operation as Extract<ReviewOperation, { type: "review.update_item_text" }>;
+    cleanText(value.itemId, "itemId", 240);
+    if (value.title !== undefined) cleanText(value.title, "item title", 500);
+    if (value.descriptionMarkdown !== undefined && value.descriptionMarkdown !== null) optionalCleanText(value.descriptionMarkdown, 20_000);
+    if (value.title === undefined && value.descriptionMarkdown === undefined) throw new ReviewEngineError("INVALID_OPERATION", "Item text update cannot be empty");
+    return cloneState(value);
+  }
+  if (type === "review.set_result") {
+    const value = operation as Extract<ReviewOperation, { type: "review.set_result" }>;
+    cleanText(value.itemId, "itemId", 240);
+    if (!TEST_RESULTS.has(value.result)) throw new ReviewEngineError("INVALID_OPERATION", `Unknown test result ${String(value.result)}`);
+    if (value.note !== undefined && value.note !== null) optionalCleanText(value.note, 4_000);
+    return cloneState(value);
+  }
+  if (type === "review.set_coordination") {
+    const value = operation as Extract<ReviewOperation, { type: "review.set_coordination" }>;
+    cleanText(value.itemId, "itemId", 240);
+    if (!value.patch || typeof value.patch !== "object" || Array.isArray(value.patch)) throw new ReviewEngineError("INVALID_OPERATION", "Coordination patch must be an object");
+    const allowed = new Set(["desired", "effort", "owner", "workState", "blockedBy", "dependsOn"]);
+    for (const key of Object.keys(value.patch)) if (!allowed.has(key)) throw new ReviewEngineError("INVALID_OPERATION", `Unknown coordination field ${key}`);
+    if (Object.keys(value.patch).length === 0) throw new ReviewEngineError("INVALID_OPERATION", "Coordination patch cannot be empty");
+    if (value.patch.desired !== undefined && !DESIRED_VALUES.has(value.patch.desired)) throw new ReviewEngineError("INVALID_OPERATION", `Unknown Desired value ${String(value.patch.desired)}`);
+    if (value.patch.effort !== undefined && !EFFORT_VALUES.has(value.patch.effort)) throw new ReviewEngineError("INVALID_OPERATION", `Unknown Effort value ${String(value.patch.effort)}`);
+    if (value.patch.workState !== undefined && !WORK_STATES.has(value.patch.workState)) throw new ReviewEngineError("INVALID_OPERATION", `Unknown WorkState ${String(value.patch.workState)}`);
+    if (value.patch.owner !== undefined && value.patch.owner !== null) cleanText(value.patch.owner, "owner", 240);
+    if (value.patch.blockedBy !== undefined) uniqueIds(value.patch.blockedBy);
+    if (value.patch.dependsOn !== undefined) uniqueIds(value.patch.dependsOn);
+    return cloneState(value);
+  }
+  if (type === "comment.add") {
+    const value = operation as Extract<ReviewOperation, { type: "comment.add" }>;
+    cleanText(value.itemId, "itemId", 240);
+    cleanText(value.body, "comment", 12_000);
+    if (value.replyTo) cleanText(value.replyTo, "replyTo", 240);
+    const normalized = cloneState(value);
+    if (!normalized.commentId) normalized.commentId = id("comment");
+    else cleanText(normalized.commentId, "commentId", 240);
+    return normalized;
+  }
+  if (type === "history.restore") {
+    const value = operation as Extract<ReviewOperation, { type: "history.restore" }>;
+    cleanText(value.revisionId, "revisionId", 240);
+    return cloneState(value);
+  }
+  throw new ReviewEngineError("INVALID_OPERATION", `Unknown Review operation ${type}`);
 }
 
 function changedItemsFor(operation: Exclude<ReviewOperation, { type: "history.restore" }>, state: ReviewAtomState): Set<string> {
@@ -351,6 +405,7 @@ function receiptResult(receipt: CommandReceipt, replayed: boolean): ApplyReviewC
 
 function normalizeActor(actor: ReviewActor): ReviewActor {
   const key = cleanText(actor?.key, "actor key", 240);
+  if (actor.type !== undefined && !ACTOR_TYPES.has(actor.type)) throw new ReviewEngineError("INVALID_ACTOR", `Unknown actor type ${String(actor.type)}`);
   return {
     key,
     ...(actor.type ? { type: actor.type } : {}),
