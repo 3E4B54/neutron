@@ -9,12 +9,66 @@ module {
     let SHARING_SCHEMA_VERSION : Nat = 1;
     let MAX_CHUNK_BYTES : Nat = 1024 * 1024;
 
-    public type SharingChunkRef = SharingMemory.ChunkRef;
-    public type SharingSnapshot = SharingMemory.Snapshot;
-    public type SharingRevision = SharingMemory.Revision;
-    public type SharingResourceSummary = SharingMemory.ResourceSummary;
-    public type SharingPutChunkResult = SharingMemory.PutChunkResult;
-    public type SharingCommitResult = SharingMemory.CommitResult;
+    // Public app-method aliases must remain structurally expressible so the
+    // Neutron method-schema generator can derive Candid/JSON schemas without
+    // reaching through app-local imported type aliases. These intentionally
+    // mirror the immutable SharingMemory v1 wire shapes.
+    public type SharingChunkRef = {
+        hash : Blob;
+        size : Nat;
+    };
+
+    public type SharingAtomSnapshot = {
+        format : Text;
+        version : Nat;
+        atomId : Text;
+        handlerId : Text;
+        atomType : Text;
+        schemaVersion : Nat;
+        title : ?Text;
+    };
+
+    public type SharingSnapshot = {
+        displayName : Text;
+        kind : Text;
+        mime : ?Text;
+        atom : ?SharingAtomSnapshot;
+    };
+
+    public type SharingRevision = {
+        schemaVersion : Nat;
+        namespace : Text;
+        resourceId : Text;
+        resourceType : Text;
+        revision : Nat;
+        byteLength : Nat;
+        contentRootHash : Blob;
+        chunks : [SharingChunkRef];
+        snapshot : SharingSnapshot;
+        createdAt : Nat64;
+    };
+
+    public type SharingResourceSummary = {
+        schemaVersion : Nat;
+        namespace : Text;
+        resourceId : Text;
+        resourceType : Text;
+        currentRevision : Nat;
+        createdAt : Nat64;
+        updatedAt : Nat64;
+    };
+
+    public type SharingPutChunkResult = {
+        #stored;
+        #deduplicated;
+        #err : Text;
+    };
+
+    public type SharingCommitResult = {
+        #ok : SharingRevision;
+        #conflict : ?Nat;
+        #err : Text;
+    };
 
     public type AppBackendEnvironment = {
         stable_memory : {
@@ -142,7 +196,7 @@ module {
             };
         };
 
-        public func /*update*/sharing_put_chunk(hash : Blob, bytes : Blob) : SharingMemory.PutChunkResult {
+        public func /*update*/sharing_put_chunk(hash : Blob, bytes : Blob) : SharingPutChunkResult {
             if (sharing.schemaVersion != SHARING_SCHEMA_VERSION) return #err("sharing schema version mismatch");
             if (hash.size() != 32) return #err("chunk hash must be 32 bytes");
             if (bytes.size() > MAX_CHUNK_BYTES) return #err("chunk exceeds 1 MiB provider limit");
@@ -168,7 +222,7 @@ module {
             checkedChunk(hash);
         };
 
-        public func /*query*/sharing_describe(namespace : Text, resourceId : Text) : ?SharingMemory.ResourceSummary {
+        public func /*query*/sharing_describe(namespace : Text, resourceId : Text) : ?SharingResourceSummary {
             if (sharing.schemaVersion != SHARING_SCHEMA_VERSION) return null;
             switch (findResourceIndex(namespace, resourceId)) {
                 case null null;
@@ -176,7 +230,7 @@ module {
             };
         };
 
-        public func /*query*/sharing_get_revision(namespace : Text, resourceId : Text, revision : ?Nat) : ?SharingMemory.Revision {
+        public func /*query*/sharing_get_revision(namespace : Text, resourceId : Text, revision : ?Nat) : ?SharingRevision {
             if (sharing.schemaVersion != SHARING_SCHEMA_VERSION) return null;
             switch (findResourceIndex(namespace, resourceId)) {
                 case null null;
@@ -223,10 +277,10 @@ module {
             expectedRevision : ?Nat,
             byteLength : Nat,
             contentRootHash : Blob,
-            chunks : [SharingMemory.ChunkRef],
-            snapshot : SharingMemory.Snapshot,
+            chunks : [SharingChunkRef],
+            snapshot : SharingSnapshot,
             createdAt : Nat64,
-        ) : SharingMemory.CommitResult {
+        ) : SharingCommitResult {
             if (sharing.schemaVersion != SHARING_SCHEMA_VERSION) return #err("sharing schema version mismatch");
             if (not validNamespace(namespace)) return #err("unsupported provider namespace");
             if (resourceId == "" or resourceType == "") return #err("resource identity/type is required");
