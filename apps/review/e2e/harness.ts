@@ -10,6 +10,9 @@ export type ReviewHarness = { page: Page; review: FrameLocator; frame: Locator }
 export async function login(page: Page): Promise<void> {
   const runtime = resolveLocalNeutronRuntime({ configPath: deploymentConfig });
   await page.goto(kernelUrl(), { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    () => typeof (window as typeof window & { __NEUTRON_PLAYWRIGHT_LOGIN_AS__?: unknown }).__NEUTRON_PLAYWRIGHT_LOGIN_AS__ === "function",
+  );
   await page.evaluate(async (identitySeed) => {
     const signIn = (window as typeof window & { __NEUTRON_PLAYWRIGHT_LOGIN_AS__?: (seed: number) => Promise<string> }).__NEUTRON_PLAYWRIGHT_LOGIN_AS__;
     if (!signIn) throw new Error("Local Playwright login is unavailable");
