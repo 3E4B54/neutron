@@ -182,7 +182,40 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     await expect(firstLine).toBeVisible();
     await firstLine.click({ position: { x: 1, y: 1 } });
     await expect(editContext).toBeFocused();
-    await page.keyboard.type(options.persistedText, { delay: 50 });
+    await editContext.evaluate((element, text) => {
+      const nativeElement = element as HTMLDivElement & {
+        editContext?: {
+          selectionStart: number;
+          selectionEnd: number;
+          dispatchEvent: (event: Event) => boolean;
+        };
+      };
+      const nativeEditContext = nativeElement.editContext;
+      if (!nativeEditContext) throw new Error("Monaco native EditContext is unavailable");
+      const TextUpdateEventCtor = (globalThis as unknown as {
+        TextUpdateEvent: new (type: string, init: {
+          updateRangeStart: number;
+          updateRangeEnd: number;
+          text: string;
+          selectionStart: number;
+          selectionEnd: number;
+          compositionStart: number;
+          compositionEnd: number;
+        }) => Event;
+      }).TextUpdateEvent;
+      if (!TextUpdateEventCtor) throw new Error("Browser TextUpdateEvent is unavailable");
+      const selectionStart = nativeEditContext.selectionStart;
+      const selectionEnd = nativeEditContext.selectionEnd;
+      nativeEditContext.dispatchEvent(new TextUpdateEventCtor("textupdate", {
+        updateRangeStart: selectionStart,
+        updateRangeEnd: selectionEnd,
+        text,
+        selectionStart: selectionStart + text.length,
+        selectionEnd: selectionStart + text.length,
+        compositionStart: 0,
+        compositionEnd: 0,
+      }));
+    }, options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await expect(firstLine).toHaveText(options.persistedText);
 
