@@ -32,6 +32,7 @@ const EMULATORJS_ASSETS = [
   "emulator.min.css",
   "cores/fceumm-wasm.data",
   "cores/fceumm-legacy-wasm.data",
+  "compression/extract7z.js",
 ] as const;
 const EMULATORJS_BROWSER_DATA_DIRECTORY = "./dist/web/runtime/emulatorjs/data";
 let emulatorJsAssetsPromise: Promise<void> | null = null;
