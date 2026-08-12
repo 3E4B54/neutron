@@ -75,6 +75,12 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
         objectUrl = null;
         return;
       }
+
+      // The iframe key changes from "empty" to the ROM object URL below. Its
+      // previous load event may already have set frameLoaded=true while the
+      // filesystem read was in flight. Clear that stale readiness before
+      // mounting the replacement iframe so bootstrap waits for its own load.
+      setFrameLoaded(false);
       setRom({ name: node.name, url: objectUrl });
     };
 
