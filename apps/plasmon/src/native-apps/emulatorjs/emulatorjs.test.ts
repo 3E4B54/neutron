@@ -9,7 +9,9 @@ import {
 import {
   assertNesRom,
   createEmulatorJsLaunchConfig,
+  EMULATORJS_BROWSER_DATA_ROOT,
   EMULATORJS_NES_MIME,
+  EMULATORJS_PROGRAM_FILES_ROOT,
   resolveEmulatorJsDataRoot,
   resolveEmulatorJsHostUrl,
 } from "./runtime.ts";
@@ -57,10 +59,13 @@ test("NES validation accepts a complete iNES image and rejects malformed or trun
   expect(() => assertNesRom(truncated)).toThrow("truncated");
 });
 
-test("EmulatorJS launch configuration stays package-relative and disables browser-local caches", () => {
+test("EmulatorJS keeps Program Files authority separate from its URL-safe browser transport", () => {
+  expect(EMULATORJS_PROGRAM_FILES_ROOT).toBe("./System/Program Files/EmulatorJS/");
+  expect(EMULATORJS_BROWSER_DATA_ROOT).toBe("./runtime/emulatorjs/data/");
+
   const base = "https://neutron.test/app/plasmon/index.html";
   expect(resolveEmulatorJsDataRoot(base)).toBe(
-    "https://neutron.test/app/plasmon/System/Program%20Files/EmulatorJS/data/",
+    "https://neutron.test/app/plasmon/runtime/emulatorjs/data/",
   );
   expect(resolveEmulatorJsHostUrl(base, "runtime-token")).toBe(
     "https://neutron.test/app/plasmon/emulatorjs-host.html?token=runtime-token",
@@ -72,7 +77,7 @@ test("EmulatorJS launch configuration stays package-relative and disables browse
     core: "nes",
     gameUrl: "blob:test-rom",
     gameName: "Fixture.nes",
-    dataRoot: "https://neutron.test/app/plasmon/System/Program%20Files/EmulatorJS/data/",
+    dataRoot: "https://neutron.test/app/plasmon/runtime/emulatorjs/data/",
     startOnLoaded: true,
     threads: false,
     disableLocalStorage: true,
