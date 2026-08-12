@@ -4,14 +4,18 @@ export type DosEvent = "emu-ready" | "ci-ready" | "bnd-play" | "open-key" | "ful
 export const JS_DOS_RUNTIME_ROOT = "/System/Program Files/js-dos";
 export const JS_DOS_EMULATORS_ROOT = `${JS_DOS_RUNTIME_ROOT}/emulators/`;
 
+/** URL-safe package transport for browser-executable js-dos assets. */
+export const JS_DOS_BROWSER_RUNTIME_ROOT = "./runtime/jsdos/";
+
 /**
- * Installed Plasmon files are served beneath the app package URL (for example
- * /app/plasmon/). Resolve the logical Program Files tree relative to that page
- * instead of escaping to the Kernel origin with a root-absolute request.
+ * Program Files remains the managed runtime authority, but installed Kernel
+ * app-host delivery can make that path unsuitable for executable browser
+ * assets. Resolve script/style/emulator requests through the package-local
+ * transport mirror instead of changing the logical Program Files authority.
  */
 export function jsDosPackageAssetUrl(pageUrl: string | URL, relativePath = ""): string {
   const suffix = relativePath.replace(/^\/+/, "");
-  return new URL(`.${JS_DOS_RUNTIME_ROOT}/${suffix}`, pageUrl).href;
+  return new URL(`${JS_DOS_BROWSER_RUNTIME_ROOT}${suffix}`, pageUrl).href;
 }
 
 export interface JsDosPlayerOptions {
