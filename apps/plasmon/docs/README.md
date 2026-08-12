@@ -41,6 +41,8 @@ Old design documents should be updated, superseded, or clearly marked when accep
 
 Plasmon testing strategy is documented in [`../TESTING.md`](../TESTING.md) and [`../test/README.md`](../test/README.md). Deterministic semantics should be exercised headlessly where practical; package/browser/manual evidence is required only for claims that cross those boundaries.
 
+- [`ACCEPTANCE_2026-08-11_BASELINE_GATE.md`](ACCEPTANCE_2026-08-11_BASELINE_GATE.md) — integrated acceptance/evidence disposition for the 2026-08-11 packaged review baseline, including remaining milestone blockers and evidence-layer boundaries.
+
 ## Neutron documentation
 
 Plasmon does not redefine the Kernel. Repository-level Neutron documentation under [`../../../doc/`](../../../doc/) remains authoritative for Kernel capabilities, isolation, installation/package/runtime behavior, persistent-memory rules, and security boundaries.
