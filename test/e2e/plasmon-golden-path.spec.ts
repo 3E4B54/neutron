@@ -33,7 +33,11 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
 
   const registryResponse = await request.get(new URL("/system/apps.json", kernelUrl).href);
   expect(registryResponse.ok()).toBe(true);
-  const registry = await registryResponse.json() as Record<string, { tiles?: Array<{ id?: string; path?: string }> }>;
+  const registry = await registryResponse.json() as Record<string, {
+    version?: number;
+    tiles?: Array<{ id?: string; path?: string }>;
+  }>;
+  expect(registry[APP_ID]?.version).toBe(100);
   expect(registry[APP_ID]?.tiles).toEqual(
     expect.arrayContaining([expect.objectContaining({ id: TILE_ID, path: "index.html" })]),
   );
