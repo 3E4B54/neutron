@@ -165,8 +165,8 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
   issue67Active = true;
 
   const expectNoIssue67PageErrors = (label: string): void => {
-    expect(pageErrors, label).toEqual([]);
     expect(issue67PageErrors, label).toEqual([]);
+    expect(pageErrors, label).toEqual([]);
   };
 
   const explorerWindowId = await dialog.getAttribute("data-window-id");
