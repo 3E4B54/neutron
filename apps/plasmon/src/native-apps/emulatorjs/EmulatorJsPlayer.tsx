@@ -3,32 +3,27 @@ import type { NativeAppComponentProps } from "../../os/process/runtime.ts";
 import {
   assertNesRom,
   createEmulatorJsFrameDocument,
-  createEmulatorJsLaunchConfig,
+  EMULATORJS_INIT_MESSAGE,
+  EMULATORJS_LIFECYCLE_MESSAGE,
+  resolveEmulatorJsDataRoot,
 } from "./runtime.ts";
 
 type PlayerState = "loading" | "starting" | "ready" | "error";
 
+type RuntimePhase = "bootstrap" | "loaded" | "ready" | "error";
+
 interface LoadedRom {
   name: string;
-  url: string;
+  bytes: Uint8Array;
+  runtimeToken: string;
 }
 
-type EmulatorJsWindow = Window & {
-  EJS_player?: string;
-  EJS_core?: string;
-  EJS_gameUrl?: string;
-  EJS_gameName?: string;
-  EJS_pathtodata?: string;
-  EJS_startOnLoaded?: boolean;
-  EJS_threads?: boolean;
-  EJS_disableLocalStorage?: boolean;
-  EJS_disableDatabases?: boolean;
-  EJS_language?: string;
-  EJS_disableAutoLang?: boolean;
-  EJS_ready?: () => void;
-  EJS_onGameStart?: () => void;
-  EJS_onExit?: () => void;
-};
+interface RuntimeLifecycleMessage {
+  type: string;
+  token: string;
+  phase: RuntimePhase;
+  detail?: unknown;
+}
 
 function messageFor(state: PlayerState): string {
   if (state === "loading") return "Loading ROM…";
@@ -37,30 +32,81 @@ function messageFor(state: PlayerState): string {
   return "";
 }
 
+function isRuntimeLifecycleMessage(value: unknown): value is RuntimeLifecycleMessage {
+  if (!value || typeof value !== "object") return false;
+  const message = value as Partial<RuntimeLifecycleMessage>;
+  return (
+    message.type === EMULATORJS_LIFECYCLE_MESSAGE &&
+    typeof message.token === "string" &&
+    (message.phase === "bootstrap" ||
+      message.phase === "loaded" ||
+      message.phase === "ready" ||
+      message.phase === "error")
+  );
+}
+
 /**
  * Association-backed NES host. The selected filesystem node is the only game
  * input; title-specific dispatch stays outside the runtime path.
  *
  * EmulatorJS exposes browser-global EJS_* configuration, so every Plasmon
- * process receives a same-origin iframe. Removing that iframe tears down the
- * engine/global/WASM browser context without introducing a shared emulator
- * lifecycle abstraction.
+ * process receives its own iframe. The child document bootstraps itself and
+ * reports real EmulatorJS lifecycle callbacks with postMessage, avoiding any
+ * dependency on parent access to a potentially sandboxed/opaque child origin.
  */
 export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps) {
-  const runtimeCleanupRef = useRef<(() => void) | null>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [rom, setRom] = useState<LoadedRom | null>(null);
   const [state, setState] = useState<PlayerState>("loading");
   const [detail, setDetail] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
-    let objectUrl: string | null = null;
+    const runtimeToken = crypto.randomUUID();
 
-    runtimeCleanupRef.current?.();
-    runtimeCleanupRef.current = null;
+    if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+    startTimeoutRef.current = null;
     setRom(null);
     setState("loading");
     setDetail(null);
+
+    const onMessage = (event: MessageEvent<unknown>) => {
+      if (disposed || event.source !== frameRef.current?.contentWindow) return;
+      if (!isRuntimeLifecycleMessage(event.data) || event.data.token !== runtimeToken) return;
+
+      const frame = frameRef.current;
+      if (!frame) return;
+
+      if (event.data.phase === "bootstrap") {
+        frame.dataset.emulatorjsBootstrap = "true";
+        return;
+      }
+      if (event.data.phase === "loaded") {
+        frame.dataset.emulatorjsLoaded = "true";
+        return;
+      }
+      if (event.data.phase === "ready") {
+        if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+        startTimeoutRef.current = null;
+        frame.dataset.emulatorjsReady = "true";
+        setState("ready");
+        frame.focus();
+        return;
+      }
+
+      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+      startTimeoutRef.current = null;
+      delete frame.dataset.emulatorjsReady;
+      setState("error");
+      setDetail(
+        typeof event.data.detail === "string" && event.data.detail.length > 0
+          ? event.data.detail
+          : "EmulatorJS runtime error",
+      );
+    };
+
+    window.addEventListener("message", onMessage);
 
     const load = async () => {
       if (!target.nodeId) throw new Error("EmulatorJS requires a filesystem ROM target");
@@ -69,13 +115,8 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       const bytes = await fs.read(node.id);
       assertNesRom(bytes);
 
-      objectUrl = URL.createObjectURL(new Blob([bytes.slice().buffer], { type: "application/octet-stream" }));
-      if (disposed) {
-        URL.revokeObjectURL(objectUrl);
-        objectUrl = null;
-        return;
-      }
-      setRom({ name: node.name, url: objectUrl });
+      if (disposed) return;
+      setRom({ name: node.name, bytes: bytes.slice(), runtimeToken });
     };
 
     void load().catch((error: unknown) => {
@@ -86,101 +127,44 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
 
     return () => {
       disposed = true;
-      runtimeCleanupRef.current?.();
-      runtimeCleanupRef.current = null;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      window.removeEventListener("message", onMessage);
+      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+      startTimeoutRef.current = null;
     };
   }, [fs, target.nodeId]);
 
-  const startRuntime = (frame: HTMLIFrameElement) => {
-    if (!rom) return;
-
-    runtimeCleanupRef.current?.();
-    runtimeCleanupRef.current = null;
-
-    const runtimeWindow = frame.contentWindow as EmulatorJsWindow | null;
-    const runtimeDocument = frame.contentDocument;
-    if (!runtimeWindow || !runtimeDocument) {
+  const initializeFrame = (frame: HTMLIFrameElement) => {
+    if (!rom || frame.dataset.emulatorjsInit === rom.runtimeToken) return;
+    const runtimeWindow = frame.contentWindow;
+    if (!runtimeWindow) {
       setState("error");
       setDetail("EmulatorJS iframe is unavailable");
       return;
     }
 
-    let disposed = false;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    const config = createEmulatorJsLaunchConfig(rom.url, rom.name, document.baseURI);
-
-    const fail = (reason: string) => {
-      if (disposed) return;
-      if (timeout) clearTimeout(timeout);
-      timeout = null;
-      delete frame.dataset.emulatorjsReady;
-      setState("error");
-      setDetail(reason);
-    };
-    const onWindowError = (event: Event) => {
-      const errorEvent = event as ErrorEvent;
-      fail(errorEvent.message || "EmulatorJS runtime error");
-    };
-    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
-      const reason = event.reason;
-      fail(reason instanceof Error ? reason.message : String(reason ?? "EmulatorJS promise rejection"));
-    };
-
-    runtimeWindow.addEventListener("error", onWindowError);
-    runtimeWindow.addEventListener("unhandledrejection", onUnhandledRejection);
-
-    runtimeWindow.EJS_player = config.player;
-    runtimeWindow.EJS_core = config.core;
-    runtimeWindow.EJS_gameUrl = config.gameUrl;
-    runtimeWindow.EJS_gameName = config.gameName;
-    runtimeWindow.EJS_pathtodata = config.dataRoot;
-    runtimeWindow.EJS_startOnLoaded = config.startOnLoaded;
-    runtimeWindow.EJS_threads = config.threads;
-    runtimeWindow.EJS_disableLocalStorage = config.disableLocalStorage;
-    runtimeWindow.EJS_disableDatabases = config.disableDatabases;
-    runtimeWindow.EJS_language = config.language;
-    runtimeWindow.EJS_disableAutoLang = config.disableAutoLang;
-    runtimeWindow.EJS_ready = () => {
-      if (disposed) return;
-      frame.dataset.emulatorjsLoaded = "true";
-    };
-    runtimeWindow.EJS_onGameStart = () => {
-      if (disposed) return;
-      if (timeout) clearTimeout(timeout);
-      timeout = null;
-      frame.dataset.emulatorjsReady = "true";
-      setState("ready");
-      runtimeWindow.focus();
-    };
-    runtimeWindow.EJS_onExit = () => fail("EmulatorJS runtime exited");
-
+    frame.dataset.emulatorjsInit = rom.runtimeToken;
+    delete frame.dataset.emulatorjsLoaded;
+    delete frame.dataset.emulatorjsReady;
     setState("starting");
     setDetail(null);
 
-    const script = runtimeDocument.createElement("script");
-    script.src = `${config.dataRoot}loader.js`;
-    script.async = true;
-    script.dataset.plasmonRuntime = "emulatorjs";
-    script.addEventListener("error", () => fail("Unable to load packaged EmulatorJS runtime"), { once: true });
-    runtimeDocument.head.append(script);
+    runtimeWindow.postMessage(
+      {
+        type: EMULATORJS_INIT_MESSAGE,
+        token: rom.runtimeToken,
+        gameName: rom.name,
+        dataRoot: resolveEmulatorJsDataRoot(document.baseURI),
+        bytes: rom.bytes,
+      },
+      "*",
+    );
 
-    timeout = setTimeout(() => fail("EmulatorJS did not start within 60 seconds"), 60_000);
-
-    runtimeCleanupRef.current = () => {
-      if (disposed) return;
-      disposed = true;
-      if (timeout) clearTimeout(timeout);
-      timeout = null;
-      runtimeWindow.removeEventListener("error", onWindowError);
-      runtimeWindow.removeEventListener("unhandledrejection", onUnhandledRejection);
-      delete runtimeWindow.EJS_ready;
-      delete runtimeWindow.EJS_onGameStart;
-      delete runtimeWindow.EJS_onExit;
-      delete frame.dataset.emulatorjsLoaded;
-      delete frame.dataset.emulatorjsReady;
-      script.remove();
-    };
+    if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+    startTimeoutRef.current = setTimeout(() => {
+      startTimeoutRef.current = null;
+      setState("error");
+      setDetail("EmulatorJS did not start within 60 seconds");
+    }, 60_000);
   };
 
   return (
@@ -189,11 +173,12 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
     >
       {rom ? (
         <iframe
-          key={rom.url}
-          srcDoc={createEmulatorJsFrameDocument()}
+          ref={frameRef}
+          key={rom.runtimeToken}
+          srcDoc={createEmulatorJsFrameDocument(rom.runtimeToken)}
           title="NES game"
           aria-label="NES game"
-          onLoad={(event) => startRuntime(event.currentTarget)}
+          onLoad={(event) => initializeFrame(event.currentTarget)}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0, background: "#000" }}
         />
       ) : null}
