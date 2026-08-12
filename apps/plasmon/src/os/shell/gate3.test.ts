@@ -217,7 +217,8 @@ test("Start is filesystem-backed with folders and seeded shortcut nodes", async 
   const result = await reconcileStartMenu(fs, [textApp, settingsApp], [mailElement]);
   expect(await fs.pathOf(result.root.id)).toBe(START_MENU_PATH);
   const rootEntries = await listStartMenuFolder(fs, result.root.id);
-  expect(rootEntries.filter((node) => node.kind === "directory").map((node) => node.name)).toEqual(["Accessories", "Neutron", "System"]);
+  expect(rootEntries.filter((node) => node.kind === "directory").map((node) => node.name)).toEqual(["Accessories", "Neutron"]);
+  expect(rootEntries.filter((node) => node.kind === "shortcut").map((node) => node.name)).toEqual(["Settings"]);
   const shortcuts = await shortcutNodes(fs);
   expect(shortcuts.map((item) => item.target.kind).sort()).toEqual(["element", "native", "native"]);
 });
@@ -237,16 +238,16 @@ test("Start reconciliation prevents duplicates and preserves user rename/move", 
   const first = await reconcileStartMenu(fs, [textApp, settingsApp], [mailElement]);
   const before = await shortcutNodes(fs);
   const text = before.find((item) => item.target.kind === "native" && item.target.handlerId === "native:text")!;
-  const system = (await fs.list(first.root.id, { includeHidden: true })).find((node) => node.name === "System")!;
+  const tools = await fs.mkdir(first.root.id, "My Tools");
   await fs.rename(text.node.id, "My Editor");
-  await fs.move(text.node.id, system.id);
+  await fs.move(text.node.id, tools.id);
 
   await reconcileStartMenu(fs, [textApp, settingsApp], [mailElement]);
   const after = await shortcutNodes(fs);
   const preserved = after.find((item) => item.node.id === text.node.id)!;
   expect(after).toHaveLength(before.length);
   expect(preserved.node.name).toBe("My Editor");
-  expect(preserved.node.parentId).toBe(system.id);
+  expect(preserved.node.parentId).toBe(tools.id);
 });
 
 test("intentionally deleted seeded shortcut is not recreated", async () => {

@@ -62,6 +62,38 @@
     width: 100%;
   }
 
+  .plasmon-pin-icon {
+    align-items: center;
+    display: inline-grid;
+    flex: 0 0 20px;
+    height: 20px;
+    justify-items: center;
+    pointer-events: none;
+    position: relative;
+    width: 20px;
+  }
+
+  .plasmon-pin-icon > .plasmon-icon-art {
+    height: 18px;
+    transform: rotate(-18deg);
+    width: 18px;
+  }
+
+  .plasmon-pin-icon__state {
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    bottom: -1px;
+    height: 6px;
+    opacity: 0;
+    position: absolute;
+    right: -1px;
+    transform: scale(.65);
+    width: 6px;
+  }
+
+  .plasmon-pin-icon.is-pinned > .plasmon-icon-art { transform: rotate(0deg); }
+  .plasmon-pin-icon.is-pinned .plasmon-pin-icon__state { opacity: 1; transform: scale(1); }
+
   .plasmon-custom-icon > img,
   .plasmon-custom-icon > svg,
   .plasmon-custom-icon > video,

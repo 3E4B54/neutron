@@ -21,9 +21,13 @@ import type {
   OpenTarget,
 } from "../../os/contracts/index.ts";
 import {
+  DEFAULT_FILE_MANAGER_PREFERENCES,
   FileManager,
+  FileManagerPreferenceStore,
+  FileManagerVisibilityFsService,
   FileOperationClipboard,
   type FileManagerOpenAuthority,
+  type FileManagerPreferences,
   type FileManagerPresentation,
   type FileManagerSnapshot,
   type FileManagerTrashAuthority,
@@ -61,6 +65,10 @@ function breadcrumbPaths(path: string): Array<{ label: string; path: string }> {
   ];
 }
 
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 async function resolveInitialLocation(fs: FsService, target: OpenTarget): Promise<ExplorerLocation> {
   if (target.nodeId) {
     const targetNode = await fs.stat(target.nodeId);
@@ -83,6 +91,7 @@ export function ExplorerApp({
   clipboard: providedClipboard,
 }: ExplorerAppProps) {
   const clipboard = useMemo(() => providedClipboard ?? new FileOperationClipboard(), [providedClipboard]);
+  const preferenceStore = useMemo(() => new FileManagerPreferenceStore(fs), [fs]);
   const historyRef = useRef(new ExplorerHistory());
   const addressRef = useRef<HTMLInputElement | null>(null);
   const [location, setLocation] = useState<ExplorerLocation | null>(null);
@@ -91,10 +100,17 @@ export function ExplorerApp({
   const [query, setQuery] = useState("");
   const [presentation, setPresentation] = useState<FileManagerPresentation>("grid");
   const [sort, setSort] = useState<NonNullable<FsListOptions["sort"]>>("name");
+  const [viewPreferences, setViewPreferences] = useState<FileManagerPreferences>(() => ({
+    ...DEFAULT_FILE_MANAGER_PREFERENCES,
+  }));
   const [favorites, setFavorites] = useState<FsNode[]>([]);
   const [itemCount, setItemCount] = useState(0);
   const [selectedCount, setSelectedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const fileManagerFs = useMemo(
+    () => new FileManagerVisibilityFsService(fs, viewPreferences.showHiddenFiles),
+    [fs, viewPreferences.showHiddenFiles],
+  );
 
   const applyLocation = useCallback((next: ExplorerLocation, mode: NavigationMode = "push") => {
     if (mode === "push") historyRef.current.push(next);
@@ -111,7 +127,7 @@ export function ExplorerApp({
       if (node.kind !== "directory") throw new Error(`${node.name} is not a folder`);
       applyLocation({ nodeId: node.id, path: await fs.pathOf(node.id) }, mode);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     }
   }, [applyLocation, fs]);
 
@@ -119,7 +135,7 @@ export function ExplorerApp({
     try {
       applyLocation(await resolveExplorerAddress(fs, path));
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     }
   }, [applyLocation, fs]);
 
@@ -134,9 +150,21 @@ export function ExplorerApp({
         setHistoryVersion((value) => value + 1);
         setError(null);
       })
-      .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); });
+      .catch((cause: unknown) => { if (active) setError(errorMessage(cause)); });
     return () => { active = false; };
   }, [fs, target.nodeId]);
+
+  useEffect(() => {
+    let active = true;
+    void preferenceStore.load()
+      .then((preferences) => { if (active) setViewPreferences(preferences); })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setViewPreferences({ ...DEFAULT_FILE_MANAGER_PREFERENCES });
+        setError(`File view preferences could not be loaded: ${errorMessage(cause)}`);
+      });
+    return () => { active = false; };
+  }, [preferenceStore]);
 
   useEffect(() => {
     let active = true;
@@ -160,7 +188,7 @@ export function ExplorerApp({
       if (event.type === "moved" && event.node.id === location.nodeId || event.type === "changed" && event.node.id === location.nodeId || event.type === "reset") {
         void fs.pathOf(location.nodeId)
           .then((path) => applyLocation({ nodeId: location.nodeId, path }, "replace"))
-          .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+          .catch((cause: unknown) => setError(errorMessage(cause)));
       }
     });
   }, [applyLocation, fs, fsEvents, location]);
@@ -177,7 +205,7 @@ export function ExplorerApp({
       const current = await fs.stat(location.nodeId);
       if (current.parentId) await navigate(current.parentId);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     }
   };
 
@@ -186,7 +214,17 @@ export function ExplorerApp({
       const next = await resolveExplorerAddress(fs, address);
       applyLocation(next);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
+    }
+  };
+
+  const setShowHiddenFiles = async (showHiddenFiles: boolean) => {
+    const next: FileManagerPreferences = { version: 1, showHiddenFiles };
+    setViewPreferences(next);
+    try {
+      await preferenceStore.save(next);
+    } catch (cause: unknown) {
+      setError(`Show hidden files preference could not be saved: ${errorMessage(cause)}`);
     }
   };
 
@@ -272,6 +310,14 @@ export function ExplorerApp({
                 <option value="name">Name</option><option value="modified">Modified</option><option value="size">Size</option><option value="type">Type</option>
               </select>
             </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={viewPreferences.showHiddenFiles}
+                onChange={(event: ReactChangeEvent<HTMLInputElement>) => void setShowHiddenFiles(event.target.checked)}
+              />
+              Show hidden files
+            </label>
           </div>
           {error ? (
             <div className="fm-error-banner" role="alert">
@@ -281,7 +327,7 @@ export function ExplorerApp({
           {location ? (
             <FileManager
               directoryId={location.nodeId}
-              fs={fs}
+              fs={fileManagerFs}
               openAuthority={openAuthority}
               trashAuthority={trashAuthority}
               {...(fsEvents ? { fsEvents } : {})}
