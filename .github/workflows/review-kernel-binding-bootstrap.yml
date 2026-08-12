@@ -1,0 +1,41 @@
+name: Review Kernel binding bootstrap
+
+on:
+  push:
+    branches: ["work/atoms/58-review-neutron-mvp"]
+    paths:
+      - ".github/workflows/review-kernel-binding-bootstrap.yml"
+      - "package-lock.json"
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: work/atoms/58-review-neutron-mvp
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Regenerate checked Kernel candidate binding
+        run: |
+          nix develop --command bash -lc '
+            set -euxo pipefail
+            npm ci
+            npm --workspace neutron-kernel run certified-assets:candidate-binding:write
+          '
+      - name: Commit generated binding when changed
+        run: |
+          set -euxo pipefail
+          if git diff --quiet -- apps/kernel/certified-assets-candidate-binding.json; then
+            echo "Kernel candidate binding already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/kernel/certified-assets-candidate-binding.json
+          git commit -m "refresh Kernel candidate binding for Review workspace"
+          git push origin HEAD:work/atoms/58-review-neutron-mvp
