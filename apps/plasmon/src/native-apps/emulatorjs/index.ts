@@ -33,6 +33,7 @@ export const emulatorJsRuntimeDefinition: NativeAppDefinition = {
   name: "EmulatorJS",
   icon,
   singleton: false,
+  runtimeOnly: true,
   defaultWindow: {
     width: 960,
     height: 720,
