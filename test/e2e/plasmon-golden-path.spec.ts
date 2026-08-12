@@ -51,12 +51,15 @@ test("packaged Plasmon is registered, serves browser assets, boots its real tile
   await expect(app.getByRole("button", { name: "Start" })).toBeVisible();
   await expect(app.getByRole("button", { name: "Search" })).toBeVisible();
 
+  const nativeWindows = app.locator(".plasmon-window-layer [data-window-id]");
+  const initialWindowCount = await nativeWindows.count();
   const rootShortcut = app.locator("[data-fm-node-id]", { hasText: "Root" }).first();
   await expect(rootShortcut).toBeVisible({ timeout: 30_000 });
   await rootShortcut.dblclick();
 
-  const dialog = app.getByRole("dialog", { name: "Files" }).last();
-  await expect(dialog).toBeVisible({ timeout: 20_000 });
+  await expect(nativeWindows).toHaveCount(initialWindowCount + 1, { timeout: 20_000 });
+  const dialog = nativeWindows.last();
+  await expect(dialog).toBeVisible();
   const titlebar = dialog.locator(".plasmon-window__titlebar");
   const workspace = await app.locator(".plasmon-window-layer").first().boundingBox();
   if (!workspace) throw new Error("Plasmon WindowLayer has no browser bounds");
