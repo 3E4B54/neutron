@@ -95,7 +95,7 @@ jobs:
               exit 1
             fi
             if ! NEUTRON_NDEPLOY_CONFIG=plasmon-local.ndeploy.json \
-              npx playwright test test/e2e/plasmon-emulatorjs-proof.spec.ts; then
+              npx playwright test test/e2e/plasmon-emulatorjs-proof.spec.ts --reporter=github,line; then
               echo "::error title=EmulatorJS browser proof failed::test/e2e/plasmon-emulatorjs-proof.spec.ts failed"
               exit 1
             fi
