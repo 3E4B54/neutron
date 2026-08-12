@@ -15,6 +15,7 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
   const failedRuntimeRequests: string[] = [];
   const externalRuntimeRequests: string[] = [];
   const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
 
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -39,6 +40,9 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
     }
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
 
   await page.goto(kernelUrl);
   await page.waitForFunction(() => typeof window.__NEUTRON_PLAYWRIGHT_LOGIN_AS__ === "function");
@@ -72,20 +76,25 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
   const emulator = app.frameLocator('iframe[title="NES game"]');
 
   const runtimeState = async () => {
-    const [loaded, ready, bodyText] = await Promise.all([
+    const [bootstrap, loaded, ready, bodyText, bodyHtml] = await Promise.all([
+      host.getAttribute("data-emulatorjs-bootstrap"),
       host.getAttribute("data-emulatorjs-loaded"),
       host.getAttribute("data-emulatorjs-ready"),
       emulator.locator("body").innerText().catch(() => "<body unavailable>"),
+      emulator.locator("body").innerHTML().catch(() => "<body unavailable>"),
     ]);
     return JSON.stringify({
+      bootstrap,
       loaded,
       ready,
       body: bodyText.replace(/\s+/gu, " ").trim().slice(0, 600),
+      bodyHtml: bodyHtml.replace(/\s+/gu, " ").trim().slice(0, 900),
       requests: runtimeRequests.slice(-12),
       httpErrors: runtimeHttpErrors.slice(-8),
       failedRequests: failedRuntimeRequests.slice(-8),
       externalRequests: externalRuntimeRequests.slice(-8),
       pageErrors: pageErrors.slice(-8),
+      consoleErrors: consoleErrors.slice(-8),
     });
   };
 
