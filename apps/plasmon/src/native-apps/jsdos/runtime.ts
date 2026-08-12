@@ -39,8 +39,63 @@ export type JsDosFunction = (
 ) => JsDosPlayerHandle;
 
 type JsDosGlobal = typeof globalThis & { Dos?: JsDosFunction };
+type KeyboardNavigator = object & { keyboard?: unknown };
 
 let runtimePromise: Promise<JsDosFunction> | null = null;
+
+/**
+ * js-dos 8.4.1 probes the optional Keyboard Lock API during synchronous
+ * Dos() construction without handling a rejected lock() promise. Chromium
+ * exposes navigator.keyboard inside the installed app iframe but rejects
+ * lock() there because Keyboard Lock is top-level-only. Shadow the optional
+ * capability only for that synchronous constructor call, then restore the
+ * navigator immediately. Keyboard event delivery remains unchanged.
+ */
+export function withEmbeddedKeyboardLockUnavailable<T>(
+  embedded: boolean,
+  navigatorObject: KeyboardNavigator,
+  start: () => T,
+): T {
+  if (!embedded || !("keyboard" in navigatorObject)) return start();
+
+  const hadOwnKeyboard = Object.prototype.hasOwnProperty.call(navigatorObject, "keyboard");
+  const ownDescriptor = hadOwnKeyboard
+    ? Object.getOwnPropertyDescriptor(navigatorObject, "keyboard")
+    : undefined;
+
+  try {
+    Object.defineProperty(navigatorObject, "keyboard", {
+      configurable: true,
+      enumerable: false,
+      value: undefined,
+      writable: false,
+    });
+  } catch (error) {
+    throw new Error(`Unable to isolate js-dos Keyboard Lock: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    return start();
+  } finally {
+    if (hadOwnKeyboard && ownDescriptor) {
+      Object.defineProperty(navigatorObject, "keyboard", ownDescriptor);
+    } else if (!Reflect.deleteProperty(navigatorObject, "keyboard")) {
+      throw new Error("Unable to restore js-dos Keyboard Lock capability");
+    }
+  }
+}
+
+export function startJsDosPlayer(
+  Dos: JsDosFunction,
+  element: HTMLDivElement,
+  options: JsDosPlayerOptions,
+): JsDosPlayerHandle {
+  return withEmbeddedKeyboardLockUnavailable(
+    window.top !== window,
+    window.navigator as KeyboardNavigator,
+    () => Dos(element, options),
+  );
+}
 
 function installStylesheet(): void {
   if (document.querySelector('link[data-plasmon-runtime="js-dos"]')) return;
