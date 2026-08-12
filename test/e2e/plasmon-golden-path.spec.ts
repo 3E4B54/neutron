@@ -8,8 +8,12 @@ const TILE_ID = "main";
 test("packaged Plasmon boots real native/browser boundaries", async ({ page, request }) => {
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const pageErrors: Array<{ name: string; message: string; stack?: string }> = [];
+  page.on("pageerror", (error) => pageErrors.push({
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+  }));
 
   await page.goto(kernelUrl);
   await page.waitForFunction(
