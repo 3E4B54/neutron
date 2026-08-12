@@ -8,6 +8,7 @@ on:
       - "packages/neutron-provision/**"
       - "packages/neutron-tools/**"
       - "test/e2e/plasmon-golden-path.spec.ts"
+      - "test/e2e/plasmon-emulatorjs-proof.spec.ts"
       - "playwright.config.ts"
       - "plasmon-local.ndeploy.json"
       - "package.json"
@@ -20,6 +21,7 @@ on:
       - "packages/neutron-provision/**"
       - "packages/neutron-tools/**"
       - "test/e2e/plasmon-golden-path.spec.ts"
+      - "test/e2e/plasmon-emulatorjs-proof.spec.ts"
       - "playwright.config.ts"
       - "plasmon-local.ndeploy.json"
       - "package.json"
@@ -74,5 +76,5 @@ jobs:
 
             npm run provision -- plasmon-local.ndeploy.json reinstall
             NEUTRON_NDEPLOY_CONFIG=plasmon-local.ndeploy.json \
-              npx playwright test test/e2e/plasmon-golden-path.spec.ts
+              npx playwright test test/e2e/plasmon-golden-path.spec.ts test/e2e/plasmon-emulatorjs-proof.spec.ts
           '
