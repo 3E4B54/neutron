@@ -6,6 +6,7 @@ import type {
   ProcessCloseRequest,
   ProcessId,
   WindowCreateOptions,
+  WindowFocusSnapshot,
   WindowId,
   WindowManager,
   WindowState,
@@ -64,6 +65,10 @@ class TestWindowManager implements WindowManager {
 
   focus(id: WindowId): void {
     this.calls.push(["focus", id]);
+  }
+
+  focusSnapshot(): WindowFocusSnapshot {
+    return { focusedId: null, mru: [] };
   }
 
   move(): void {}
