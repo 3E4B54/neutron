@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import {
   generateAppMethodSchemaArtifact,
   validateAppMethodArgs,
@@ -11,6 +11,7 @@ const manifestUrl = new URL("../neutron.json", import.meta.url);
 const backendUrl = new URL("../backend/main.mo", import.meta.url);
 const htmlUrl = new URL("../dist/web/index.html", import.meta.url);
 const cssUrl = new URL("../dist/web/main.css", import.meta.url);
+const appDirectoryUrl = new URL("../", import.meta.url);
 
 async function readManifest(): Promise<NeutronManifest> {
   return JSON.parse(await readFile(manifestUrl, "utf8")) as NeutronManifest;
@@ -47,6 +48,14 @@ test("plasmon manifest validates and declares the shipped method", async () => {
   });
   expect(manifest).not.toHaveProperty("init_arg");
   expect(manifest).not.toHaveProperty("update_source");
+});
+
+test("plasmon package output uses the frozen v0.1.0 archive name", async () => {
+  const archives = (await readdir(appDirectoryUrl))
+    .filter((name) => /^plasmon\.v\d+\.\d+\.\d+\.neutron$/.test(name))
+    .sort();
+
+  expect(archives).toEqual(["plasmon.v0.1.0.neutron"]);
 });
 
 test("plasmon emits a build-time app method schema", async () => {
