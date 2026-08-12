@@ -5,6 +5,7 @@ import { FilePortError, type BinaryFileMetadata, type BinaryFileRead, type Revie
 const FILES_TARGET = "app:files:background" as MsgBusEndpointId;
 const SHA_256_ETAG = /^[a-f0-9]{64}$/u;
 const ALLOWED_MEDIA_TYPES = new Set(["text/plain", "text/markdown", "application/octet-stream"]);
+const FILES_ROOT_PATHS = ["/Shared", "/Vault", "/Workspace"] as const;
 
 export class NeutronFilesPort implements ReviewFilesPort {
   constructor(private readonly callAttachments: typeof callToolWithAttachments = callToolWithAttachments) {}
@@ -16,7 +17,7 @@ export class NeutronFilesPort implements ReviewFilesPort {
       arguments: { path, ...(options.ifMatch ? { ifMatch: options.ifMatch } : {}) },
     }, [], { ...(options.delegationToken ? { delegationToken: options.delegationToken } : {}) });
     const metadata = parseMetadata(result.value);
-    if (metadata.path !== path) throw invalidResponse("path does not match the requested file");
+    if (!filesResponsePathMatches(path, metadata.path)) throw invalidResponse("path does not match the requested file");
     if (options.ifMatch !== undefined && metadata.etag !== options.ifMatch) throw invalidResponse("etag does not match requested version");
     const attachment = result.attachments[0];
     if (result.attachments.length !== 1 || !attachment || attachment.name !== "file" || !(attachment.data instanceof ArrayBuffer)) {
@@ -46,7 +47,7 @@ export class NeutronFilesPort implements ReviewFilesPort {
       ...(options.delegationToken ? { delegationToken: options.delegationToken } : {}),
     });
     const metadata = parseMetadata(result.value);
-    if (metadata.path !== path) throw invalidResponse("write path does not match the requested file");
+    if (!filesResponsePathMatches(path, metadata.path)) throw invalidResponse("write path does not match the requested file");
     if (metadata.mediaType !== normalized) throw invalidResponse("write mediaType does not match the requested media type");
     if (metadata.byteLength !== expectedByteLength) throw invalidResponse("write byteLength does not match the requested bytes");
     if (metadata.etag !== expectedEtag) throw invalidResponse("write etag does not match the requested bytes");
@@ -71,6 +72,14 @@ function normalizeMediaType(value: string): string {
   const normalized = value.trim().toLowerCase().split(";", 1)[0]!;
   if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(normalized)) throw invalidResponse("mediaType is invalid");
   return normalized;
+}
+
+function filesResponsePathMatches(requested: string, actual: string): boolean {
+  if (actual === requested) return true;
+  if (!requested.startsWith("/")) return false;
+  if (FILES_ROOT_PATHS.some((root) => requested === root || requested.startsWith(`${root}/`))) return false;
+  const workspacePath = requested === "/" ? "/Workspace" : `/Workspace${requested}`;
+  return actual === workspacePath;
 }
 
 function attachmentMediaType(value: string): string {
