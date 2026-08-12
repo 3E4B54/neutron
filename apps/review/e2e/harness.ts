@@ -37,29 +37,6 @@ export async function openReview(page: Page): Promise<ReviewHarness> {
   return { page, review, frame };
 }
 
-export async function callReviewTool(page: Page, name: string, args: Record<string, unknown>, timeoutMs = 20_000): Promise<any> {
-  return page.evaluate(({ name, args, timeoutMs }) => new Promise((resolve, reject) => {
-    const frame = document.querySelector<HTMLIFrameElement>('[data-tid="app-background-frame"][data-app-id="review"]');
-    if (!frame?.contentWindow) { reject(new Error("Review background frame is unavailable")); return; }
-    const id = Date.now() + Math.floor(Math.random() * 100_000);
-    const timeout = window.setTimeout(() => {
-      window.removeEventListener("message", onMessage);
-      reject(new Error(`Review tool ${name} timed out`));
-    }, timeoutMs);
-    function onMessage(event: MessageEvent): void {
-      if (event.source !== frame!.contentWindow) return;
-      const response = event.data as { type?: unknown; id?: unknown; ok?: unknown; error?: unknown };
-      if (response.type !== "response" || response.id !== id) return;
-      window.clearTimeout(timeout);
-      window.removeEventListener("message", onMessage);
-      if (Object.hasOwn(response, "error")) reject(new Error(JSON.stringify(response.error)));
-      else resolve(response.ok);
-    }
-    window.addEventListener("message", onMessage);
-    frame.contentWindow.postMessage({ type: "exec", id, payload: { action: "__neutron_msgbus_tools_call", payload: { name, arguments: args } } }, "*");
-  }), { name, args, timeoutMs });
-}
-
 export async function approveFilesTool(page: Page, tool: "readBinary" | "writeBinary"): Promise<void> {
   const dialog = page.locator('[data-tid="frontend-tool-dialog"]');
   await expect(dialog).toBeVisible();
