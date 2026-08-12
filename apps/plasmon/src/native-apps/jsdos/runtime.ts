@@ -1,7 +1,18 @@
 export type DosEvent = "emu-ready" | "ci-ready" | "bnd-play" | "open-key" | "fullscreen-change";
 
+/** Logical managed runtime authority; this is not a host-root HTTP URL. */
 export const JS_DOS_RUNTIME_ROOT = "/System/Program Files/js-dos";
 export const JS_DOS_EMULATORS_ROOT = `${JS_DOS_RUNTIME_ROOT}/emulators/`;
+
+/**
+ * Installed Plasmon files are served beneath the app package URL (for example
+ * /app/plasmon/). Resolve the logical Program Files tree relative to that page
+ * instead of escaping to the Kernel origin with a root-absolute request.
+ */
+export function jsDosPackageAssetUrl(pageUrl: string | URL, relativePath = ""): string {
+  const suffix = relativePath.replace(/^\/+/, "");
+  return new URL(`.${JS_DOS_RUNTIME_ROOT}/${suffix}`, pageUrl).href;
+}
 
 export interface JsDosPlayerOptions {
   url?: string;
@@ -31,7 +42,7 @@ function installStylesheet(): void {
   if (document.querySelector('link[data-plasmon-runtime="js-dos"]')) return;
   const link = document.createElement("link");
   link.rel = "stylesheet";
-  link.href = `${JS_DOS_RUNTIME_ROOT}/js-dos.css`;
+  link.href = jsDosPackageAssetUrl(document.baseURI, "js-dos.css");
   link.dataset.plasmonRuntime = "js-dos";
   document.head.append(link);
 }
@@ -69,7 +80,7 @@ export function loadJsDosRuntime(): Promise<JsDosFunction> {
       return;
     }
 
-    script.src = `${JS_DOS_RUNTIME_ROOT}/js-dos.js`;
+    script.src = jsDosPackageAssetUrl(document.baseURI, "js-dos.js");
     script.async = true;
     script.dataset.plasmonRuntime = "js-dos";
     script.addEventListener("load", finish, { once: true });
