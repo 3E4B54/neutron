@@ -10,8 +10,11 @@ test("packaged Plasmon is registered, serves browser assets, and boots its real 
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
 
   await page.goto(kernelUrl);
+  await page.waitForFunction(
+    () => typeof window.__NEUTRON_PLAYWRIGHT_LOGIN_AS__ === "function",
+  );
   const principal = await page.evaluate(
-    async (seed) => window.__NEUTRON_PLAYWRIGHT_LOGIN_AS__?.(seed),
+    (seed) => window.__NEUTRON_PLAYWRIGHT_LOGIN_AS__!(seed),
     runtime.developerIdentitySeed,
   );
   expect(principal).toBe(runtime.developerIdentityPrincipal);
@@ -51,6 +54,6 @@ test("packaged Plasmon is registered, serves browser assets, and boots its real 
 
 declare global {
   interface Window {
-    __NEUTRON_PLAYWRIGHT_LOGIN_AS__?: (seed: number) => Promise<string | null>;
+    __NEUTRON_PLAYWRIGHT_LOGIN_AS__?: (seed: number) => Promise<string>;
   }
 }
