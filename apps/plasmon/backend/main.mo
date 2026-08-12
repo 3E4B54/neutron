@@ -260,6 +260,14 @@ module {
             };
 
             let resourceIndex = findResourceIndex(namespace, resourceId);
+            switch (resourceIndex) {
+                case null {};
+                case (?index) {
+                    if (sharing.resources[index].resourceType != resourceType) {
+                        return #err("shared-resource type is immutable for a stable resource identity");
+                    };
+                };
+            };
             let currentRevision : ?Nat = switch (resourceIndex) {
                 case null null;
                 case (?index) ?sharing.resources[index].currentRevision;
@@ -308,7 +316,7 @@ module {
                         schemaVersion = current.schemaVersion;
                         namespace = current.namespace;
                         resourceId = current.resourceId;
-                        resourceType;
+                        resourceType = current.resourceType;
                         currentRevision = nextRevision;
                         createdAt = current.createdAt;
                         updatedAt = createdAt;
