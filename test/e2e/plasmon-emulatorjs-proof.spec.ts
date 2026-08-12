@@ -72,26 +72,63 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
 
   const dialog = app.getByRole("dialog", { name: "EmulatorJS" });
   await expect(dialog).toBeVisible({ timeout: 20_000 });
+  const runtimeRoot = dialog.locator('[data-emulatorjs-runtime-host="true"]');
+  await expect(runtimeRoot).toHaveCount(1);
   const host = dialog.locator('iframe[title="NES game"]');
   const emulator = app.frameLocator('iframe[title="NES game"]');
 
+  const optionalText = async (locator: ReturnType<typeof dialog.locator>): Promise<string | null> => {
+    if (await locator.count() === 0) return null;
+    return await locator.first().textContent();
+  };
+
   const runtimeState = async () => {
-    const [init, bootstrap, loaded, ready, bodyText, bodyHtml, alertText, statusText] = await Promise.all([
-      host.getAttribute("data-emulatorjs-init"),
-      host.getAttribute("data-emulatorjs-bootstrap"),
-      host.getAttribute("data-emulatorjs-loaded"),
-      host.getAttribute("data-emulatorjs-ready"),
-      emulator.locator("body").innerText().catch(() => "<body unavailable>"),
-      emulator.locator("body").innerHTML().catch(() => "<body unavailable>"),
-      dialog.getByRole("alert").textContent().catch(() => null),
-      dialog.getByRole("status").textContent().catch(() => null),
+    const hostCount = await host.count();
+    const [phase, runtimeError, alertText, statusText] = await Promise.all([
+      runtimeRoot.getAttribute("data-emulatorjs-phase"),
+      runtimeRoot.getAttribute("data-emulatorjs-error"),
+      optionalText(dialog.locator('[role="alert"]')),
+      optionalText(dialog.locator('[role="status"]')),
     ]);
+
+    let init: string | null = null;
+    let bootstrap: string | null = null;
+    let loaded: string | null = null;
+    let ready: string | null = null;
+    let body = "<iframe absent>";
+    let bodyHtml = "<iframe absent>";
+    if (hostCount > 0) {
+      const currentHost = host.first();
+      [init, bootstrap, loaded, ready] = await Promise.all([
+        currentHost.getAttribute("data-emulatorjs-init"),
+        currentHost.getAttribute("data-emulatorjs-bootstrap"),
+        currentHost.getAttribute("data-emulatorjs-loaded"),
+        currentHost.getAttribute("data-emulatorjs-ready"),
+      ]);
+      const frameBody = await currentHost.evaluate((element) => {
+        try {
+          const runtimeFrame = element as HTMLIFrameElement;
+          return {
+            text: runtimeFrame.contentDocument?.body?.innerText ?? "<body unavailable>",
+            html: runtimeFrame.contentDocument?.body?.innerHTML ?? "<body unavailable>",
+          };
+        } catch (error) {
+          return { text: `<body inaccessible: ${String(error)}>`, html: "<body inaccessible>" };
+        }
+      });
+      body = frameBody.text;
+      bodyHtml = frameBody.html;
+    }
+
     return JSON.stringify({
+      phase,
+      runtimeError,
+      hostCount,
       init,
       bootstrap,
       loaded,
       ready,
-      body: bodyText.replace(/\s+/gu, " ").trim().slice(0, 600),
+      body: body.replace(/\s+/gu, " ").trim().slice(0, 600),
       bodyHtml: bodyHtml.replace(/\s+/gu, " ").trim().slice(0, 900),
       alert: alertText?.replace(/\s+/gu, " ").trim().slice(0, 600) ?? null,
       status: statusText?.replace(/\s+/gu, " ").trim().slice(0, 600) ?? null,
@@ -106,9 +143,12 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
 
   try {
     await expect.poll(
-      async () => await host.getAttribute("data-emulatorjs-loaded") === "true"
-        ? "loaded"
-        : await runtimeState(),
+      async () => {
+        if (await host.count() > 0 && await host.first().getAttribute("data-emulatorjs-loaded") === "true") {
+          return "loaded";
+        }
+        return await runtimeState();
+      },
       { timeout: 30_000, message: "EmulatorJS loader should initialize from packaged assets" },
     ).toBe("loaded");
   } catch (error) {
@@ -119,9 +159,12 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
 
   try {
     await expect.poll(
-      async () => await host.getAttribute("data-emulatorjs-ready") === "true"
-        ? "ready"
-        : await runtimeState(),
+      async () => {
+        if (await host.count() > 0 && await host.first().getAttribute("data-emulatorjs-ready") === "true") {
+          return "ready";
+        }
+        return await runtimeState();
+      },
       { timeout: 90_000, message: "EmulatorJS core and NES fixture should start" },
     ).toBe("ready");
   } catch (error) {
