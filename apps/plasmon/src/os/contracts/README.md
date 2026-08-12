@@ -10,7 +10,7 @@ Contracts describe capabilities and identities. They should not contain React UI
 - `fs.ts` — filesystem nodes, service operations, events, metadata, and stable node identity.
 - `apps.ts` — native application metadata.
 - `associations.ts` — handlers, rules, matching/opening contracts, and logical resource descriptors.
-- `process.ts` / `window.ts` — Plasmon-local process and window lifecycle.
+- `process.ts` / `window.ts` — Plasmon-local process and window lifecycle, including Windowing-owned current-focus/MRU snapshots.
 - `neutron.ts` — the narrow Plasmon-facing Kernel bridge.
 - `authorization.ts` / `sharing.ts` — generic authorization/sharing seams.
 - `backup.ts` — backup capability seam.

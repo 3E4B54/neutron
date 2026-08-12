@@ -17,6 +17,13 @@ export const START_MENU_NAME = "Start Menu";
 export const START_SHORTCUT_METADATA_KEY = "plasmon.shortcut";
 export const START_SEEDED_IDENTITIES_KEY = "plasmon.shell.start.seeded.v1";
 
+const RETIRED_SYSTEM_FOLDER_NAME = "System";
+const RETIRED_SYSTEM_NATIVE_HANDLERS = new Set<HandlerId>([
+  "native:settings",
+  "native:explorer",
+  "native:properties",
+]);
+
 export type StartShortcutTarget = SharedShortcutTarget;
 
 export interface StartShortcut {
@@ -59,9 +66,8 @@ function stringList(value: JsonValue | undefined): Set<string> {
   return new Set(value.filter((item): item is string => typeof item === "string" && item.length > 0));
 }
 
-function seedFolderForNative(app: NativeAppDefinition): "Accessories" | "System" {
-  const systemHandlers = new Set<HandlerId>(["native:settings", "native:explorer", "native:properties"]);
-  return systemHandlers.has(app.handlerId) ? "System" : "Accessories";
+function seedFolderForNative(app: NativeAppDefinition): "Accessories" | null {
+  return RETIRED_SYSTEM_NATIVE_HANDLERS.has(app.handlerId) ? null : "Accessories";
 }
 
 function safeEntryName(name: string): string {
@@ -129,7 +135,7 @@ async function scanStartTree(fs: FsService, root: FsNode): Promise<Map<string, S
 interface SeedSpec {
   identity: string;
   name: string;
-  folder: "Accessories" | "System" | "Neutron";
+  folder: "Accessories" | "Neutron" | null;
   target: StartShortcutTarget;
 }
 
@@ -156,6 +162,54 @@ function desiredSeeds(nativeApps: readonly NativeAppDefinition[], elements: read
 }
 
 /**
+ * Retires the legacy managed `System` Start category only when its old default
+ * shape is completely provable from durable reconciliation state: the folder
+ * is the exact direct child, has no custom metadata/content, and contains one
+ * canonical, previously-seeded shortcut for every currently supplied retired
+ * System default. Any rename, move, deletion, extra content, or folder metadata
+ * makes the folder user-customized and therefore untouchable.
+ */
+async function migrateRetiredSystemFolder(
+  fs: FsService,
+  root: FsNode,
+  nativeApps: readonly NativeAppDefinition[],
+  seeded: ReadonlySet<string>,
+): Promise<void> {
+  const specs = desiredSeeds(nativeApps, []).filter((spec) => spec.folder === null);
+  if (specs.length === 0) return;
+
+  const rootChildren = await fs.list(root.id, { includeHidden: true, sort: "name" });
+  const system = rootChildren.find((node) => node.name === RETIRED_SYSTEM_FOLDER_NAME);
+  if (!system || system.kind !== "directory") return;
+  if (Object.keys(system.metadata).length !== 0) return;
+
+  const children = await fs.list(system.id, { includeHidden: true, sort: "name" });
+  if (children.length !== specs.length) return;
+
+  const specsByIdentity = new Map(specs.map((spec) => [spec.identity, spec] as const));
+  const matched = new Map<string, { node: FsNode; spec: SeedSpec }>();
+  for (const child of children) {
+    const shortcut = parseStartShortcut(child);
+    if (!shortcut) return;
+    const identity = startShortcutTargetIdentity(shortcut.target);
+    const spec = specsByIdentity.get(identity);
+    if (!spec || !seeded.has(identity) || child.name !== spec.name || matched.has(identity)) return;
+    matched.set(identity, { node: child, spec });
+  }
+  if (matched.size !== specs.length) return;
+
+  for (const { node, spec } of matched.values()) {
+    const destinationName = await uniqueChildName(fs, root.id, spec.name);
+    if (destinationName !== node.name) await fs.rename(node.id, destinationName);
+    await fs.move(node.id, root.id);
+  }
+
+  if ((await fs.list(system.id, { includeHidden: true })).length === 0) {
+    await fs.remove(system.id);
+  }
+}
+
+/**
  * Conservative reconciliation: stable target identity is authoritative. Existing
  * shortcuts anywhere under Start Menu are preserved, including user renames and
  * moves. Once an identity has been seeded, its later absence is treated as an
@@ -168,8 +222,9 @@ export async function reconcileStartMenu(
   elements: readonly ExternalElement[],
 ): Promise<StartSeedResult> {
   const root = await ensureStartRoot(fs);
-  const existing = await scanStartTree(fs, root);
   const seeded = stringList(root.metadata[START_SEEDED_IDENTITIES_KEY]);
+  await migrateRetiredSystemFolder(fs, root, nativeApps, seeded);
+  const existing = await scanStartTree(fs, root);
   let created = 0;
   let preserved = 0;
   let skippedDeleted = 0;
@@ -189,10 +244,15 @@ export async function reconcileStartMenu(
       skippedDeleted += 1;
       continue;
     }
-    let folder = folders.get(spec.folder);
-    if (!folder) {
-      folder = await ensureChildDirectory(fs, root, spec.folder);
-      folders.set(spec.folder, folder);
+
+    let folder = root;
+    if (spec.folder !== null) {
+      const cached = folders.get(spec.folder);
+      if (cached) folder = cached;
+      else {
+        folder = await ensureChildDirectory(fs, root, spec.folder);
+        folders.set(spec.folder, folder);
+      }
     }
     const name = await uniqueChildName(fs, folder.id, spec.name);
     const node = await fs.createFile(folder.id, name, {
