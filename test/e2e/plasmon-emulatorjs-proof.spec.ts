@@ -1,0 +1,96 @@
+import { resolve } from "node:path";
+import { expect, test } from "@playwright/test";
+import { localCanisterOrigin } from "neutron-tools/src/runtime.js";
+import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src/local_session.ts";
+
+const APP_ID = "plasmon";
+const TILE_ID = "main";
+const NES_FIXTURE = resolve("apps/plasmon/dist/web/Games/Test ROMs/PlasmonTest.nes");
+
+test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS from local assets", async ({ page }) => {
+  const runtime = resolveLocalNeutronRuntime();
+  const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
+  const runtimeRequests: string[] = [];
+  const runtimeHttpErrors: string[] = [];
+  const failedRuntimeRequests: string[] = [];
+  const externalRuntimeRequests: string[] = [];
+  const pageErrors: string[] = [];
+
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    const path = decodeURIComponent(url.pathname);
+    if (path.includes("/System/Program Files/EmulatorJS/")) runtimeRequests.push(path);
+    if (["cdn.emulatorjs.org", "emulatorjs.org"].includes(url.hostname)) {
+      externalRuntimeRequests.push(request.url());
+    }
+  });
+  page.on("response", (response) => {
+    const url = new URL(response.url());
+    const path = decodeURIComponent(url.pathname);
+    if (response.status() >= 400 && path.includes("/System/Program Files/EmulatorJS/")) {
+      runtimeHttpErrors.push(`${response.status()} ${path}`);
+    }
+  });
+  page.on("requestfailed", (request) => {
+    const url = new URL(request.url());
+    const path = decodeURIComponent(url.pathname);
+    if (path.includes("/System/Program Files/EmulatorJS/")) {
+      failedRuntimeRequests.push(`${request.url()} :: ${request.failure()?.errorText ?? "failed"}`);
+    }
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.goto(kernelUrl);
+  await page.waitForFunction(() => typeof window.__NEUTRON_PLAYWRIGHT_LOGIN_AS__ === "function");
+  const principal = await page.evaluate(
+    (seed) => window.__NEUTRON_PLAYWRIGHT_LOGIN_AS__!(seed),
+    runtime.developerIdentitySeed,
+  );
+  expect(principal).toBe(runtime.developerIdentityPrincipal);
+
+  await page.locator('[data-tid="launcher-open"]').click();
+  await expect(page.locator('[data-tid="launcher"]')).toBeVisible();
+  await page.locator(`[data-tid="launcher-tile-${APP_ID}-${TILE_ID}"]`).click();
+
+  const appFrameSelector = `iframe[data-app-id="${APP_ID}"][data-tile-id="${TILE_ID}"]`;
+  await expect(page.locator(appFrameSelector).first()).toBeVisible();
+  const app = page.frameLocator(appFrameSelector).first();
+  await expect(app.getByRole("navigation", { name: "Taskbar" })).toBeVisible({ timeout: 30_000 });
+
+  const files = app.getByRole("listbox", { name: "Files" }).first();
+  await expect(files).toBeVisible({ timeout: 30_000 });
+  await files.locator('input[type="file"]').setInputFiles(NES_FIXTURE);
+
+  const fixture = app.locator("[data-fm-node-id]", { hasText: "PlasmonTest.nes" }).first();
+  await expect(fixture).toBeVisible({ timeout: 30_000 });
+  await expect(fixture).toHaveAttribute("aria-selected", "true", { timeout: 30_000 });
+  await fixture.dblclick();
+
+  const dialog = app.getByRole("dialog", { name: "EmulatorJS" });
+  await expect(dialog).toBeVisible({ timeout: 20_000 });
+  const host = dialog.locator('iframe[title="NES game"]');
+  await expect(host).toHaveAttribute("data-emulatorjs-ready", "true", { timeout: 90_000 });
+
+  const emulator = app.frameLocator('iframe[title="NES game"]');
+  await expect(emulator.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
+
+  expect(runtimeRequests.some((path) => path.endsWith("/data/loader.js"))).toBe(true);
+  expect(runtimeRequests.some((path) => path.endsWith("/data/emulator.min.js"))).toBe(true);
+  expect(runtimeRequests.some((path) => path.endsWith("/data/emulator.min.css"))).toBe(true);
+  expect(runtimeRequests.some((path) => /\/data\/cores\/fceumm(?:-legacy)?-wasm\.data$/u.test(path))).toBe(true);
+  expect(externalRuntimeRequests).toEqual([]);
+  expect(runtimeHttpErrors).toEqual([]);
+  expect(failedRuntimeRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden({ timeout: 5_000 });
+  await expect(app.locator('iframe[title="NES game"]')).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
+declare global {
+  interface Window {
+    __NEUTRON_PLAYWRIGHT_LOGIN_AS__?: (seed: number) => Promise<string>;
+  }
+}
