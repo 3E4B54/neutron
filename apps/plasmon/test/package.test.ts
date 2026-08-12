@@ -28,7 +28,7 @@ test("plasmon manifest validates and declares the shipped method", async () => {
   expect(manifest).toMatchObject({
     id: "plasmon",
     name: "Plasmon",
-    version: 100,
+    version: 102,
     src: "main.mo",
     tiles: [
       {
