@@ -71,18 +71,29 @@ jobs:
           '
       - name: Package Review
         run: nix develop --command bash -lc 'set -euxo pipefail; npm --workspace neutron-review run package'
-      - name: Provision and exercise packaged Review
+      - name: Start and provision vanilla Neutron
         run: |
           nix develop --command bash -lc '
             set -euxo pipefail
-            npm run provision -- review-local.ndeploy.json serve > /tmp/review-pocketic.log 2>&1 &
-            server_pid=$!
-            trap '\''status=$?; kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; if [ "$status" -ne 0 ]; then cat /tmp/review-pocketic.log || true; fi; exit "$status"'\'' EXIT
+            nohup npm run provision -- review-local.ndeploy.json serve > /tmp/review-pocketic.log 2>&1 &
+            echo $! > /tmp/review-pocketic.pid
             for attempt in $(seq 1 45); do
               if npm run provision -- review-local.ndeploy.json status >/dev/null 2>&1; then break; fi
-              if [ "$attempt" -eq 45 ]; then echo "PocketIC did not become ready" >&2; exit 1; fi
+              if [ "$attempt" -eq 45 ]; then cat /tmp/review-pocketic.log || true; echo "PocketIC did not become ready" >&2; exit 1; fi
               sleep 1
             done
             npm run provision -- review-local.ndeploy.json reinstall
-            NEUTRON_NDEPLOY_CONFIG=review-local.ndeploy.json npm --workspace neutron-review run test:e2e
           '
+      - name: Attest installed Review package bytes
+        run: nix develop --command bash -lc 'set -euxo pipefail; NEUTRON_NDEPLOY_CONFIG=review-local.ndeploy.json npm --workspace neutron-review run attest:installed'
+      - name: Exercise packaged Review in vanilla Neutron
+        run: nix develop --command bash -lc 'set -euxo pipefail; NEUTRON_NDEPLOY_CONFIG=review-local.ndeploy.json playwright test -c apps/review/playwright.config.ts'
+      - name: Stop vanilla Neutron
+        if: always()
+        run: |
+          if [ -f /tmp/review-pocketic.pid ]; then
+            kill "$(cat /tmp/review-pocketic.pid)" 2>/dev/null || true
+          fi
+          if [ "${{ job.status }}" != "success" ]; then
+            cat /tmp/review-pocketic.log 2>/dev/null || true
+          fi
