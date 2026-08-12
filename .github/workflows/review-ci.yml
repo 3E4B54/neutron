@@ -58,7 +58,21 @@ jobs:
             npm ci
             npm --workspace neutron-kernel run package
             npm --workspace neutron-design-system run build
-            npm --workspace neutron-vfs run package
+
+            # Review needs the normal Files app for its real File > Open/export
+            # boundary. Build a local test package from production VFS sources,
+            # but do not invoke Files release-evidence generation from this
+            # unrelated Issue lane.
+            (
+              cd apps/vfs
+              npm run validate
+              npm run build
+              npm run typecheck:clean
+              npm run mopack
+              npm run schema
+              bun ../../packages/neutron-scripts/src/pack.ts
+            )
+
             npm --workspace neutron-review run package
 
             npm run provision -- review-local.ndeploy.json serve > /tmp/review-pocketic.log 2>&1 &
