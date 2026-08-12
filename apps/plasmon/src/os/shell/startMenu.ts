@@ -140,15 +140,17 @@ interface SeedSpec {
 }
 
 function desiredSeeds(nativeApps: readonly NativeAppDefinition[], elements: readonly ExternalElement[]): SeedSpec[] {
-  const native = nativeApps.map<SeedSpec>((app) => {
-    const target: StartShortcutTarget = { kind: "native", handlerId: app.handlerId };
-    return {
-      identity: startShortcutTargetIdentity(target),
-      name: safeEntryName(app.name),
-      folder: seedFolderForNative(app),
-      target,
-    };
-  });
+  const native = nativeApps
+    .filter((app) => app.runtimeOnly !== true)
+    .map<SeedSpec>((app) => {
+      const target: StartShortcutTarget = { kind: "native", handlerId: app.handlerId };
+      return {
+        identity: startShortcutTargetIdentity(target),
+        name: safeEntryName(app.name),
+        folder: seedFolderForNative(app),
+        target,
+      };
+    });
   const neutron = elements.map<SeedSpec>((element) => {
     const target: StartShortcutTarget = { kind: "element", elementId: element.id };
     return {
