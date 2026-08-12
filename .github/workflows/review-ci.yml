@@ -57,6 +57,7 @@ jobs:
             set -euxo pipefail
             npm ci
             npm --workspace neutron-kernel run package
+            npm --workspace neutron-design-system run build
             npm --workspace neutron-vfs run package
             npm --workspace neutron-review run package
 
