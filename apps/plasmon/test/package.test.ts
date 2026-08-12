@@ -6,12 +6,14 @@ import {
 } from "neutron-scripts/src/method_schema.js";
 import { type NeutronManifest } from "neutron-tools/src/schema.js";
 import { validate_neutron_conf } from "neutron-tools/src/validate_schema.js";
+import { createPlasmonDemoGameBundle } from "../src/games/demoFixtureBundle.ts";
 
 const manifestUrl = new URL("../neutron.json", import.meta.url);
 const backendUrl = new URL("../backend/main.mo", import.meta.url);
 const htmlUrl = new URL("../dist/web/index.html", import.meta.url);
 const cssUrl = new URL("../dist/web/main.css", import.meta.url);
 const appDirectoryUrl = new URL("../", import.meta.url);
+const demoGameUrl = new URL("../dist/web/fixtures/PlasmonDemo.jsdos", import.meta.url);
 const emulatorHostHtmlUrl = new URL("../dist/web/emulatorjs-host.html", import.meta.url);
 const emulatorHostScriptUrl = new URL("../dist/web/emulatorjs-host.js", import.meta.url);
 const emulatorRuntimeUrl = new URL("../dist/web/System/Program Files/EmulatorJS/runtime.json", import.meta.url);
@@ -183,4 +185,12 @@ test("plasmon packages EmulatorJS authority, URL-safe browser assets, NES core, 
   expect(browserExtract7z).toEqual(extract7z);
   expect(fixture.length).toBe(16 + 16_384 + 8_192);
   expect([...fixture.subarray(0, 8)]).toEqual([0x4e, 0x45, 0x53, 0x1a, 0x01, 0x01, 0x00, 0x00]);
+});
+
+test("plasmon package contains the deterministic redistributable js-dos demo fixture", async () => {
+  const packaged = new Uint8Array(await readFile(demoGameUrl));
+  const expected = createPlasmonDemoGameBundle();
+
+  expect(packaged.length).toBeGreaterThan(0);
+  expect(Array.from(packaged)).toEqual(Array.from(expected));
 });
