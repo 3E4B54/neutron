@@ -16,6 +16,7 @@ import {
 import {
   FileOperationClipboard,
   type FileManagerOpenAuthority,
+  type FileManagerTrashAuthority,
 } from "../file-manager/index.ts";
 import {
   PersistentFsService,
@@ -146,6 +147,7 @@ function registerWave2Applications(
   fsEvents: FsEventSource,
   openService: OpenService,
   openAuthority: FileManagerOpenAuthority,
+  trashAuthority: FileManagerTrashAuthority,
   clipboard: FileOperationClipboard,
 ): void {
   for (const handler of contentHandlerDefinitions) associations.registerHandler(handler);
@@ -172,6 +174,7 @@ function registerWave2Applications(
       associations,
       openService,
       openAuthority,
+      trashAuthority,
       clipboard,
     }),
   );
@@ -218,12 +221,18 @@ export function createPlasmonServices(
 
   // Native Explorer registration happens before filesystem bootstrap so the
   // canonical dispatcher can discover the Explorer handler during core setup.
-  // This lazy authority preserves that order without rebuilding open policy in
-  // FileManager or introducing Neutron/association dependencies into the UI.
+  // These lazy authorities preserve that order without rebuilding filesystem
+  // policy in FileManager or introducing policy dependencies into the UI.
   const fileManagerOpenAuthority: FileManagerOpenAuthority = {
     openNode: (nodeId, openOptions) => {
       if (!filesystem) return Promise.reject(new Error("Filesystem opening is not initialized"));
       return filesystem.open.openNode(nodeId, openOptions);
+    },
+  };
+  const fileManagerTrashAuthority: FileManagerTrashAuthority = {
+    trash: (nodeId) => {
+      if (!filesystem) return Promise.reject(new Error("Filesystem Trash is not initialized"));
+      return filesystem.trash.trash(nodeId);
     },
   };
 
@@ -233,6 +242,7 @@ export function createPlasmonServices(
     rawFs,
     openService,
     fileManagerOpenAuthority,
+    fileManagerTrashAuthority,
     fileClipboard,
   );
 
