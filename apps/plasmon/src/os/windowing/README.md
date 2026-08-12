@@ -15,6 +15,8 @@ It does not own process records, application registration, filesystem state, She
 
 The manager returns detached state snapshots and emits updates when authoritative state changes. Browser rendering/interaction should consume manager state rather than becoming a second geometry store.
 
+A rendered native close control is a request, not lifecycle authority. When `NativeWindow` receives `onRequestClose`, the callback owns the lifecycle decision; returning `false` means the close was prevented or deferred and the window restores its ordinary rendered state. Plasmon composition routes this callback through `ProcessController.close()`. Direct `WindowManager.close()` remains lower-level window-state teardown for the caller that already owns that decision.
+
 ## Placement and restore semantics
 
 A snapped window occupies the deterministic left or right half of the manager's current available viewport. The native manager keeps snap identity below React and stores a pre-snap floating `restoreGeometry`; the browser adapter only detects pointer release at the workspace edge and commits the requested side plus the final floating drag geometry to the manager.
@@ -25,12 +27,12 @@ This slice is intentionally bounded to left/right halves. Quarter snapping, tili
 
 ## Refactor direction
 
-Keep geometry and state transitions deterministic and testable below React. Browser-specific pointer capture, animation-frame previews, focus routing, ResizeObserver integration, accessibility/inert behavior, edge detection, and iframe interaction suppression belong in thin DOM adapters around the manager.
+Keep geometry and state transitions deterministic and testable below React. Browser-specific pointer capture, animation-frame previews, focus routing, ResizeObserver integration, accessibility/inert behavior, edge detection, iframe interaction suppression, and close-animation presentation belong in thin DOM adapters around the manager.
 
-Do not teach the window manager Shell layout policy; composition should provide the actual available viewport. Keep process ownership outside this subsystem and coordinate through public contracts.
+Do not teach the window manager Shell layout or process lifecycle policy; composition should provide the actual available viewport and lifecycle close callback. Keep process ownership outside this subsystem and coordinate through public contracts.
 
 Upstream behavioral adaptations/attribution belong in `THIRD_PARTY.md` and should remain preserved through refactors.
 
 ## Testing
 
-Use pure geometry/manager tests for creation, focus/order, viewport constraints, snap placement/state transitions, snapshot isolation, subscriptions, and cleanup. Use real-browser coverage for pointer drag/resize, pointer-edge activation, keyboard/focus, inert/accessibility, iframe interaction, ResizeObserver, and other DOM-only behavior. Manual review remains appropriate for animation/interaction feel.
+Use pure geometry/manager tests for creation, focus/order, viewport constraints, snap placement/state transitions, snapshot isolation, subscriptions, and cleanup. Use real-browser coverage for pointer drag/resize, pointer-edge activation, keyboard/focus, close-animation presentation, inert/accessibility, iframe interaction, ResizeObserver, and other DOM-only behavior. Manual review remains appropriate for animation/interaction feel.
