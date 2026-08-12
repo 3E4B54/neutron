@@ -32,6 +32,20 @@ const SHARED_FILE_ICON: Readonly<Record<FileVisualKind, FileTypeIconName>> = Obj
   unknown: "file",
 });
 
+const SHARED_NATIVE_PRESENTATION: Readonly<Record<string, ResourceIconPresentation>> = Object.freeze({
+  "native:explorer": { kind: "system", icon: "file-manager" },
+  "native:settings": { kind: "system", icon: "settings" },
+  "native:photos": { kind: "system", icon: "photos" },
+  "native:browser": { kind: "system", icon: "browser" },
+  "native:properties": { kind: "system", icon: "properties" },
+  "native:start": { kind: "system", icon: "start" },
+  "native:search": { kind: "system", icon: "search" },
+  "native:recycle-bin": { kind: "system", icon: "recycle-bin" },
+  "native:text": { kind: "file-type", icon: "text" },
+  "native:markdown": { kind: "file-type", icon: "markdown" },
+  "native:video": { kind: "file-type", icon: "video" },
+});
+
 function extension(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? name.slice(dot).toLowerCase() : "";
@@ -63,6 +77,15 @@ function applicationPresentation(src?: string | null): ResourceIconPresentation 
   return { kind: "application", src: src ?? null };
 }
 
+function nativeApplicationPresentation(
+  handlerId: string,
+  associations?: AssociationRegistry,
+): ResourceIconPresentation {
+  const registeredIcon = associations?.getHandler(handlerId)?.icon;
+  if (registeredIcon) return applicationPresentation(registeredIcon);
+  return SHARED_NATIVE_PRESENTATION[handlerId] ?? applicationPresentation();
+}
+
 /**
  * Resolve direct resource identity from authoritative filesystem/application metadata.
  * Association lookup is metadata-only here: no matching, default selection, or opening occurs.
@@ -72,7 +95,7 @@ export function directFileResourcePresentation(
   associations?: AssociationRegistry,
 ): ResourceIconPresentation {
   const systemApp = readSystemAppMetadata(node);
-  if (systemApp) return applicationPresentation(associations?.getHandler(systemApp.handlerId)?.icon);
+  if (systemApp) return nativeApplicationPresentation(systemApp.handlerId, associations);
 
   const neutronApp = readNeutronAppMetadata(node);
   if (neutronApp) return applicationPresentation(neutronApp.icon);
@@ -114,7 +137,7 @@ async function shortcutTargetPresentation(
   try {
     switch (shortcut.target.kind) {
       case "native":
-        return applicationPresentation(associations?.getHandler(shortcut.target.handlerId)?.icon);
+        return nativeApplicationPresentation(shortcut.target.handlerId, associations);
       case "element":
         return await neutronElementPresentation(fs, shortcut.target.elementId);
       case "node": {
@@ -129,7 +152,8 @@ async function shortcutTargetPresentation(
         return { kind: "file-type", icon: "file" };
     }
   } catch {
-    if (shortcut.target.kind === "native" || shortcut.target.kind === "element") return applicationPresentation();
+    if (shortcut.target.kind === "native") return nativeApplicationPresentation(shortcut.target.handlerId, associations);
+    if (shortcut.target.kind === "element") return applicationPresentation();
     return { kind: "file-type", icon: "file" };
   }
 }
