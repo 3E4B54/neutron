@@ -145,6 +145,10 @@ test("plasmon packages EmulatorJS authority, URL-safe browser assets, NES core, 
   expect(hostScript).toContain('window.EJS_onGameStart = () => post("ready")');
   expect(hostScript).toContain("runtime/emulatorjs/data/loader.js");
   expect(hostScript).not.toContain("System/Program Files/EmulatorJS/data/loader.js");
+  expect(hostScript).toContain('["localStorage", "indexedDB"]');
+  expect(hostScript).toContain("Object.defineProperty(window, name");
+  expect(hostScript).toContain("window.EJS_disableLocalStorage = true");
+  expect(hostScript).toContain("window.EJS_disableDatabases = true");
   expect(JSON.parse(runtime)).toMatchObject({
     runtime: "EmulatorJS",
     version: "4.2.3",
