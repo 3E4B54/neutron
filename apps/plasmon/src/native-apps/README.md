@@ -14,7 +14,7 @@ Native application UI consumes the same OS authorities as other surfaces:
 - common resource/application presentation through the shared visual system;
 - Kernel application behavior through the Neutron boundary rather than local emulation.
 
-An association-backed runtime host can use a native process/window without automatically becoming a first-class user-launchable system application. Product identity and execution mechanism are separate concerns.
+An association-backed runtime host can use a native process/window without automatically becoming a first-class user-launchable system application. Product identity and execution mechanism are separate concerns. Such definitions declare `runtimeOnly: true` on their existing `NativeAppDefinition`; that classification does not unregister the Process host or association handler, and consumers that specifically need user-launchable application inventory exclude runtime-only definitions. js-dos and EmulatorJS use this shared classification rather than a parallel catalog or handler-name rule.
 
 Document applications consume Process close negotiation rather than replacing it. Text and Markdown share a Native Apps close-decision model: a clean document allows ordinary close immediately; a dirty document defers the Process request while Native Apps presents Save / Discard / Cancel. Save completes the same request only after persistence succeeds, failed save/conflict keeps it pending, Discard suppresses document autosave/unmount flush for that close, and Cancel restores normal document-session behavior.
 
