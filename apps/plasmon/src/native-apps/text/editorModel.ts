@@ -5,8 +5,7 @@ export function syncEditorModelValue(model: EditorValueModel, nextValue: string)
  * Monaco's model registry is global to the application realm. A semantic
  * document key therefore cannot also be the ownership identity for a live
  * editor surface: two surfaces with the same document key must never dispose
- * or mutate each other's models. The caller supplies a stable per-surface
- * instance id and owns the resulting model for that surface's lifetime.
+ * or mutate each other's models.
  */
 export function editorModelUri(modelKey: string, instanceId: number): string {
   return `inmemory://plasmon/${encodeURIComponent(modelKey)}?surface=${instanceId}`;
@@ -22,17 +21,18 @@ export interface OwnedEditorModel<Model extends DisposableEditorModel> {
   dispose(): void;
 }
 
+let nextEditorSurfaceInstanceId = 1;
+
 /**
- * Bind one concrete editor model to one live surface. Cleanup is deliberately
- * by exact model instance rather than by looking the semantic document key up
- * in Monaco's global model registry.
+ * Bind one concrete editor model to one live surface. Each call allocates a
+ * distinct Monaco URI even when several surfaces display the same semantic
+ * document key. Cleanup is by exact model instance rather than registry lookup.
  */
-export function createOwnedEditorModel<Model extends DisposableEditorModel>(
+export function createEditorSurfaceModelOwner<Model extends DisposableEditorModel>(
   modelKey: string,
-  instanceId: number,
   createModel: (uri: string) => Model,
 ): OwnedEditorModel<Model> {
-  const uri = editorModelUri(modelKey, instanceId);
+  const uri = editorModelUri(modelKey, nextEditorSurfaceInstanceId++);
   const model = createModel(uri);
   let disposed = false;
   return {
