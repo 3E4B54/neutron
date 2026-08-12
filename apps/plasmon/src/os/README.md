@@ -1,6 +1,6 @@
 # Plasmon OS architecture
 
-`apps/plasmon/src/os/` is the canonical shared desktop-OS layer for Plasmon. It composes filesystem, associations, process/window management, desktop/FileManager, Shell, Neutron integration, and shared presentation while leaving Kernel authority with Neutron.
+`apps/plasmon/src/os/` is the canonical shared desktop-OS layer for Plasmon. It composes filesystem, associations, process/window management, desktop/FileManager, Shell, Neutron integration, Sharing, and shared presentation while leaving Kernel authority with Neutron.
 
 ## Architectural boundaries
 
@@ -10,9 +10,10 @@
 - `process/**` and `windowing/**` own Plasmon-local native app lifecycle/window state.
 - `neutron/**` adapts verified Kernel behavior; it must not invent missing Kernel capabilities.
 - `integration/**` composes public implementations and should not absorb subsystem policy.
+- `sharing/**` owns explicit provider publication/storage semantics and only the authorization orchestration faithfully expressible through current contracts; MTN remains authoritative for cross-AppScope authorization and live provider calls.
 - `visual/**` supplies shared presentation primitives without deciding filesystem or application semantics.
 
-Stable identifiers are intentional boundaries. A filesystem node, logical Atom, native process, window, and Neutron application are different identities even when one user action connects them.
+Stable identifiers are intentional boundaries. A filesystem node, logical Atom, provider resource/revision, native process, window, and Neutron application are different identities even when one user action connects them.
 
 ## Subsystems
 
@@ -45,6 +46,9 @@ The narrow adapter to vanilla Neutron discovery, opening, runtime state, install
 
 ### `integration/`
 Composition of filesystem transport, associations, native app registry, processes, windows, Neutron bridge, open service, clipboard, and other cross-cutting dependencies.
+
+### `sharing/`
+Explicit local-resource snapshot publication into a stable provider store, content-addressed chunking/integrity, immutable provider identity and provider revisions, plus the safe share/revoke subset over `ResourceAuthorizationService`. The provider storage layer contains no bearer/grant/lease/AppScope authority. Cross-AppScope import remains fail-closed until an accepted live MTN lease-bound provider-call boundary exists.
 
 ### `visual/`
 Shared visual tokens, resource/app presentation, media/thumbnails, overlays, sizing, and wallpaper primitives.
