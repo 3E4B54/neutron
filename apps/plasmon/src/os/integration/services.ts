@@ -68,14 +68,12 @@ export interface PlasmonServices {
 }
 
 export interface CreatePlasmonServicesOptions {
-  /** Optional raw filesystem boundary. Production callers normally use createFilesystemService(). */
-  fs?: FsService & FsEventSource;
+  /** Optional persistence boundary. Production callers use environment-selected filesystem persistence. */
+  filesystemRepository?: FsRepository;
   /** Optional Neutron boundary for preview/tests. Production callers normally use createNeutronBridge(). */
   neutron?: NeutronBridge;
   /** Optional window authority, primarily useful for deterministic headless composition. */
   windows?: WindowManager;
-  /** Optional authorization boundary. Omit to retain the production environment selection. */
-  authorization?: ResourceAuthorizationService;
 }
 
 export type FilesystemFrontendMode = "hosted" | "standalone";
@@ -186,7 +184,7 @@ function registerWave2Applications(
  * browser storage.
  *
  * Tests may inject only true external/runtime boundaries (for example an
- * in-memory persistence service, a mock Neutron bridge, or deterministic window
+ * in-memory persistence repository, a mock Neutron bridge, or deterministic window
  * manager). Registration, associations, opening, filesystem policy, process
  * behavior, and all other OS semantics remain the same production composition.
  *
@@ -201,7 +199,9 @@ function registerWave2Applications(
 export function createPlasmonServices(
   options: CreatePlasmonServicesOptions = {},
 ): PlasmonServices {
-  const rawFs = options.fs ?? createFilesystemService();
+  const rawFs = options.filesystemRepository
+    ? new PersistentFsService(options.filesystemRepository)
+    : createFilesystemService();
   const windows = options.windows ?? new NativeWindowManager();
   const neutron = options.neutron ?? createNeutronBridge();
   const nativeApps = new NativeApplicationRegistry();
@@ -229,7 +229,7 @@ export function createPlasmonServices(
     process,
     windows,
     neutron,
-    authorization: options.authorization ?? createAuthorizationService(),
+    authorization: createAuthorizationService(),
     nativeApps,
     associations,
     openService,
