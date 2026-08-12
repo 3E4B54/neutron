@@ -10,6 +10,8 @@ import {
   assertNesRom,
   createEmulatorJsFrameDocument,
   createEmulatorJsLaunchConfig,
+  EMULATORJS_INIT_MESSAGE,
+  EMULATORJS_LIFECYCLE_MESSAGE,
   EMULATORJS_NES_MIME,
   resolveEmulatorJsDataRoot,
 } from "./runtime.ts";
@@ -77,5 +79,17 @@ test("EmulatorJS launch configuration stays package-relative and disables browse
     disableAutoLang: false,
   });
   expect(config.dataRoot).toContain("/app/plasmon/System/Program%20Files/EmulatorJS/data/");
-  expect(createEmulatorJsFrameDocument()).toContain('id="game"');
+});
+
+test("EmulatorJS frame self-bootstraps through correlated messages and real loader callbacks", () => {
+  const document = createEmulatorJsFrameDocument("runtime-token");
+
+  expect(document).toContain('id="game"');
+  expect(document).toContain(JSON.stringify(EMULATORJS_INIT_MESSAGE));
+  expect(document).toContain(JSON.stringify(EMULATORJS_LIFECYCLE_MESSAGE));
+  expect(document).toContain('report("bootstrap")');
+  expect(document).toContain('window.EJS_ready = () => report("loaded")');
+  expect(document).toContain('window.EJS_onGameStart = () => report("ready")');
+  expect(document).toContain('loader.src = String(message.dataRoot) + "loader.js"');
+  expect(document).toContain("URL.createObjectURL(new Blob([bytes]");
 });
