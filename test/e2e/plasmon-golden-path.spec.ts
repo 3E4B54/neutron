@@ -5,7 +5,7 @@ import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src
 const APP_ID = "plasmon";
 const TILE_ID = "main";
 
-test("packaged Plasmon is registered, serves browser assets, and boots its real tile", async ({ page, request }) => {
+test("packaged Plasmon is registered, serves browser assets, boots its real tile, and supports native edge snapping", async ({ page, request }) => {
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
 
@@ -50,6 +50,35 @@ test("packaged Plasmon is registered, serves browser assets, and boots its real 
   await expect(app.getByRole("navigation", { name: "Taskbar" })).toBeVisible({ timeout: 30_000 });
   await expect(app.getByRole("button", { name: "Start" })).toBeVisible();
   await expect(app.getByRole("button", { name: "Search" })).toBeVisible();
+
+  const nativeWindows = app.locator(".plasmon-window-layer [data-window-id]");
+  const initialWindowCount = await nativeWindows.count();
+  const rootShortcut = app.locator("[data-fm-node-id]", { hasText: "Root" }).first();
+  await expect(rootShortcut).toBeVisible({ timeout: 30_000 });
+  await rootShortcut.dblclick();
+
+  await expect(nativeWindows).toHaveCount(initialWindowCount + 1, { timeout: 20_000 });
+  const dialog = nativeWindows.last();
+  await expect(dialog).toBeVisible();
+  const titlebar = dialog.locator(".plasmon-window__titlebar");
+  const workspace = await app.locator(".plasmon-window-layer").first().boundingBox();
+  if (!workspace) throw new Error("Plasmon WindowLayer has no browser bounds");
+
+  const dragTitlebarTo = async (clientX: number): Promise<void> => {
+    const box = await titlebar.boundingBox();
+    if (!box) throw new Error("Native window titlebar has no browser bounds");
+    const titlebarY = box.y + Math.min(16, box.height / 2);
+    await page.mouse.move(box.x + Math.min(120, box.width / 2), titlebarY);
+    await page.mouse.down();
+    await page.mouse.move(clientX, titlebarY, { steps: 5 });
+    await page.mouse.up();
+  };
+
+  await dragTitlebarTo(workspace.x + 1);
+  await expect(dialog).toHaveAttribute("data-window-snap", "left");
+
+  await dragTitlebarTo(workspace.x + workspace.width - 1);
+  await expect(dialog).toHaveAttribute("data-window-snap", "right");
 });
 
 declare global {
