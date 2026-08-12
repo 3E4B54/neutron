@@ -144,6 +144,8 @@ export function createEmulatorJsFrameDocument(runtimeToken: string): string {
       fail(error);
     }
   });
+
+  report("bootstrap");
 })();
 </script>
 </body>
