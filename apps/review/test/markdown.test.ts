@@ -19,7 +19,7 @@ test("Markdown/TODO import ignores checkbox completion as participant evidence",
   expect(Object.keys(atom.items[0]!.results)).toHaveLength(0);
 });
 
-test("Markdown export is readable and carries Review coordination/result summary", async () => {
+test("Markdown export is readable and re-imports only top-level Review items", async () => {
   const persistence = createMemoryReviewPersistence();
   let n = 0;
   const engine = new ReviewEngine(persistence, { now: () => ++n, id: (kind) => `${kind}-${++n}` });
@@ -33,4 +33,5 @@ test("Markdown export is readable and carries Review coordination/result summary
   expect(output).toContain("Desired: must");
   expect(output).toContain("Owner: Agent 2");
   expect(output).toContain("1 needs polish");
+  expect(parseReviewMarkdown(output)).toEqual({ title: "Gate", items: [{ title: "Editor opens" }] });
 });
