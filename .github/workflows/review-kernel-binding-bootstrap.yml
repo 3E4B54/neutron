@@ -25,6 +25,7 @@ jobs:
           nix develop --command bash -lc '
             set -euxo pipefail
             npm ci
+            npm --workspace neutron-kernel run mopack
             npm --workspace neutron-kernel run certified-assets:candidate-binding:write
           '
       - name: Commit generated binding when changed
