@@ -115,6 +115,12 @@ Examples of good headless seams include:
 
 Use fake/in-memory implementations only at true external boundaries such as filesystem persistence or Neutron RPC. The behavior under test must remain the real production behavior.
 
+### Shared cross-surface harness
+
+For workflows spanning multiple Plasmon authorities, use `test/headlessEnvironment.ts` and `createHeadlessPlasmonEnvironment()` rather than rebuilding composition in each test. The harness injects only approved external boundaries into the production `createPlasmonServices()` composition: in-memory filesystem persistence, the existing mock Neutron bridge, and a deterministic `NativeWindowManager` configuration.
+
+The harness intentionally exposes the production service graph and small state-inspection helpers. It must not acquire feature-specific command semantics. If Desktop, FileManager, Start, Search, or another surface needs deterministic behavior that is not callable below React, move that behavior into the owning production model/controller/command first, then exercise it through the shared environment.
+
 ## CI: use it when the agent cannot run Bun locally
 
 `.github/workflows/plasmon-ci.yml` runs **Plasmon Fast CI** on relevant pushes and pull requests across branches. It installs Node 24, Bun 1.3.14, repository dependencies, and runs:

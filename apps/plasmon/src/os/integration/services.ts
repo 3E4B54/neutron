@@ -67,6 +67,15 @@ export interface PlasmonServices {
   fileClipboard: FileOperationClipboard;
 }
 
+export interface CreatePlasmonServicesOptions {
+  /** Optional persistence boundary. Production callers use environment-selected filesystem persistence. */
+  filesystemRepository?: FsRepository;
+  /** Optional Neutron boundary for preview/tests. Production callers normally use createNeutronBridge(). */
+  neutron?: NeutronBridge;
+  /** Optional window authority, primarily useful for deterministic headless composition. */
+  windows?: WindowManager;
+}
+
 export type FilesystemFrontendMode = "hosted" | "standalone";
 
 function createAuthorizationService(): ResourceAuthorizationService {
@@ -174,6 +183,11 @@ function registerWave2Applications(
  * user defaults persist through that same raw FsService rather than foreground
  * browser storage.
  *
+ * Tests may inject only true external/runtime boundaries (for example an
+ * in-memory persistence repository, a mock Neutron bridge, or deterministic window
+ * manager). Registration, associations, opening, filesystem policy, process
+ * behavior, and all other OS semantics remain the same production composition.
+ *
  * The returned public fs is the filesystem-core facade: it waits for migration
  * and bootstrap to finish and applies dot-hidden listing semantics. The core
  * itself still mutates only through FsService primitives, so persistence remains
@@ -182,10 +196,14 @@ function registerWave2Applications(
  * Authenticated Neutron application surfaces remain Kernel-owned sibling
  * tiles. Plasmon only discovers and opens them through NeutronBridge.
  */
-export function createPlasmonServices(): PlasmonServices {
-  const rawFs = createFilesystemService();
-  const windows = new NativeWindowManager();
-  const neutron = createNeutronBridge();
+export function createPlasmonServices(
+  options: CreatePlasmonServicesOptions = {},
+): PlasmonServices {
+  const rawFs = options.filesystemRepository
+    ? new PersistentFsService(options.filesystemRepository)
+    : createFilesystemService();
+  const windows = options.windows ?? new NativeWindowManager();
+  const neutron = options.neutron ?? createNeutronBridge();
   const nativeApps = new NativeApplicationRegistry();
   const associations = new HandlerAssociationRegistry({ defaults: createAssociationDefaultStore(rawFs) });
   const process = new NativeProcessController(nativeApps, windows);
