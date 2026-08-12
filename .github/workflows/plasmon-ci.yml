@@ -1,5 +1,4 @@
 name: Plasmon Fast CI
-# temporary required-check trigger for PR 128
 
 on:
   push:
