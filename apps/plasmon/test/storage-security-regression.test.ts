@@ -59,5 +59,5 @@ test("association defaults use FsService-backed persistence rather than foregrou
   const source = await Bun.file(new URL("../src/os/integration/services.ts", import.meta.url)).text();
   expect(source).not.toContain("LocalStorageAssociationDefaultStore");
   expect(source).not.toContain("window.localStorage");
-  expect(source).toContain("createAssociationDefaultStore(fs)");
+  expect(source).toContain("defaults: createAssociationDefaultStore(");
 });
