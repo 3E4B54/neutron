@@ -16,6 +16,7 @@ interface LoadedRom {
   name: string;
   bytes: Uint8Array;
   runtimeToken: string;
+  frameUrl: string;
 }
 
 interface RuntimeLifecycleMessage {
@@ -50,9 +51,10 @@ function isRuntimeLifecycleMessage(value: unknown): value is RuntimeLifecycleMes
  * input; title-specific dispatch stays outside the runtime path.
  *
  * EmulatorJS exposes browser-global EJS_* configuration, so every Plasmon
- * process receives its own iframe. The child document bootstraps itself and
- * reports real EmulatorJS lifecycle callbacks with postMessage, avoiding any
- * dependency on parent access to a potentially sandboxed/opaque child origin.
+ * process receives its own iframe. The iframe document is loaded from a Blob
+ * URL created by the Plasmon app so its origin stays tied to the app instead
+ * of using an opaque srcdoc document. The child then reports genuine runtime
+ * lifecycle callbacks with a correlated postMessage token.
  */
 export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -63,6 +65,7 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
 
   useEffect(() => {
     let disposed = false;
+    let frameUrl: string | null = null;
     const runtimeToken = crypto.randomUUID();
 
     if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
@@ -115,8 +118,14 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       const bytes = await fs.read(node.id);
       assertNesRom(bytes);
 
-      if (disposed) return;
-      setRom({ name: node.name, bytes: bytes.slice(), runtimeToken });
+      const frameDocument = createEmulatorJsFrameDocument(runtimeToken);
+      frameUrl = URL.createObjectURL(new Blob([frameDocument], { type: "text/html" }));
+      if (disposed) {
+        URL.revokeObjectURL(frameUrl);
+        frameUrl = null;
+        return;
+      }
+      setRom({ name: node.name, bytes: bytes.slice(), runtimeToken, frameUrl });
     };
 
     void load().catch((error: unknown) => {
@@ -130,6 +139,7 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
       window.removeEventListener("message", onMessage);
       if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
       startTimeoutRef.current = null;
+      if (frameUrl) URL.revokeObjectURL(frameUrl);
     };
   }, [fs, target.nodeId]);
 
@@ -175,7 +185,7 @@ export default function EmulatorJsPlayer({ target, fs }: NativeAppComponentProps
         <iframe
           ref={frameRef}
           key={rom.runtimeToken}
-          srcDoc={createEmulatorJsFrameDocument(rom.runtimeToken)}
+          src={rom.frameUrl}
           title="NES game"
           aria-label="NES game"
           onLoad={(event) => initializeFrame(event.currentTarget)}
