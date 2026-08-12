@@ -153,6 +153,12 @@ test("plasmon packages EmulatorJS authority, URL-safe browser assets, NES core, 
   expect(hostScript).not.toContain("System/Program Files/EmulatorJS/data/loader.js");
   expect(hostScript).toContain('["localStorage", "indexedDB"]');
   expect(hostScript).toContain("Object.defineProperty(window, name");
+  expect(hostScript).toContain('const disableDeniedScreenWakeLock = () => {');
+  expect(hostScript).toContain('Reflect.deleteProperty(owner, "wakeLock")');
+  expect(hostScript).toContain('if ("wakeLock" in window.navigator)');
+  expect(hostScript).toContain("disableDeniedScreenWakeLock();");
+  expect(hostScript).not.toContain('allow="screen-wake-lock"');
+  expect(hostScript).not.toContain("wakeLock: { request");
   expect(hostScript).toContain("window.EJS_disableLocalStorage = true");
   expect(hostScript).toContain("window.EJS_disableDatabases = true");
   expect(JSON.parse(runtime)).toMatchObject({
