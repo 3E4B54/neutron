@@ -6,9 +6,10 @@ import {
   JS_DOS_BROWSER_RUNTIME_ROOT,
   JS_DOS_RUNTIME_ROOT,
   jsDosPackageAssetUrl,
+  withEmbeddedKeyboardLockUnavailable,
 } from "./runtime.ts";
 
-function bundleNode(name = "Doom.jsdos"): FsNode {
+function bundleNode(name = "Game.jsdos"): FsNode {
   return {
     id: "game:1",
     parentId: "desktop",
@@ -45,4 +46,34 @@ test("installed js-dos keeps Program Files authority while browser assets use UR
     .toBe("https://example.test/app/plasmon/runtime/jsdos/js-dos.js");
   expect(jsDosPackageAssetUrl("https://example.test/app/plasmon/index.html", "emulators/"))
     .toBe("https://example.test/app/plasmon/runtime/jsdos/emulators/");
+});
+
+test("embedded js-dos construction masks Keyboard Lock only for the synchronous start", () => {
+  const keyboard = { lock: () => Promise.resolve() };
+  const navigatorPrototype = { keyboard };
+  const navigatorObject = Object.create(navigatorPrototype) as { keyboard?: unknown };
+  let observedDuringStart: unknown = keyboard;
+
+  const result = withEmbeddedKeyboardLockUnavailable(true, navigatorObject, () => {
+    observedDuringStart = navigatorObject.keyboard;
+    return "started";
+  });
+
+  expect(result).toBe("started");
+  expect(observedDuringStart).toBeUndefined();
+  expect(navigatorObject.keyboard).toBe(keyboard);
+  expect(Object.prototype.hasOwnProperty.call(navigatorObject, "keyboard")).toBe(false);
+});
+
+test("top-level js-dos construction leaves Keyboard Lock capability unchanged", () => {
+  const keyboard = { lock: () => Promise.resolve() };
+  const navigatorObject = { keyboard };
+  let observedDuringStart: unknown;
+
+  withEmbeddedKeyboardLockUnavailable(false, navigatorObject, () => {
+    observedDuringStart = navigatorObject.keyboard;
+  });
+
+  expect(observedDuringStart).toBe(keyboard);
+  expect(navigatorObject.keyboard).toBe(keyboard);
 });
