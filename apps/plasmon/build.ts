@@ -23,7 +23,7 @@ const devMode = args[0] === "dev";
 const JS_DOS_VERSION = "8.4.1";
 const JS_DOS_RELEASE_URL = `https://github.com/caiiiycuk/js-dos/releases/download/v${JS_DOS_VERSION}/release.zip`;
 const JS_DOS_RELEASE_SHA256 = "26118692bbb180aec78ec1697eb1ea6b28ff410101870cfa3e68309914c7eaa6";
-const PACKAGED_JS_DOS_ROOT = "/System/Program Files/js-dos/";
+const PACKAGED_JS_DOS_ROOT = "./System/Program Files/js-dos/";
 let proofAssetsPromise: Promise<void> | null = null;
 
 async function stripRemoteDiagnostics(): Promise<void> {
