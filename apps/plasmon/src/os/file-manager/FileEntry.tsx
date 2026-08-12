@@ -95,7 +95,11 @@ export const FileEntry = memo(function FileEntry({
 }: FileEntryProps) {
   const isRenaming = rename?.nodeId === node.id;
   const style: CSSProperties | undefined = presentation === "desktop" && position
-    ? { left: position.x, top: position.y }
+    ? ({
+        left: position.x,
+        top: position.y,
+        "--fm-desktop-entry-x": `${position.x}px`,
+      } as CSSProperties)
     : undefined;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const entryRef = useRef<HTMLDivElement | null>(null);
@@ -218,6 +222,9 @@ export const FileEntry = memo(function FileEntry({
           </>
         ) : node.name}
       </span>
+      {presentation === "desktop" && (selected || focused) && !isRenaming ? (
+        <span className="fm-entry__expanded-name" aria-hidden="true">{node.name}</span>
+      ) : null}
       {presentation === "details" ? (
         <>
           <span className="fm-entry__type">{typeLabel(node)}</span>
