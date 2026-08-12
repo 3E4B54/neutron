@@ -1,4 +1,5 @@
 export const EMULATORJS_RUNTIME_ROOT = "./System/Program Files/EmulatorJS/data/";
+export const EMULATORJS_HOST_PAGE = "./emulatorjs-host.html";
 export const EMULATORJS_NES_MIME = "application/x-nes-rom";
 
 export interface EmulatorJsLaunchConfig {
@@ -17,6 +18,12 @@ export interface EmulatorJsLaunchConfig {
 
 export function resolveEmulatorJsDataRoot(baseUri: string): string {
   return new URL(EMULATORJS_RUNTIME_ROOT, baseUri).href;
+}
+
+export function resolveEmulatorJsHostUrl(baseUri: string, runtimeToken: string): string {
+  const host = new URL(EMULATORJS_HOST_PAGE, baseUri);
+  host.searchParams.set("token", runtimeToken);
+  return host.href;
 }
 
 export function createEmulatorJsLaunchConfig(
