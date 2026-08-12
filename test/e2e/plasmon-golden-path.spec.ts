@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { localCanisterOrigin } from "neutron-tools/src/runtime.js";
 import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src/local_session.ts";
 
@@ -252,47 +252,6 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     }
   };
 
-  // Monaco 0.54's own VS Code browser driver uses TextUpdateEvent for native
-  // EditContext input. Keep the real editor focused and dispatch through that
-  // browser-owned input surface rather than mutating a model or document session.
-  const typeInMonacoEditContext = async (editContext: Locator, text: string): Promise<void> => {
-    await editContext.evaluate((element, nextText) => {
-      const nativeElement = element as HTMLDivElement & {
-        editContext?: {
-          selectionStart: number;
-          selectionEnd: number;
-          dispatchEvent: (event: Event) => boolean;
-        };
-      };
-      const nativeEditContext = nativeElement.editContext;
-      if (!nativeEditContext) throw new Error("Monaco native EditContext is unavailable");
-      const TextUpdateEventCtor = (globalThis as unknown as {
-        TextUpdateEvent: new (type: string, init: {
-          updateRangeStart: number;
-          updateRangeEnd: number;
-          text: string;
-          selectionStart: number;
-          selectionEnd: number;
-          compositionStart: number;
-          compositionEnd: number;
-        }) => Event;
-      }).TextUpdateEvent;
-      if (!TextUpdateEventCtor) throw new Error("Browser TextUpdateEvent is unavailable");
-
-      const selectionStart = nativeEditContext.selectionStart;
-      const selectionEnd = nativeEditContext.selectionEnd;
-      nativeEditContext.dispatchEvent(new TextUpdateEventCtor("textupdate", {
-        updateRangeStart: selectionStart,
-        updateRangeEnd: selectionEnd,
-        text: nextText,
-        selectionStart: selectionStart + nextText.length,
-        selectionEnd: selectionStart + nextText.length,
-        compositionStart: 0,
-        compositionEnd: 0,
-      }));
-    }, text);
-  };
-
   const exercisePackagedEditor = async (options: {
     createButton: "New Text Document" | "New Markdown Document";
     generatedName: "New Text Document" | "New Markdown Document";
@@ -307,7 +266,7 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     const surface = opened.editorWindow.locator('[data-editor-engine="monaco"]').first();
     await expect(surface).toHaveAttribute("aria-label", options.sourceLabel);
 
-    const editContext = opened.editorWindow.getByRole("textbox", {
+    const browserInput = opened.editorWindow.getByRole("textbox", {
       name: options.sourceLabel,
       exact: true,
       includeHidden: true,
@@ -315,8 +274,8 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     const firstLine = opened.editorWindow.locator(".monaco-editor .view-line").first();
     await expect(firstLine).toBeVisible();
     await firstLine.click({ position: { x: 8, y: 10 } });
-    await expect(editContext).toBeFocused();
-    await typeInMonacoEditContext(editContext, options.persistedText);
+    await expect(browserInput).toBeFocused();
+    await page.keyboard.insertText(options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await expect(firstLine).toHaveText(options.persistedText);
     expectNoIssue67PageErrors(`${options.appLabel} edit must not emit browser errors`);
@@ -337,8 +296,8 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
 
   // Issue #67 browser/package boundary: create real filesystem documents through
   // Explorer, open through canonical associations/process/windowing, focus the
-  // actual packaged Monaco surface, edit through Chromium's native EditContext,
-  // save through production document sessions, then close/reopen for persistence.
+  // actual packaged Monaco surface, edit through Monaco's production browser
+  // input, save through document sessions, then close/reopen for persistence.
   await exercisePackagedEditor({
     createButton: "New Text Document",
     generatedName: "New Text Document",
