@@ -48,6 +48,10 @@ import {
   propertiesAppDefinition,
 } from "../../native-apps/properties/index.ts";
 import {
+  createRecycleBinNativeLoader,
+  recycleBinAppDefinition,
+} from "../../native-apps/recycle-bin/index.ts";
+import {
   FakeResourceAuthorizationService,
   UnavailableResourceAuthorizationService,
 } from "./authorizationFakes.ts";
@@ -174,6 +178,11 @@ function registerWave2Applications(
     propertiesAppDefinition,
     createPropertiesNativeLoader({ fsEvents, associations, openService }),
   );
+
+  // Recycle Bin must be visible to filesystem bootstrap so RecycleBin.sys is
+  // reconciled as a real system application. Its loader is attached only after
+  // createFilesystemCore() exposes the canonical privileged Trash facade.
+  nativeApps.register(recycleBinAppDefinition);
 }
 
 /**
@@ -221,6 +230,10 @@ export function createPlasmonServices(
     process,
   });
   const fs = filesystem.fs;
+  nativeApps.setLoader(
+    recycleBinAppDefinition.id,
+    createRecycleBinNativeLoader({ trash: filesystem.trash, fsEvents: fs }),
+  );
 
   return {
     fs,
