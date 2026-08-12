@@ -88,6 +88,24 @@ Playwright is not the primary Plasmon development test harness. Use browser test
 
 Do not encode ordinary filesystem, selection, command, launch-policy, navigation, process, or window-state semantics only in Playwright when those semantics can live in production models/services/controllers and be tested with Bun.
 
+#### Packaged golden path
+
+The reusable packaged browser lane uses the repository's existing Playwright and `neutron-provision` infrastructure rather than a Plasmon-specific runner:
+
+```sh
+# Terminal 1, from the repository root
+npm run provision -- plasmon-local.ndeploy.json serve
+
+# Terminal 2
+npm run test:e2e:plasmon:fresh
+```
+
+`plasmon-local.ndeploy.json` installs only the packaged Kernel plus the packaged Plasmon app. `test/e2e/plasmon-golden-path.spec.ts` is intentionally small: it verifies the installed registry entry, package-owned HTTP/Monaco-worker assets, and real Kernel tile launch/render using semantic roles and stable Kernel test identifiers.
+
+Use `npm run test:e2e:plasmon` to rerun the browser spec against an already deployed matching session. CI runs the same boundary through **Plasmon Packaged Browser CI**.
+
+Do not grow this lane into general Desktop/FileManager/Start/Search scripting or screenshot regression. Deterministic resource, process, window, and command semantics belong in Bun/headless coverage, including `test/headlessEnvironment.ts` for cross-surface workflows.
+
 ### 5. Manual packaged review — visual/interaction acceptance
 
 Human review remains authoritative for visual quality and interaction details not yet captured by stable automation. A green fast suite does not prove that spacing, icon scale, filename wrapping, animation, game feel, or other visual UX is acceptable.
@@ -130,6 +148,8 @@ npm --workspace neutron-plasmon test
 ```
 
 It intentionally does not install Nix, package the Kernel, run Motoko tests, run Playwright, or package Plasmon.
+
+`.github/workflows/plasmon-browser-ci.yml` is the separate package/browser gate. It packages Kernel and Plasmon, provisions `plasmon-local.ndeploy.json`, and runs only `test/e2e/plasmon-golden-path.spec.ts`. Keep this separate from the fast lane so ordinary Plasmon edits retain a seconds-scale deterministic feedback path.
 
 If an agent environment does not provide Bun, the agent must push the branch and use Plasmon Fast CI as the required feedback loop. `Tests not run` is not a complete handoff when CI is available.
 

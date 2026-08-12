@@ -1,0 +1,78 @@
+name: Plasmon Packaged Browser CI
+
+on:
+  push:
+    paths:
+      - "apps/plasmon/**"
+      - "apps/kernel/**"
+      - "packages/neutron-provision/**"
+      - "packages/neutron-tools/**"
+      - "test/e2e/plasmon-golden-path.spec.ts"
+      - "playwright.config.ts"
+      - "plasmon-local.ndeploy.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/plasmon-browser-ci.yml"
+  pull_request:
+    paths:
+      - "apps/plasmon/**"
+      - "apps/kernel/**"
+      - "packages/neutron-provision/**"
+      - "packages/neutron-tools/**"
+      - "test/e2e/plasmon-golden-path.spec.ts"
+      - "playwright.config.ts"
+      - "plasmon-local.ndeploy.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/plasmon-browser-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plasmon-browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packaged-browser:
+    name: Packaged Playwright golden path
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package and run Plasmon browser acceptance
+        run: |
+          nix develop --command bash -lc '
+            set -euxo pipefail
+            npm ci
+            npm --workspace neutron-kernel run package
+            npm --workspace neutron-plasmon run test:package
+
+            npm run provision -- plasmon-local.ndeploy.json serve > /tmp/plasmon-pocketic.log 2>&1 &
+            server_pid=$!
+            trap '\''status=$?; kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; if [ "$status" -ne 0 ]; then cat /tmp/plasmon-pocketic.log || true; fi; exit "$status"'\'' EXIT
+
+            for attempt in $(seq 1 30); do
+              if npm run provision -- plasmon-local.ndeploy.json status >/dev/null 2>&1; then
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "PocketIC did not become ready" >&2
+                exit 1
+              fi
+              sleep 1
+            done
+
+            npm run provision -- plasmon-local.ndeploy.json reinstall
+            NEUTRON_NDEPLOY_CONFIG=plasmon-local.ndeploy.json \
+              npx playwright test test/e2e/plasmon-golden-path.spec.ts
+          '
