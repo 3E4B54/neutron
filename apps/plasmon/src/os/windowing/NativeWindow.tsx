@@ -60,7 +60,8 @@ export interface NativeWindowProps {
   contentClassName?: string;
   ariaLabel?: string;
   canResize?: boolean;
-  onRequestClose?: (id: WindowId, processId: ProcessId) => void;
+  /** Return false when the owning lifecycle rejects or defers this close request. */
+  onRequestClose?: (id: WindowId, processId: ProcessId) => boolean | void;
 }
 
 function classNames(...values: Array<string | false | null | undefined>): string {
@@ -352,8 +353,13 @@ export function NativeWindow({
       window.clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
-    if (onRequestClose) onRequestClose(state.id, state.processId);
-    else manager.close(state.id);
+
+    if (onRequestClose) {
+      const accepted = onRequestClose(state.id, state.processId) !== false;
+      if (!accepted) setClosing(false);
+      return;
+    }
+    manager.close(state.id);
   }, [manager, onRequestClose, state.id, state.processId]);
 
   const requestClose = useCallback(() => {

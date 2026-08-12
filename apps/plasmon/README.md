@@ -39,6 +39,7 @@ Primary code lives under [`src/os/`](src/os/):
 - `shell/` — Start, Search, taskbar, tray, flyouts, and shell preferences.
 - `neutron/` — adapter to verified Neutron capabilities.
 - `integration/` — service composition and cross-subsystem wiring.
+- `sharing/` — explicit shared-resource snapshot/provider storage and the bounded share/revoke orchestration that remains separate from MTN authorization authority.
 - `visual/` — shared visual primitives, presentation tokens, and resource artwork composition.
 
 Native applications and association-backed runtime hosts live under [`src/native-apps/`](src/native-apps/).

@@ -5,9 +5,11 @@ import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src
 const APP_ID = "plasmon";
 const TILE_ID = "main";
 
-test("packaged Plasmon is registered, serves browser assets, boots its real tile, and supports native edge snapping", async ({ page, request }) => {
+test("packaged Plasmon is registered, serves browser assets, boots its real tile, renders Recycle Bin, and supports native edge snapping", async ({ page, request }) => {
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
 
   await page.goto(kernelUrl);
   await page.waitForFunction(
@@ -51,6 +53,21 @@ test("packaged Plasmon is registered, serves browser assets, boots its real tile
   await expect(app.getByRole("button", { name: "Start" })).toBeVisible();
   await expect(app.getByRole("button", { name: "Search" })).toBeVisible();
 
+  // Issue #45 visible boundary: use the real packaged Shell/native process path
+  // to launch Recycle Bin and prove its first-class native surface renders.
+  await app.getByRole("button", { name: "Search" }).click();
+  const search = app.getByLabel("Search Plasmon");
+  await expect(search).toBeVisible();
+  await search.fill("Recycle Bin");
+  const recycleResult = app.locator("[data-search-result]", { hasText: "Recycle Bin" }).first();
+  await expect(recycleResult).toBeVisible({ timeout: 15_000 });
+  await recycleResult.click();
+
+  const recycleBin = app.getByRole("dialog", { name: "Recycle Bin" });
+  await expect(recycleBin).toBeVisible({ timeout: 10_000 });
+  await expect(recycleBin.getByText("Recycle Bin is empty.")).toBeVisible();
+  await expect(recycleBin.getByRole("button", { name: "Empty Recycle Bin" })).toBeDisabled();
+
   const nativeWindows = app.locator(".plasmon-window-layer [data-window-id]");
   const initialWindowCount = await nativeWindows.count();
   const rootShortcut = app.locator("[data-fm-node-id]", { hasText: "Root" }).first();
@@ -79,6 +96,7 @@ test("packaged Plasmon is registered, serves browser assets, boots its real tile
 
   await dragTitlebarTo(workspace.x + workspace.width - 1);
   await expect(dialog).toHaveAttribute("data-window-snap", "right");
+  expect(pageErrors).toEqual([]);
 });
 
 declare global {
