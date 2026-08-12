@@ -11,16 +11,20 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
   const runtimeRequests: string[] = [];
+  const runtimeResponses: string[] = [];
   const runtimeHttpErrors: string[] = [];
   const failedRuntimeRequests: string[] = [];
   const externalRuntimeRequests: string[] = [];
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
 
+  const isEmulatorRuntimePath = (path: string) =>
+    path.includes("/System/Program Files/EmulatorJS/") || path.includes("/runtime/emulatorjs/");
+
   page.on("request", (request) => {
     const url = new URL(request.url());
     const path = decodeURIComponent(url.pathname);
-    if (path.includes("/System/Program Files/EmulatorJS/")) runtimeRequests.push(path);
+    if (isEmulatorRuntimePath(path)) runtimeRequests.push(path);
     if (["cdn.emulatorjs.org", "emulatorjs.org"].includes(url.hostname)) {
       externalRuntimeRequests.push(request.url());
     }
@@ -28,14 +32,15 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
   page.on("response", (response) => {
     const url = new URL(response.url());
     const path = decodeURIComponent(url.pathname);
-    if (response.status() >= 400 && path.includes("/System/Program Files/EmulatorJS/")) {
-      runtimeHttpErrors.push(`${response.status()} ${path}`);
+    if (isEmulatorRuntimePath(path)) {
+      runtimeResponses.push(`${response.status()} ${response.headers()["content-type"] ?? "<no-content-type>"} ${path}`);
+      if (response.status() >= 400) runtimeHttpErrors.push(`${response.status()} ${path}`);
     }
   });
   page.on("requestfailed", (request) => {
     const url = new URL(request.url());
     const path = decodeURIComponent(url.pathname);
-    if (path.includes("/System/Program Files/EmulatorJS/")) {
+    if (isEmulatorRuntimePath(path)) {
       failedRuntimeRequests.push(`${request.url()} :: ${request.failure()?.errorText ?? "failed"}`);
     }
   });
@@ -133,6 +138,7 @@ test("packaged Plasmon imports a legal NES fixture and initializes EmulatorJS fr
       alert: alertText?.replace(/\s+/gu, " ").trim().slice(0, 600) ?? null,
       status: statusText?.replace(/\s+/gu, " ").trim().slice(0, 600) ?? null,
       requests: runtimeRequests.slice(-12),
+      responses: runtimeResponses.slice(-12),
       httpErrors: runtimeHttpErrors.slice(-8),
       failedRequests: failedRuntimeRequests.slice(-8),
       externalRequests: externalRuntimeRequests.slice(-8),
