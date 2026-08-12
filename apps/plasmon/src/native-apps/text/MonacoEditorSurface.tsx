@@ -108,6 +108,10 @@ export function MonacoEditorSurface({
             if (!applyingExternalValueRef.current) onChangeRef.current(createdModel.getValue());
           }),
           createdEditor.onDidChangeCursorSelection((event) => {
+            // ICursorSelectionChangedEvent exposes the active cursor through
+            // its Selection. Reading a non-existent event.position works only
+            // by accident at compile time and throws once the real packaged
+            // Monaco surface emits a selection event.
             onCursorChangeRef.current?.({
               line: event.selection.positionLineNumber,
               column: event.selection.positionColumn,

@@ -5,7 +5,7 @@ import { resolveLocalNeutronRuntime } from "../../packages/neutron-provision/src
 const APP_ID = "plasmon";
 const TILE_ID = "main";
 
-test("packaged Plasmon boots real native/browser boundaries", async ({ page, request }) => {
+test("packaged Plasmon boots its real tile and protects native desktop workflows", async ({ page, request }) => {
   const runtime = resolveLocalNeutronRuntime();
   const kernelUrl = localCanisterOrigin(runtime.canisterId, runtime.gatewayUrl);
   const pageErrors: Array<{ name: string; message: string; stack?: string }> = [];
@@ -95,13 +95,54 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     await page.mouse.up();
   };
 
-  // Preserve the pre-existing #43 packaged edge-snap journey before opening
-  // editor windows so #67 does not perturb that established browser boundary.
   await dragTitlebarTo(workspace.x + 1);
   await expect(dialog).toHaveAttribute("data-window-snap", "left");
 
   await dragTitlebarTo(workspace.x + workspace.width - 1);
   await expect(dialog).toHaveAttribute("data-window-snap", "right");
+
+  // Issue #42 visible boundary: create/open a real filesystem document through
+  // Explorer, dirty the packaged Monaco editor, and use the real native Close
+  // control. Save/discard/failure semantics stay in deterministic Native Apps
+  // tests; Playwright protects only the rendered close-request interaction.
+  await dialog.getByRole("button", { name: "New Text Document" }).click();
+  const renameDocument = dialog.getByRole("textbox", { name: "Rename New Text Document.txt" });
+  await expect(renameDocument).toBeVisible();
+  await renameDocument.press("Escape");
+
+  const textEntry = dialog.locator("[data-fm-node-id]", { hasText: "New Text Document.txt" }).first();
+  await expect(textEntry).toBeVisible();
+  await textEntry.dblclick();
+
+  const editorWindow = app.getByRole("dialog", { name: "New Text Document.txt" }).last();
+  await expect(editorWindow).toBeVisible({ timeout: 20_000 });
+  const editorSurface = editorWindow.locator('[data-editor-engine="monaco"][aria-label="Text content"]');
+  await expect(editorSurface).toHaveAttribute("data-editor-ready", "true", { timeout: 30_000 });
+
+  await editorSurface.click({ position: { x: 120, y: 80 } });
+  await page.keyboard.type("dirty close proof");
+  await expect(editorWindow.getByText("Modified", { exact: true })).toBeVisible();
+
+  const closeEditor = editorWindow.locator(".plasmon-window__controls").getByRole("button", { name: "Close" });
+  await closeEditor.click();
+  const closePrompt = editorWindow.getByRole("alertdialog", { name: "Save changes to New Text Document.txt?" });
+  await expect(closePrompt).toBeVisible({ timeout: 5_000 });
+  await expect(closePrompt.getByRole("button", { name: "Save" })).toBeVisible();
+  await expect(closePrompt.getByRole("button", { name: "Discard" })).toBeVisible();
+  await closePrompt.getByRole("button", { name: "Cancel" }).click();
+  await expect(closePrompt).not.toBeVisible();
+  await expect(editorWindow).toBeVisible();
+
+  // Dirty it again so the second close remains deterministic even if autosave
+  // had time to run after Cancel.
+  await editorSurface.click({ position: { x: 120, y: 80 } });
+  await page.keyboard.type(" again");
+  await expect(editorWindow.getByText("Modified", { exact: true })).toBeVisible();
+  await closeEditor.click();
+  await expect(closePrompt).toBeVisible({ timeout: 5_000 });
+  await closePrompt.getByRole("button", { name: "Discard" }).click();
+  await expect(app.getByRole("dialog", { name: "New Text Document.txt" })).toHaveCount(0, { timeout: 10_000 });
+
   expect(pageErrors).toEqual([]);
 
   const explorerWindowId = await dialog.getAttribute("data-window-id");
@@ -130,13 +171,13 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     const before = await nativeWindows.count();
     await entry.dblclick();
     await expect(nativeWindows).toHaveCount(before + 1, { timeout: 20_000 });
-    const editorWindow = nativeWindows.last();
-    await expect(editorWindow.getByLabel(appLabel, { exact: true })).toBeVisible();
-    return { before, editorWindow };
+    const openedWindow = nativeWindows.last();
+    await expect(openedWindow.getByLabel(appLabel, { exact: true })).toBeVisible();
+    return { before, editorWindow: openedWindow };
   };
 
-  const waitForUsableMonaco = async (editorWindow: ReturnType<typeof nativeWindows.last>, label: string) => {
-    const surface = editorWindow.locator('[data-editor-engine="monaco"]').first();
+  const waitForUsableMonaco = async (openedWindow: ReturnType<typeof nativeWindows.last>, label: string) => {
+    const surface = openedWindow.locator('[data-editor-engine="monaco"]').first();
     await expect(surface).toBeVisible();
     try {
       await expect(surface, `${label} should reach packaged Monaco readiness`).toHaveAttribute(
@@ -145,19 +186,19 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
         { timeout: 30_000 },
       );
     } catch (cause: unknown) {
-      const alert = editorWindow.getByRole("alert").filter({ hasText: "Monaco failed to load" }).first();
+      const alert = openedWindow.getByRole("alert").filter({ hasText: "Monaco failed to load" }).first();
       const details = await alert.textContent({ timeout: 500 }).catch(() => null);
       throw new Error(
         `${label} packaged Monaco did not become usable${details ? `: ${details}` : `: ${cause instanceof Error ? cause.message : String(cause)}`}`,
       );
     }
-    const monaco = editorWindow.locator(".monaco-editor").first();
+    const monaco = openedWindow.locator(".monaco-editor").first();
     await expect(monaco).toBeVisible();
     return monaco;
   };
 
-  const closeDocument = async (before: number, editorWindow: ReturnType<typeof nativeWindows.last>) => {
-    await editorWindow.getByRole("button", { name: "Close", exact: true }).click();
+  const closeDocument = async (before: number, openedWindow: ReturnType<typeof nativeWindows.last>) => {
+    await openedWindow.getByRole("button", { name: "Close", exact: true }).click();
     await expect(nativeWindows).toHaveCount(before, { timeout: 10_000 });
   };
 
