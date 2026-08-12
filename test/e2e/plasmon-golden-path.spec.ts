@@ -138,14 +138,20 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
   }) => {
     const entry = await createDocument(options.createButton, options.generatedName, options.fileName);
     const opened = await openDocument(entry, options.appLabel);
-    const monaco = await waitForUsableMonaco(opened.editorWindow, options.appLabel);
+    await waitForUsableMonaco(opened.editorWindow, options.appLabel);
     await expect(opened.editorWindow.locator('[data-editor-engine="monaco"]').first()).toHaveAttribute(
       "aria-label",
       options.sourceLabel,
     );
 
-    await monaco.click({ position: { x: 80, y: 48 } });
-    await page.keyboard.insertText(options.persistedText);
+    const editContext = opened.editorWindow.getByRole("textbox", {
+      name: options.sourceLabel,
+      exact: true,
+      includeHidden: true,
+    }).first();
+    await editContext.focus();
+    await expect(editContext).toBeFocused();
+    await editContext.pressSequentially(options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await opened.editorWindow.getByRole("button", { name: "Save", exact: true }).click();
     await expect(opened.editorWindow.getByText("Saved", { exact: true })).toBeVisible();
