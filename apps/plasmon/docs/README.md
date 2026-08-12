@@ -4,6 +4,12 @@ This directory is the durable long-form design and architecture record for Plasm
 
 Use the nearest subsystem `README.md` and `AGENTS.md` for day-to-day ownership and implementation guidance. Use documents here for cross-subsystem architecture, accepted terminology, deeper design rationale, and compatibility constraints.
 
+## Parity and acceptance
+
+- [`DAEDALOS_PARITY_LEDGER.md`](DAEDALOS_PARITY_LEDGER.md) — concise evidence ledger for daedalOS feature-completeness reference behavior and Plasmon implementation, headless, packaged/browser, and human/manual acceptance state.
+
+The parity ledger is an acceptance index, not a second backlog. GitHub Issues remain canonical work. Advance each ledger evidence column only when that exact layer is actually proven: source presence can establish implementation, deterministic production tests establish headless verification, real installed/browser execution establishes package/browser verification, and dated human review establishes manual acceptance. Unknown evidence stays unverified rather than being inferred from a different layer.
+
 ## Filesystem, Desktop, and application resources
 
 - [`FILESYSTEM_DESKTOP_UX_ARCHITECTURE.md`](FILESYSTEM_DESKTOP_UX_ARCHITECTURE.md) — filesystem/application resource model and shared desktop/file interaction architecture.
@@ -40,8 +46,6 @@ Old design documents should be updated, superseded, or clearly marked when accep
 ## Testing and acceptance
 
 Plasmon testing strategy is documented in [`../TESTING.md`](../TESTING.md) and [`../test/README.md`](../test/README.md). Deterministic semantics should be exercised headlessly where practical; package/browser/manual evidence is required only for claims that cross those boundaries.
-
-- [`ACCEPTANCE_2026-08-11_BASELINE_GATE.md`](ACCEPTANCE_2026-08-11_BASELINE_GATE.md) — integrated acceptance/evidence disposition for the 2026-08-11 packaged review baseline, including remaining milestone blockers and evidence-layer boundaries.
 
 ## Neutron documentation
 
