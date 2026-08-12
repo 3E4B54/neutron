@@ -50,16 +50,15 @@ test("normal boot stays clean and explicitly imported Doom opens through js-dos"
   // through the same FileManager path a user would use for any .jsdos bundle.
   await files.locator('input[type="file"]').setInputFiles(DOOM_FIXTURE);
   await expect(doom).toBeVisible({ timeout: 30_000 });
+  // FileManager creates the node before chunked writes finish, then selects the
+  // imported node only after importFileIntoFs() and its final refresh complete.
+  await expect(doom).toHaveAttribute("aria-selected", "true", { timeout: 30_000 });
   await doom.dblclick();
 
   const dialog = page.getByRole("dialog", { name: "js-dos" });
   await expect(dialog).toBeVisible({ timeout: 20_000 });
   const player = dialog.getByLabel("DOS game");
   await expect(player).toHaveAttribute("data-jsdos-ready", "true", { timeout: 90_000 });
-  console.log("js-dos ready root:", await player.evaluate((node) => ({
-    childCount: node.childElementCount,
-    html: node.innerHTML.slice(0, 2000),
-  })));
 
   const canvas = dialog.locator("canvas").first();
   await expect(canvas).toBeVisible();
