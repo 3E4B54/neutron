@@ -24,7 +24,6 @@ import {
   createFilesystemCore,
   createNeutronFsClient,
   type FilesystemCoreServices,
-  type FilesystemSeedSpec,
   type FsRepository,
   type RepositoryCommit,
   type RepositoryState,
@@ -38,6 +37,12 @@ import {
   contentHandlerDefinitions,
   createContentAppLoaders,
 } from "../../native-apps/content-apps.ts";
+import {
+  createEmulatorJsRuntimeLoader,
+  emulatorJsAssociationRules,
+  emulatorJsHandler,
+  emulatorJsRuntimeDefinition,
+} from "../../native-apps/emulatorjs/index.ts";
 import {
   createJsDosRuntimeLoader,
   jsDosAssociationRules,
@@ -83,8 +88,6 @@ export interface CreatePlasmonServicesOptions {
   neutron?: NeutronBridge;
   /** Optional window authority, primarily useful for deterministic headless composition. */
   windows?: WindowManager;
-  /** Explicit development/acceptance content only. Normal production boot omits demo seeds. */
-  demoSeeds?: readonly FilesystemSeedSpec[];
 }
 
 export type FilesystemFrontendMode = "hosted" | "standalone";
@@ -160,9 +163,13 @@ function registerWave2Applications(
   for (const handler of contentHandlerDefinitions) associations.registerHandler(handler);
   for (const rule of contentAssociationRules) associations.registerRule(rule);
 
-  // js-dos is a normal association/runtime handler. The process-host definition
-  // below exists only because current OpenService routes local React hosts
-  // through NativeProcessController; it does not create a DOS.sys filesystem app.
+  // EmulatorJS and js-dos are normal association/runtime handlers. Their
+  // process-host definitions exist only because OpenService routes local React
+  // hosts through NativeProcessController; they do not create runtime .sys apps.
+  associations.registerHandler(emulatorJsHandler);
+  for (const rule of emulatorJsAssociationRules) associations.registerRule(rule);
+  nativeApps.registerWithLoader(emulatorJsRuntimeDefinition, createEmulatorJsRuntimeLoader());
+
   associations.registerHandler(jsDosHandler);
   for (const rule of jsDosAssociationRules) associations.registerRule(rule);
   nativeApps.registerWithLoader(jsDosRuntimeDefinition, createJsDosRuntimeLoader());
@@ -265,7 +272,6 @@ export function createPlasmonServices(
     associations,
     openService,
     process,
-    ...(options.demoSeeds ? { demoSeeds: options.demoSeeds } : {}),
   });
   const fs = filesystem.fs;
   nativeApps.setLoader(

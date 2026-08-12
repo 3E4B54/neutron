@@ -6,11 +6,13 @@ on:
       - version-0.1.0-os
     paths:
       - "apps/plasmon/**"
+      - "apps/review/**"
       - "apps/kernel/**"
       - "packages/neutron-provision/**"
       - "packages/neutron-tools/**"
       - "test/e2e/plasmon-golden-path.spec.ts"
-      - "test/e2e/plasmon-demo-game.spec.ts"
+      - "test/e2e/plasmon-review-demo.spec.ts"
+      - "test/e2e/plasmon-emulatorjs-proof.spec.ts"
       - "playwright.config.ts"
       - "plasmon-local.ndeploy.json"
       - "package.json"
@@ -19,11 +21,13 @@ on:
   pull_request:
     paths:
       - "apps/plasmon/**"
+      - "apps/review/**"
       - "apps/kernel/**"
       - "packages/neutron-provision/**"
       - "packages/neutron-tools/**"
       - "test/e2e/plasmon-golden-path.spec.ts"
-      - "test/e2e/plasmon-demo-game.spec.ts"
+      - "test/e2e/plasmon-review-demo.spec.ts"
+      - "test/e2e/plasmon-emulatorjs-proof.spec.ts"
       - "playwright.config.ts"
       - "plasmon-local.ndeploy.json"
       - "package.json"
@@ -60,6 +64,7 @@ jobs:
             npm ci
             npm --workspace neutron-kernel run package
             npm --workspace neutron-plasmon run test:package
+            npm --workspace neutron-review run package
 
             npm run provision -- plasmon-local.ndeploy.json serve > /tmp/plasmon-pocketic.log 2>&1 &
             server_pid=$!
@@ -87,5 +92,8 @@ jobs:
             npm run provision -- plasmon-local.ndeploy.json status
             npm run provision -- plasmon-local.ndeploy.json reinstall
             NEUTRON_NDEPLOY_CONFIG=plasmon-local.ndeploy.json \
-              npx playwright test test/e2e/plasmon-golden-path.spec.ts test/e2e/plasmon-demo-game.spec.ts --reporter=github
+              npx playwright test \
+                test/e2e/plasmon-golden-path.spec.ts \
+                test/e2e/plasmon-review-demo.spec.ts \
+                test/e2e/plasmon-emulatorjs-proof.spec.ts
           '
