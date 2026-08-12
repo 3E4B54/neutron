@@ -40,7 +40,7 @@ test("runtime-only process host is not a user-launchable Shell application", asy
 
     const runtime = services.nativeApps.getByHandler("runtime:js-dos");
     expect(runtime).not.toBeNull();
-    expect((runtime as typeof runtime & { exposure?: string })?.exposure).toBe("runtime-only");
+    expect(runtime?.runtimeOnly).toBe(true);
     expect(runtime && services.nativeApps.hasLoader(runtime.id)).toBe(true);
 
     const documents = await services.fs.resolvePath("/Documents");
