@@ -20,6 +20,11 @@ const emulatorScriptUrl = new URL("../dist/web/System/Program Files/EmulatorJS/d
 const emulatorStyleUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/emulator.min.css", import.meta.url);
 const emulatorCoreUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/cores/fceumm-wasm.data", import.meta.url);
 const emulatorLegacyCoreUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/cores/fceumm-legacy-wasm.data", import.meta.url);
+const emulatorBrowserLoaderUrl = new URL("../dist/web/runtime/emulatorjs/data/loader.js", import.meta.url);
+const emulatorBrowserScriptUrl = new URL("../dist/web/runtime/emulatorjs/data/emulator.min.js", import.meta.url);
+const emulatorBrowserStyleUrl = new URL("../dist/web/runtime/emulatorjs/data/emulator.min.css", import.meta.url);
+const emulatorBrowserCoreUrl = new URL("../dist/web/runtime/emulatorjs/data/cores/fceumm-wasm.data", import.meta.url);
+const emulatorBrowserLegacyCoreUrl = new URL("../dist/web/runtime/emulatorjs/data/cores/fceumm-legacy-wasm.data", import.meta.url);
 const emulatorFixtureUrl = new URL("../dist/web/Games/Test ROMs/PlasmonTest.nes", import.meta.url);
 
 async function readManifest(): Promise<NeutronManifest> {
@@ -100,16 +105,36 @@ test("plasmon bundles the shared design system stylesheet", async () => {
   expect(css).toContain("--nt-bg-panel");
 });
 
-test("plasmon packages EmulatorJS, its isolated host, NES core, and generated legal proof ROM", async () => {
-  const [hostHtml, hostScript, runtime, loader, script, style, core, legacyCore, fixture] = await Promise.all([
+test("plasmon packages EmulatorJS authority, URL-safe browser assets, NES core, and legal proof ROM", async () => {
+  const [
+    hostHtml,
+    hostScript,
+    runtime,
+    loader,
+    script,
+    style,
+    core,
+    legacyCore,
+    browserLoader,
+    browserScript,
+    browserStyle,
+    browserCore,
+    browserLegacyCore,
+    fixture,
+  ] = await Promise.all([
     readFile(emulatorHostHtmlUrl, "utf8"),
     readFile(emulatorHostScriptUrl, "utf8"),
     readFile(emulatorRuntimeUrl, "utf8"),
-    readFile(emulatorLoaderUrl, "utf8"),
+    readFile(emulatorLoaderUrl),
     readFile(emulatorScriptUrl),
     readFile(emulatorStyleUrl),
     readFile(emulatorCoreUrl),
     readFile(emulatorLegacyCoreUrl),
+    readFile(emulatorBrowserLoaderUrl),
+    readFile(emulatorBrowserScriptUrl),
+    readFile(emulatorBrowserStyleUrl),
+    readFile(emulatorBrowserCoreUrl),
+    readFile(emulatorBrowserLegacyCoreUrl),
     readFile(emulatorFixtureUrl),
   ]);
 
@@ -118,19 +143,26 @@ test("plasmon packages EmulatorJS, its isolated host, NES core, and generated le
   expect(hostScript).toContain('channel: CHANNEL');
   expect(hostScript).toContain('window.EJS_ready = () => post("loaded")');
   expect(hostScript).toContain('window.EJS_onGameStart = () => post("ready")');
-  expect(hostScript).toContain("System/Program Files/EmulatorJS/data/loader.js");
+  expect(hostScript).toContain("runtime/emulatorjs/data/loader.js");
+  expect(hostScript).not.toContain("System/Program Files/EmulatorJS/data/loader.js");
   expect(JSON.parse(runtime)).toMatchObject({
     runtime: "EmulatorJS",
     version: "4.2.3",
     core: "fceumm",
     resourceType: ".nes",
+    browserDataRoot: "runtime/emulatorjs/data/",
   });
-  expect(loader).toContain("EJS_emulator");
-  expect(loader).toContain("EJS_onGameStart");
+  expect(loader.toString("utf8")).toContain("EJS_emulator");
+  expect(loader.toString("utf8")).toContain("EJS_onGameStart");
   expect(script.length).toBeGreaterThan(10_000);
   expect(style.length).toBeGreaterThan(1_000);
   expect(core.length).toBeGreaterThan(100_000);
   expect(legacyCore.length).toBeGreaterThan(100_000);
+  expect(browserLoader).toEqual(loader);
+  expect(browserScript).toEqual(script);
+  expect(browserStyle).toEqual(style);
+  expect(browserCore).toEqual(core);
+  expect(browserLegacyCore).toEqual(legacyCore);
   expect(fixture.length).toBe(16 + 16_384 + 8_192);
   expect([...fixture.subarray(0, 8)]).toEqual([0x4e, 0x45, 0x53, 0x1a, 0x01, 0x01, 0x00, 0x00]);
 });
