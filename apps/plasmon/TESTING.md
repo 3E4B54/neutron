@@ -100,7 +100,7 @@ npm run provision -- plasmon-local.ndeploy.json serve
 npm run test:e2e:plasmon:fresh
 ```
 
-`plasmon-local.ndeploy.json` installs only the packaged Kernel plus the packaged Plasmon app. `test/e2e/plasmon-golden-path.spec.ts` is intentionally small: it verifies the installed registry entry, package-owned HTTP/Monaco-worker assets, and real Kernel tile launch/render using semantic roles and stable Kernel test identifiers.
+`plasmon-local.ndeploy.json` installs only the packaged Kernel plus the packaged Plasmon app. `test/e2e/plasmon-golden-path.spec.ts` stays bounded to actual installed/browser boundaries: registry/package asset serving, real Kernel tile launch/render, selected native window/browser behavior, and compact Text/Markdown Monaco open/edit/save/reopen persistence journeys. The Monaco journeys use production Explorer creation/opening and document-session save behavior; deterministic filesystem/session semantics remain in Bun/headless tests.
 
 Use `npm run test:e2e:plasmon` to rerun the browser spec against an already deployed matching session. CI runs the same boundary through **Plasmon Packaged Browser CI**.
 
