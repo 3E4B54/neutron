@@ -38,9 +38,19 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
 
   const fixtureUrl = new URL(source, kernelUrl);
   fixtureUrl.searchParams.set("plasmon-fixture", "demo-game");
+  const fixtureNavigation = page.waitForEvent("framenavigated", (candidate) => {
+    try {
+      const url = new URL(candidate.url());
+      return url.pathname === fixtureUrl.pathname
+        && url.searchParams.get("plasmon-fixture") === "demo-game";
+    } catch {
+      return false;
+    }
+  });
   await frame.evaluate((element, href) => {
     (element as HTMLIFrameElement).src = href;
   }, fixtureUrl.href);
+  await fixtureNavigation;
 
   const app = page.frameLocator(`iframe[data-app-id="${APP_ID}"][data-tile-id="${TILE_ID}"]`).first();
   await expect(app.getByRole("navigation", { name: "Taskbar" })).toBeVisible({ timeout: 30_000 });
