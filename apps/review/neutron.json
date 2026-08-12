@@ -2,7 +2,7 @@
   "format": 3,
   "name": "Review",
   "id": "review",
-  "version": 1,
+  "version": 100,
   "update_source": "233tv-xiaaa-aaaay-aacta-cai",
   "description": "Structured collaborative review workspaces with durable logical Atom history",
   "src": "main.mo",
