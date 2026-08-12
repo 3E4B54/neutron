@@ -109,8 +109,8 @@ export function MonacoEditorSurface({
           }),
           createdEditor.onDidChangeCursorSelection((event) => {
             onCursorChangeRef.current?.({
-              line: event.position.lineNumber,
-              column: event.position.column,
+              line: event.selection.positionLineNumber,
+              column: event.selection.positionColumn,
               selected: createdModel.getValueInRange(event.selection).length,
             });
           }),
