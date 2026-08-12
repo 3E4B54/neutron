@@ -52,7 +52,7 @@ test("explicit packaged demo fixture opens through the normal js-dos desktop pat
   await expect(rootShortcut).toBeVisible({ timeout: 30_000 });
   await rootShortcut.dblclick();
 
-  const explorer = app.getByRole("dialog", { name: "Root" }).last();
+  const explorer = app.getByRole("dialog", { name: "This Plasmon" }).last();
   await expect(explorer).toBeVisible({ timeout: 20_000 });
   const games = explorer.locator("[data-fm-node-id]", { hasText: "Games" }).first();
   await expect(games).toBeVisible();
