@@ -36,16 +36,6 @@ If those conflict materially, surface the conflict rather than silently preservi
 
 Representation-level details and one-off exceptions belong in contracts, tests, or Issues. Do not turn a specific bug fix, filename, suffix, seed item, or temporary compatibility rule into a generic project instruction unless it represents a durable architecture invariant.
 
-## Frozen Plasmon package identity
-
-Until the project owner explicitly changes the Plasmon release contract, keep these three values aligned:
-
-- `apps/plasmon/package.json` semantic/npm version: `0.1.0`;
-- `apps/plasmon/neutron.json` packed Neutron manifest version: `100`;
-- generated/local deployment package: `plasmon.v0.1.0.neutron`.
-
-This is a Plasmon development-time version freeze. Do not increment the manifest merely because package bytes change during v0.1.0 development or to make a local deployment activate. A real publication/version transition still requires explicit owner direction and the repository-level release workflow.
-
 ## Refactoring direction
 
 When improving existing code:
