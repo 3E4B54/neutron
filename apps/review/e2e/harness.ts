@@ -25,15 +25,6 @@ export async function login(page: Page): Promise<void> {
 }
 
 export async function openReview(page: Page): Promise<ReviewHarness> {
-  const runtimeErrors: string[] = [];
-  const onConsole = (entry: { location(): { url: string }; type(): string; text(): string }) => {
-    const location = entry.location();
-    if (location.url.includes("/app/review/")) runtimeErrors.push(`console ${entry.type()} ${location.url}: ${entry.text()}`);
-  };
-  const onPageError = (error: Error) => runtimeErrors.push(`pageerror: ${error.stack ?? error.message}`);
-  page.on("console", onConsole);
-  page.on("pageerror", onPageError);
-
   await page.locator('[data-tid="launcher-open"]').click();
   await expect(page.locator('[data-tid="launcher"]')).toBeVisible();
   await page.locator('[data-tid="launcher-tile-review-review"]').click();
@@ -41,33 +32,7 @@ export async function openReview(page: Page): Promise<ReviewHarness> {
   const frame = page.locator(selector).last();
   const review = page.frameLocator(selector).last();
   await expect(frame).toBeVisible({ timeout: 1_500 });
-
-  try {
-    await expect(review.locator("#root > .review-app")).toBeVisible({ timeout: 1_500 });
-  } catch (cause) {
-    const candidates = await page.locator(selector).evaluateAll((nodes) => nodes.map((node) => {
-      const iframe = node as HTMLIFrameElement;
-      return {
-        src: iframe.getAttribute("src"),
-        dataTid: iframe.getAttribute("data-tid"),
-        readyState: iframe.contentDocument?.readyState ?? null,
-        title: iframe.contentDocument?.title ?? null,
-        body: iframe.contentDocument?.body?.innerText?.slice(0, 500) ?? null,
-      };
-    }));
-    const reviewFrameUrls = page.frames().map((candidate) => candidate.url()).filter((url) => url.includes("/app/review/") || url === "about:blank");
-    throw new Error([
-      "Review tile iframe became visible but the packaged Review UI did not mount within 1500ms.",
-      `matching iframes: ${JSON.stringify(candidates)}`,
-      `review/about:blank frame URLs: ${JSON.stringify(reviewFrameUrls)}`,
-      `runtime errors: ${runtimeErrors.length ? runtimeErrors.join(" | ") : "none observed"}`,
-      `readiness assertion: ${cause instanceof Error ? cause.message : String(cause)}`,
-    ].join("\n"));
-  } finally {
-    page.off("console", onConsole);
-    page.off("pageerror", onPageError);
-  }
-
+  await expect(review.locator("#root > .review-app")).toBeVisible({ timeout: 1_500 });
   await expect(review.getByText("Review.neutron", { exact: true })).toBeVisible({ timeout: 1_500 });
   return { page, review, frame };
 }
