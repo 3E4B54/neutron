@@ -13,8 +13,10 @@ export function parseReviewMarkdown(markdown: string): ParsedReviewMarkdown {
   for (const line of lines) {
     const heading = /^#\s+(.+?)\s*$/u.exec(line);
     if (!title && heading?.[1]) title = heading[1].trim();
-    const todo = /^\s*[-*+]\s+\[[ xX]\]\s+(.+?)\s*$/u.exec(line);
-    const bullet = /^\s*[-*+]\s+(?!\[[ xX]\]\s)(.+?)\s*$/u.exec(line);
+    // Only top-level list entries are Review items. Indented bullets are
+    // portable metadata/notes and must not become extra items on re-import.
+    const todo = /^[-*+]\s+\[[ xX]\]\s+(.+?)\s*$/u.exec(line);
+    const bullet = /^[-*+]\s+(?!\[[ xX]\]\s)(.+?)\s*$/u.exec(line);
     const value = todo?.[1] ?? bullet?.[1];
     if (value?.trim()) items.push({ title: value.trim() });
   }
