@@ -53,14 +53,13 @@ export function PlasmonOS({ services: provided }: PlasmonOSProps) {
       fsEvents={services.fsEvents}
       neutron={services.neutron}
       nativeApps={services.nativeApps}
-      associations={services.associations}
+      filesystemOpen={services.filesystem.open}
       openService={services.openService}
     >
       <div className="plasmon-os-workspace">
         <div className="plasmon-os-desktop-layer">
           <Desktop
             fs={services.fs}
-            openAuthority={services.filesystem.open}
             fsEvents={services.fsEvents}
             process={services.process}
             associations={services.associations}
