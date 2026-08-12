@@ -3,7 +3,7 @@
 **Canonical Issue:** #107  
 **Gate date:** 2026-08-12  
 **Integration branch:** `version-0.1.0-os`  
-**Branch-start integration commit:** `072afe6ba8f48a36c6b1bcb0c222caa017596346`
+**Reconciled integration commit:** `8ba35fbb265c6b86d483bd125165da03be7fc82c`
 
 This report re-checks the still-relevant findings from the 2026-08-11 packaged/manual Plasmon review against the current integrated product. It is acceptance evidence, not a feature implementation plan.
 
@@ -54,10 +54,12 @@ The browser lane is intentionally not expanded into broad FileManager/Start/Sear
 | Start/Search filesystem result semantics | **PASS** | deterministic fast/headless | Search tests cover matching folders and file categories, and #32 routes filesystem-backed Start/Search activation through the canonical opener. Deterministic result/open policy belongs below Playwright. | #32, #107 |
 | Packaged Search -> native application launch | **PASS** | packaged/browser | The installed golden path opens Search, enters `Recycle Bin`, launches the result, and observes the real native Recycle Bin window. | #32, #45, #107 |
 | Start/Search click-away interaction | **NOT-YET-TESTABLE** | packaged/manual interaction | This gate does not broaden the golden path into general overlay scripting. A human/manual packaged pass is still required to accept click-away behavior as experienced in the integrated desktop. | #107 |
-| Current Start inventory | **FAIL** | current code / canonical defect | The current Start model still has two independently tracked inventory defects: #87 retains a managed `System` category for Settings/Explorer/Properties, and #88 permits runtime-only hosts such as js-dos to be seeded as user-launchable applications. These are product defects, not acceptance-harness gaps. | #87, #88, #107 |
+| Current Start inventory | **FAIL** | current code / canonical defects | The current Start model still has two independently tracked inventory defects: #87 retains a managed `System` category for Settings/Explorer/Properties, and #88 permits runtime-only hosts such as js-dos to be seeded as user-launchable applications. These are product defects, not acceptance-harness gaps. | #87, #88, #107 |
 | Start pinning semantics | **PASS** | deterministic model/service | Pin state is filesystem-backed and the semantic pin/unpin behavior is already covered below React. | #107 |
 | Start/Shell pin control presentation | **FAIL** | current code / canonical visual defect | #109 records that Start and Shell pin controls still render the literal `📌` emoji rather than the accepted shared icon treatment. Package boot does not supersede that defect. | #109, #107 |
-| Taskbar lifecycle/presentation | **FAIL** | current code / canonical defect | #72 records that raw Neutron `yes` / `no` / `unknown` runtime tokens and ad-hoc native/Element states are still exposed instead of coherent pinned/running/active/launching presentation. Cross-authority lifecycle backfill #81 follows that correction. | #72, #81, #107 |
+| Taskbar state derivation | **PASS** | deterministic model | #72's merged implementation derives pinned-only, launching, running, active, and uncertain states from Process, Windowing, NeutronBridge, and Shell preferences without creating a shadow runtime authority. Focused tests preserve genuine `unknown` uncertainty and keep raw `yes` / `no` / `unknown` tokens out of accessibility labels. | #72, #107 |
+| Taskbar cross-authority lifecycle | **NOT-YET-TESTABLE** | composed headless regression not integrated | #81 still owns the shared-headless Process/Windowing/Shell lifecycle regression proving pinned-only -> running -> active/inactive -> minimized/restored -> stopped against the production composition. #72's focused model tests do not substitute for that cross-authority regression. | #81, #107 |
+| Taskbar visible wording/accessibility presentation | **NOT-YET-TESTABLE** | packaged/manual acceptance required | #72 remains open with `needs-verification` after PR #139 because its explicit remaining gate is a small packaged/manual check that visible taskbar wording and accessibility labels behave as intended and do not expose raw runtime tokens. | #72, #107 |
 | Text Monaco open/edit/save/reopen | **NOT-YET-TESTABLE** | packaged Monaco boundary blocked | Current package checks prove Monaco worker assets are served, not that the real editor is usable. #67 owns the compact installed-package Text journey and is not part of this integration head yet. | #67, #107 |
 | Markdown Monaco open/edit/save/reopen | **NOT-YET-TESTABLE** | packaged Monaco boundary blocked | Same boundary as Text: deterministic document/session behavior remains below the browser, while real Monaco readiness/edit/save/reopen belongs to #67. | #67, #107 |
 | Photos fullscreen rejection/fallback | **NOT-YET-TESTABLE** | deterministic PASS; browser fullscreen boundary outstanding | Focused tests prove disabled fullscreen and rejected `requestFullscreen()` fall back to expanded view without an uncaught promise. Actual hosted-browser fullscreen rejection/fallback remains a real browser/manual acceptance boundary and is not exercised by the current golden path. | #107 |
@@ -69,7 +71,7 @@ The browser lane is intentionally not expanded into broad FileManager/Start/Sear
 
 ## What the current package lane does prove
 
-The existing installed-package golden path is deliberately small. On a green #107 PR it proves that the current Plasmon package can be built, installed into the supported Neutron/PocketIC environment, served through the final `/app/plasmon/` route, launched from the Kernel tile, and rendered without page errors for the journey it exercises. It also proves representative browser-owned behavior already in that journey, including Monaco worker HTTP serving, Search-driven Recycle Bin launch, the empty Recycle Bin surface, and native edge snapping.
+The existing installed-package golden path is deliberately small. On a green #107 PR it proves that the current Plasmon package can be built, installed into the supported Neutron/PocketIC environment, served through the final `/app/plasmon/` route, launched from the Kernel tile, and rendered without page errors for the journey it exercises. It also proves representative browser-owned behavior already in that journey, including Monaco worker HTTP serving, Search-driven Recycle Bin launch, the empty Recycle Bin surface, the durable Desktop `Root` shortcut, and native edge snapping.
 
 It does **not** imply that every Start item, taskbar state, media app, editor, download path, or game runtime has passed acceptance.
 
@@ -78,8 +80,8 @@ It does **not** imply that every Start item, taskbar state, media app, editor, d
 The integrated desktop should not be described as clearing the 2026-08-11 baseline while these directly relevant blockers remain:
 
 1. **Start inventory is still wrong** — #87 and #88.
-2. **Taskbar user-facing state is still wrong** — #72; #81 remains the composed regression follow-up.
-3. **Start/Shell pin presentation is still visibly provisional** — #109.
+2. **Start/Shell pin presentation is still visibly provisional** — #109.
+3. **Taskbar still requires integrated lifecycle and visible acceptance** — #81 is the composed headless gap; #72 remains `needs-verification` for the explicit packaged/manual wording/accessibility check.
 4. **Real `.neutron` projection activation lacks installed-package proof** — #120 delegates this boundary to packaged acceptance.
 5. **Text/Markdown real Monaco workflows lack integrated packaged proof** — #67.
 6. **The explicit installed-package js-dos fixture/game path is not accepted yet** — #121. The old boot-time Doom seed remains intentionally retired.
