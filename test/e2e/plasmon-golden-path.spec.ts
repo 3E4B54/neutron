@@ -151,7 +151,7 @@ test("packaged Plasmon boots real native/browser boundaries", async ({ page, req
     }).first();
     await monaco.click();
     await expect(editContext).toBeFocused();
-    await page.keyboard.type(options.persistedText, { delay: 5 });
+    await page.keyboard.insertText(options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await opened.editorWindow.getByRole("button", { name: "Save", exact: true }).click();
     await expect(opened.editorWindow.getByText("Saved", { exact: true })).toBeVisible();
