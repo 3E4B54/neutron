@@ -12,7 +12,7 @@ This proposal changes Plasmon, not MTN. MTN remains the authorization source of 
 
 ## Why reconciliation is required
 
-Agent 8 and Agent 9 independently found that the frozen Plasmon `ResourceAuthorizationService` is too lossy to represent accepted MTN 0.2 safely.
+Neutron-bridge and Sharing integration work found that the frozen Plasmon `ResourceAuthorizationService` is too lossy to represent accepted MTN 0.2 safely.
 
 The current four-method abstraction (`issue`, `inspect`, `redeem`, `revoke`) conflates three distinct concepts:
 
@@ -157,7 +157,7 @@ Authority-bearing issue/call/delegate/etc. operations remain subject to current 
 
 ## Sharing implications
 
-Agent 9's current `share -> publish -> issue` and `revoke -> authorization.revoke` orchestration is directionally valid and keeps bearer material out of provider persistence.
+The current `share -> publish -> issue` and `revoke -> authorization.revoke` orchestration is directionally valid and keeps bearer material out of provider persistence.
 
 `importShare(token, destination)` must change because a token alone is insufficient to identify a snapshot revision and insufficient to perform a live MTN provider call. The revised Sharing API should carry:
 
@@ -174,7 +174,7 @@ Do not:
 - change MTN 0.2 to fit old Plasmon types;
 - merge/vendor MTN source into Plasmon;
 - guess or synthesize exact AppScopes;
-- store hidden grant/lease/ownership/revocation/epoch truth in Agent 8 or Sharing;
+- store hidden grant/lease/ownership/revocation/epoch truth in the Neutron bridge or Sharing;
 - encode provider revision into immutable NodeId/AtomId/MTN resource identity merely to preserve the old `ResourceRef`;
 - expose protected `resource_id` through safe public inspection;
 - add public Kernel issuer methods that bypass compiler-bound capability delivery;
@@ -182,4 +182,4 @@ Do not:
 
 ## Review gate
 
-Coordinator C/security-model review should confirm that this proposal preserves the accepted MTN 0.2 boundaries. After confirmation, Coordinator A will freeze an explicit Plasmon contract amendment and issue narrow migration work to Agent 8 and Agent 9.
+Security-model review should confirm that this proposal preserves the accepted MTN 0.2 boundaries. After confirmation, any contract amendment and narrow migration work should proceed through the current GitHub Issue/Area workflow.
