@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import type { ExternalElement, FsNode, FsService } from "../contracts/index.ts";
 import { NEUTRON_APP_MIME, neutronAppMetadata } from "../fs/index.ts";
-import { categorizeFsNode, searchShell } from "./search.ts";
+import { categorizeFsNode, searchApplicationIcon, searchShell } from "./search.ts";
 
 function rootNode(): FsNode {
   return {
@@ -19,18 +19,29 @@ function rootNode(): FsNode {
 
 function projectionNode(
   id: string,
-  input: { elementId: string; name: string; description?: string; icon?: string },
+  input: {
+    elementId: string;
+    name?: string;
+    diskName?: string;
+    description?: string;
+    icon?: string;
+  },
 ): FsNode {
   return {
     id,
     parentId: "root",
-    name: `${input.name}.neutron`,
+    name: input.diskName ?? `${input.name ?? input.elementId}.neutron`,
     kind: "file",
     mime: NEUTRON_APP_MIME,
     size: 0,
     createdAt: 2,
     modifiedAt: 2,
-    metadata: neutronAppMetadata(input),
+    metadata: neutronAppMetadata({
+      elementId: input.elementId,
+      ...(input.name ? { name: input.name } : {}),
+      ...(input.description ? { description: input.description } : {}),
+      ...(input.icon ? { icon: input.icon } : {}),
+    }),
   };
 }
 
@@ -44,6 +55,21 @@ function staticSearchFs(children: readonly FsNode[]): FsService {
       return parentId === root.id ? children.map((node) => structuredClone(node)) : [];
     },
   } as FsService;
+}
+
+function element(
+  id: string,
+  running: ExternalElement["running"],
+  input: { name?: string; description?: string; icon?: string } = {},
+): ExternalElement {
+  return {
+    id,
+    name: input.name ?? id,
+    description: input.description ?? "",
+    ...(input.icon ? { icon: input.icon } : {}),
+    tiles: [{ id: "main", title: input.name ?? id }],
+    running,
+  };
 }
 
 test("canonical Neutron projection metadata classifies as Apps without trusting the .neutron suffix", () => {
@@ -63,7 +89,69 @@ test("canonical Neutron projection metadata classifies as Apps without trusting 
   expect(categorizeFsNode(suffixOnly)).toBe("documents");
 });
 
-test("Search de-duplicates a projection against direct Element discovery while retaining canonical opening identity", async () => {
+test("Neutron projection Search presentation uses canonical application metadata without renaming the resource", async () => {
+  const projection = projectionNode("projection-review", {
+    elementId: "review",
+    name: "Review",
+    diskName: "Review.neutron",
+    description: "Collaborative reviews",
+    icon: "review-icon",
+  });
+
+  const batch = await searchShell(staticSearchFs([projection]), [], [], "");
+  const result = batch.results.find((candidate) => candidate.kind === "neutron-projection");
+  expect(result?.kind).toBe("neutron-projection");
+  if (!result || result.kind !== "neutron-projection") throw new Error("Review projection result is unavailable");
+
+  expect(result.title).toBe("Review");
+  expect(result.title).not.toContain(".neutron");
+  expect(result.subtitle).toBe("Collaborative reviews");
+  expect(result.node.id).toBe(projection.id);
+  expect(result.node.name).toBe("Review.neutron");
+  expect(result.icon).toBe("review-icon");
+  expect(searchApplicationIcon(result)).toBe("review-icon");
+});
+
+test("projection presentation falls back to canonical Element identity instead of the raw filename", async () => {
+  const projection = projectionNode("projection-fallback", {
+    elementId: "review.fallback",
+    diskName: "Internal-Package.neutron",
+  });
+
+  const batch = await searchShell(staticSearchFs([projection]), [], [], "");
+  const result = batch.results.find((candidate) => candidate.kind === "neutron-projection");
+  expect(result?.kind).toBe("neutron-projection");
+  if (!result || result.kind !== "neutron-projection") throw new Error("Fallback projection result is unavailable");
+
+  expect(result.title).toBe("review.fallback");
+  expect(result.title).not.toBe(projection.name);
+  expect(result.subtitle).toBe("Neutron application");
+  expect(result.icon).toBeUndefined();
+  expect(result.node.name).toBe("Internal-Package.neutron");
+});
+
+test("direct Element Search state uses user-facing vocabulary and preserves unknown uncertainty", async () => {
+  const running = element("review", "yes", { name: "Review", description: "Collaborative reviews" });
+  const stopped = element("mail", "no", { name: "Mail" });
+  const unknown = element("calendar", "unknown", { name: "Calendar", description: "Calendar" });
+
+  const batch = await searchShell(staticSearchFs([]), [], [running, stopped, unknown], "");
+  const resultFor = (id: string) => batch.results.find(
+    (result) => result.kind === "element" && result.element.id === id,
+  );
+
+  expect(resultFor("review")?.subtitle).toBe("Collaborative reviews · Running");
+  expect(resultFor("mail")?.subtitle).toBe("Neutron application · Not running");
+  expect(resultFor("calendar")?.subtitle).toBe("Calendar · Runtime status unavailable");
+  expect(resultFor("calendar")?.subtitle.toLocaleLowerCase()).not.toContain("not running");
+  expect(resultFor("calendar")?.subtitle.toLocaleLowerCase()).not.toContain("stopped");
+
+  for (const result of batch.results) {
+    expect(result.subtitle).not.toMatch(/running\s+(yes|no|unknown)/iu);
+  }
+});
+
+test("Search de-duplicates a projection against direct Element discovery while retaining canonical opening identity and presentation", async () => {
   const projection = projectionNode("projection-mail", {
     elementId: "mail",
     name: "Projected Mail",
@@ -101,13 +189,24 @@ test("Search de-duplicates a projection against direct Element discovery while r
   expect(mail.category).toBe("apps");
   expect(mail.id).toBe("element:mail");
   expect(mail.node.id).toBe(projection.id);
+  expect(mail.node.name).toBe(projection.name);
   expect(mail.elementId).toBe(direct.id);
   expect(mail.title).toBe(direct.name);
-  expect(mail.subtitle).toBe("Canonical Neutron Mail · running yes");
+  expect(mail.subtitle).toBe("Canonical Neutron Mail · Running");
   expect(mail.icon).toBe(direct.icon);
+  expect(searchApplicationIcon(mail)).toBe(direct.icon);
+
+  const directBatch = await searchShell(staticSearchFs([]), [], [direct], "");
+  const directResult = directBatch.results.find(
+    (result) => result.kind === "element" && result.element.id === direct.id,
+  );
+  expect(directResult?.title).toBe(mail.title);
+  expect(directResult?.subtitle).toBe(mail.subtitle);
+  expect(directResult && searchApplicationIcon(directResult)).toBe(mail.icon);
 
   const calendar = batch.results.find(
     (result) => result.kind === "element" && result.element.id === directOnly.id,
   );
   expect(calendar?.kind).toBe("element");
+  expect(calendar?.subtitle).toBe("Canonical Neutron Calendar · Runtime status unavailable");
 });

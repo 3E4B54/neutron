@@ -53,6 +53,7 @@ import {
 import {
   filterSearchResults,
   LatestSearchController,
+  searchApplicationIcon,
   searchShell,
   subscribeSearchInvalidation,
   type SearchBatch,
@@ -566,7 +567,7 @@ export function Shell({
       <div className="plasmon-shell__tabs" role="tablist">{(["all", "apps", "documents", "media", "atoms"] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={searchTab === tab} onClick={() => setSearchTab(tab)}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
       <div className="plasmon-shell__results" onKeyDown={(event) => focusRelative(event, "[data-search-result]")}>{searchError ? <p role="alert">{searchError}</p> : null}{searchBatch.warnings.map((warning) => <p key={warning}>{warning}</p>)}{searchBatch.truncated ? <p>Search reached its local safety/result limit; refine the query for more matches.</p> : null}{filteredSearch.map((result) => {
         const presentation = result.kind === "start-shortcut" ? shortcutPresentation(result.target) : null;
-        const icon = result.kind === "native-app" ? result.app.icon : result.kind === "element" ? result.element.icon : presentation?.icon;
+        const icon = searchApplicationIcon(result) ?? presentation?.icon;
         return <button key={result.id} type="button" data-search-result onClick={() => void openSearchResult(result)} disabled={busyId === result.id}>{icon ? <ShellIcon icon={icon} label={result.title} /> : null}<span><strong>{result.title}</strong><small>{result.subtitle}</small></span><em>{result.category}</em></button>;
       })}{!searchBusy && filteredSearch.length === 0 ? <p>No results in this category.</p> : null}</div>
     </section> : null}
