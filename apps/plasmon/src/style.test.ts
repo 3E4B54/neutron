@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 const ROOT_STYLESHEET = new URL("./style.scss", import.meta.url);
 const STALE_LAUNCHER_MARKERS = [
   ".plasmon-app",
+  ".plasmon-shell",
   ".sidebar",
   ".app-card",
   ".install-dialog",
