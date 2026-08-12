@@ -39,6 +39,32 @@
     }
   };
 
+  const disableDeniedScreenWakeLock = () => {
+    // The installed Neutron sandbox does not delegate screen-wake-lock to the
+    // child runtime. Chromium still exposes navigator.wakeLock there, so
+    // EmulatorJS 4.2.3 attempts request("screen") and lets the permissions-
+    // policy rejection abort startup. Hide only that unavailable capability in
+    // this child realm so EmulatorJS takes its normal no-wake-lock fallback;
+    // do not grant the permission and do not fake a successful wake lock.
+    if (!("wakeLock" in window.navigator)) return;
+
+    try {
+      let owner = window.navigator;
+      while (owner && !Object.prototype.hasOwnProperty.call(owner, "wakeLock")) {
+        owner = Object.getPrototypeOf(owner);
+      }
+      const descriptor = owner && Object.getOwnPropertyDescriptor(owner, "wakeLock");
+      if (!owner || descriptor?.configurable !== true || !Reflect.deleteProperty(owner, "wakeLock")) {
+        throw new Error("screen wake lock property cannot be masked");
+      }
+      if ("wakeLock" in window.navigator) {
+        throw new Error("screen wake lock remains exposed after masking");
+      }
+    } catch (error) {
+      throw new Error(`Unable to isolate EmulatorJS screen wake lock: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   window.addEventListener("error", (event) => {
     fail(event.error || event.message || "EmulatorJS runtime error");
   });
@@ -78,6 +104,7 @@
       const dataRoot = new URL("./runtime/emulatorjs/data/", window.location.href).href;
 
       disableBrowserPersistence();
+      disableDeniedScreenWakeLock();
       gameUrl = URL.createObjectURL(new Blob([message.bytes], { type: "application/octet-stream" }));
       window.EJS_player = "#game";
       window.EJS_core = "nes";
