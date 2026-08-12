@@ -1,0 +1,52 @@
+name: Issue 29 Games verification
+
+on:
+  push:
+    branches:
+      - work/games/29-remove-hackathon-seed
+  workflow_dispatch:
+
+jobs:
+  package-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: nix develop --command bash -lc 'set -euxo pipefail; npm ci'
+
+      - name: Focused js-dos association tests
+        run: nix develop --command bash -lc 'set -euxo pipefail; bun test apps/plasmon/src/native-apps/jsdos/jsdos.test.ts'
+
+      - name: Package Plasmon
+        run: nix develop --command bash -lc 'set -euxo pipefail; npm --workspace neutron-plasmon run package'
+
+      - name: Check packaged game/runtime fixture assets
+        run: |
+          set -euxo pipefail
+          test -s 'apps/plasmon/dist/web/System/Program Files/js-dos/js-dos.js'
+          test -s 'apps/plasmon/dist/web/System/Program Files/js-dos/js-dos.css'
+          test -s 'apps/plasmon/dist/web/System/Program Files/js-dos/emulators/wdosbox.js'
+          test -s 'apps/plasmon/dist/web/System/Program Files/js-dos/emulators/wdosbox.wasm'
+          test -s 'apps/plasmon/dist/web/Games/DOS Bundles/Doom.jsdos'
+
+      - name: Start packaged Plasmon
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory apps/plasmon/dist/web >/tmp/plasmon-games-http.log 2>&1 &
+          echo $! >/tmp/plasmon-games-http.pid
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/plasmon-games-http.log
+          exit 1
+
+      - name: Normal-boot and explicit-game browser proof
+        run: nix develop --command bash -lc 'set -euxo pipefail; npx playwright test test/e2e/plasmon-games-proof.spec.ts --project=chromium --retries=0'
