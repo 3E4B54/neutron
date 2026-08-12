@@ -25,7 +25,8 @@ export type SystemIconName =
   | "photos"
   | "browser"
   | "recycle-bin"
-  | "properties";
+  | "properties"
+  | "pin";
 
 export const FILE_TYPE_ICON_ASSETS: Readonly<Record<FileTypeIconName, string>> = Object.freeze({
   folder: `${PLASMON_ICON_ASSET_ROOT}/folder.svg`,
@@ -53,6 +54,7 @@ export const SYSTEM_ICON_ASSETS: Readonly<Record<SystemIconName, string>> = Obje
   browser: `${PLASMON_ICON_ASSET_ROOT}/browser.svg`,
   "recycle-bin": `${PLASMON_ICON_ASSET_ROOT}/recycle-bin.svg`,
   properties: `${PLASMON_ICON_ASSET_ROOT}/properties.svg`,
+  pin: `${PLASMON_ICON_ASSET_ROOT}/pin.svg`,
 });
 
 export const SHORTCUT_OVERLAY_ASSET = `${PLASMON_ICON_ASSET_ROOT}/shortcut-overlay.svg`;
