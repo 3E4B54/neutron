@@ -105,20 +105,11 @@ jobs:
             const issueNumber = context.payload.issue.number;
             const apiVersion = '2026-03-10';
 
-            const { data: fields } = await github.request('GET /orgs/{org}/issue-fields', {
-              org: owner,
-              headers: {
-                'X-GitHub-Api-Version': apiVersion,
-              },
-            });
-
-            const fieldsByName = new Map(fields.map((field) => [field.name, field]));
-            const requiredFields = ['Desire', 'Effort', 'Area'];
-            const missingFields = requiredFields.filter((name) => !fieldsByName.has(name));
-            if (missingFields.length) {
-              core.setFailed(`Missing organization issue field(s): ${missingFields.join(', ')}`);
-              return;
-            }
+            const fieldIds = {
+              Effort: 45341550,
+              Desire: 45464444,
+              Area: 45464445,
+            };
 
             await github.request('PATCH /repos/{owner}/{repo}/issues/{issue_number}', {
               owner,
@@ -126,9 +117,9 @@ jobs:
               issue_number: issueNumber,
               type: parsed.type,
               issue_field_values: [
-                { field_id: fieldsByName.get('Desire').id, value: parsed.desire },
-                { field_id: fieldsByName.get('Effort').id, value: parsed.effort },
-                { field_id: fieldsByName.get('Area').id, value: parsed.area },
+                { field_id: fieldIds.Desire, value: parsed.desire },
+                { field_id: fieldIds.Effort, value: parsed.effort },
+                { field_id: fieldIds.Area, value: parsed.area },
               ],
               headers: {
                 'X-GitHub-Api-Version': apiVersion,
