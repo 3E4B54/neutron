@@ -17,6 +17,10 @@ Plasmon native app -> Plasmon process/window host
 Neutron application -> Kernel-owned surface
 ```
 
+## Operational coordination
+
+This directory intentionally does not maintain per-agent branch or ownership handoffs. Current work is routed through canonical GitHub Issues/Areas and current Coordinator assignments. Historical wave-era and branch-specific handoffs remain available in Git history only and must not be treated as active integration instructions.
+
 ## Refactor direction
 
 Keep the service graph explicit and composition small. When integration code accumulates filename/app-specific policy, move that policy to the owning subsystem and keep only dependency wiring here.
