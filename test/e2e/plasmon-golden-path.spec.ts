@@ -280,9 +280,38 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     await expect(firstLine).toBeVisible();
     await firstLine.click({ position: { x: 8, y: 10 } });
     await expect(browserInput).toBeFocused();
+    await browserInput.evaluate((element) => {
+      const input = element as HTMLDivElement & { editContext?: EditContext | null };
+      const root = element.closest(".monaco-editor");
+      if (!root) throw new Error("Monaco editor root is unavailable before input");
+      const state = globalThis as typeof globalThis & {
+        __issue67EditorRoot?: Element;
+        __issue67EditContext?: EditContext | null;
+      };
+      state.__issue67EditorRoot = root;
+      state.__issue67EditContext = input.editContext ?? null;
+    });
     await page.keyboard.insertText(options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await expect(firstLine).toHaveText(options.persistedText);
+    await expect(surface).toHaveAttribute("data-editor-ready", "true");
+    const identity = await browserInput.evaluate((element) => {
+      const input = element as HTMLDivElement & { editContext?: EditContext | null };
+      const state = globalThis as typeof globalThis & {
+        __issue67EditorRoot?: Element;
+        __issue67EditContext?: EditContext | null;
+      };
+      return {
+        editorRootStable: element.closest(".monaco-editor") === state.__issue67EditorRoot,
+        editContextStable: (input.editContext ?? null) === state.__issue67EditContext,
+        focusStable: document.activeElement === element,
+      };
+    });
+    expect(identity, `${options.appLabel} must keep one live Monaco/EditContext through the edit`).toEqual({
+      editorRootStable: true,
+      editContextStable: true,
+      focusStable: true,
+    });
     expectNoIssue67PageErrors(`${options.appLabel} edit must not emit browser errors`);
 
     const save = opened.editorWindow.getByRole("button", { name: "Save", exact: true });
