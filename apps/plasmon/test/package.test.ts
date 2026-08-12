@@ -11,6 +11,8 @@ const manifestUrl = new URL("../neutron.json", import.meta.url);
 const backendUrl = new URL("../backend/main.mo", import.meta.url);
 const htmlUrl = new URL("../dist/web/index.html", import.meta.url);
 const cssUrl = new URL("../dist/web/main.css", import.meta.url);
+const emulatorHostHtmlUrl = new URL("../dist/web/emulatorjs-host.html", import.meta.url);
+const emulatorHostScriptUrl = new URL("../dist/web/emulatorjs-host.js", import.meta.url);
 const emulatorRuntimeUrl = new URL("../dist/web/System/Program Files/EmulatorJS/runtime.json", import.meta.url);
 const emulatorLoaderUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/loader.js", import.meta.url);
 const emulatorScriptUrl = new URL("../dist/web/System/Program Files/EmulatorJS/data/emulator.min.js", import.meta.url);
@@ -89,8 +91,10 @@ test("plasmon bundles the shared design system stylesheet", async () => {
   expect(css).toContain("--nt-bg-panel");
 });
 
-test("plasmon packages EmulatorJS, its NES core, and the generated legal proof ROM", async () => {
-  const [runtime, loader, script, style, core, legacyCore, fixture] = await Promise.all([
+test("plasmon packages EmulatorJS, its isolated host, NES core, and generated legal proof ROM", async () => {
+  const [hostHtml, hostScript, runtime, loader, script, style, core, legacyCore, fixture] = await Promise.all([
+    readFile(emulatorHostHtmlUrl, "utf8"),
+    readFile(emulatorHostScriptUrl, "utf8"),
     readFile(emulatorRuntimeUrl, "utf8"),
     readFile(emulatorLoaderUrl, "utf8"),
     readFile(emulatorScriptUrl),
@@ -100,6 +104,12 @@ test("plasmon packages EmulatorJS, its NES core, and the generated legal proof R
     readFile(emulatorFixtureUrl),
   ]);
 
+  expect(hostHtml).toContain("./emulatorjs-host.js");
+  expect(hostHtml).toContain('id="game"');
+  expect(hostScript).toContain('channel: CHANNEL');
+  expect(hostScript).toContain('window.EJS_ready = () => post("loaded")');
+  expect(hostScript).toContain('window.EJS_onGameStart = () => post("ready")');
+  expect(hostScript).toContain("System/Program Files/EmulatorJS/data/loader.js");
   expect(JSON.parse(runtime)).toMatchObject({
     runtime: "EmulatorJS",
     version: "4.2.3",
