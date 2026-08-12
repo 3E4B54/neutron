@@ -40,6 +40,7 @@ export interface ReviewEngineOptions {
 export class ReviewEngine {
   private readonly now: () => number;
   private readonly id: NonNullable<ReviewEngineOptions["id"]>;
+  private readonly atomWrites = new Map<AtomId, Promise<void>>();
 
   constructor(private readonly persistence: ReviewPersistence, options: ReviewEngineOptions = {}) {
     this.now = options.now ?? (() => Date.now());
@@ -111,53 +112,55 @@ export class ReviewEngine {
 
   async apply(request: ApplyReviewCommandRequest): Promise<ApplyReviewCommandResult> {
     validateCommandId(request.commandId);
-    const prior = await this.persistence.findReceipt(request.commandId);
-    if (prior) {
-      if (prior.atomId !== request.atomId) throw new ReviewEngineError("COMMAND_ID_REUSED", "CommandId was already used for another Atom");
-      return receiptResult(prior, true);
-    }
-    const current = await this.getAtom(request.atomId);
-    if (current.meta.currentRevision !== request.expectedRevision) {
-      throw new ReviewEngineError("REVISION_CONFLICT", "Review Atom changed before this command was applied", {
-        expectedRevision: request.expectedRevision,
-        currentRevision: current.meta.currentRevision,
+    return this.withAtomWrite(request.atomId, async () => {
+      const prior = await this.persistence.findReceipt(request.commandId);
+      if (prior) {
+        if (prior.atomId !== request.atomId) throw new ReviewEngineError("COMMAND_ID_REUSED", "CommandId was already used for another Atom");
+        return receiptResult(prior, true);
+      }
+      const current = await this.getAtom(request.atomId);
+      if (current.meta.currentRevision !== request.expectedRevision) {
+        throw new ReviewEngineError("REVISION_CONFLICT", "Review Atom changed before this command was applied", {
+          expectedRevision: request.expectedRevision,
+          currentRevision: current.meta.currentRevision,
+        });
+      }
+      const revisionId = this.id("revision");
+      const sequence = current.meta.currentSequence + 1;
+      const now = this.now();
+      const actor = normalizeActor(request.actor);
+      const operation = normalizeOperation(request.operation, this.id);
+      const change = await this.applyOperation(current, operation, actor, revisionId, now);
+      const meta: ReviewAtomMeta = {
+        ...current.meta,
+        currentRevision: revisionId,
+        currentSequence: sequence,
+        updatedAt: now,
+      };
+      const state: ReviewAtomState = { meta, items: change.state.items, comments: change.state.comments };
+      const revision: ReviewRevision = {
+        atomId: request.atomId,
+        revisionId,
+        sequence,
+        parentRevisionId: current.meta.currentRevision,
+        actor,
+        occurredAt: now,
+        operation,
+        summary: change.summary,
+      };
+      const receipt = makeReceipt(request.commandId, meta);
+      const requiresCheckpoint = operation.type === "history.restore" || sequence % CHECKPOINT_INTERVAL === 0;
+      await this.persistence.commit({
+        meta,
+        revision,
+        receipt,
+        ...(change.replaceCurrent ? { replaceCurrent: state } : {}),
+        ...(!change.replaceCurrent && change.putItems.length ? { putItems: change.putItems } : {}),
+        ...(!change.replaceCurrent && change.putComments.length ? { putComments: change.putComments } : {}),
+        ...(requiresCheckpoint ? { checkpoint: checkpoint(state, revision) } : {}),
       });
-    }
-    const revisionId = this.id("revision");
-    const sequence = current.meta.currentSequence + 1;
-    const now = this.now();
-    const actor = normalizeActor(request.actor);
-    const operation = normalizeOperation(request.operation, this.id);
-    const change = await this.applyOperation(current, operation, actor, revisionId, now);
-    const meta: ReviewAtomMeta = {
-      ...current.meta,
-      currentRevision: revisionId,
-      currentSequence: sequence,
-      updatedAt: now,
-    };
-    const state: ReviewAtomState = { meta, items: change.state.items, comments: change.state.comments };
-    const revision: ReviewRevision = {
-      atomId: request.atomId,
-      revisionId,
-      sequence,
-      parentRevisionId: current.meta.currentRevision,
-      actor,
-      occurredAt: now,
-      operation,
-      summary: change.summary,
-    };
-    const receipt = makeReceipt(request.commandId, meta);
-    const requiresCheckpoint = operation.type === "history.restore" || sequence % CHECKPOINT_INTERVAL === 0;
-    await this.persistence.commit({
-      meta,
-      revision,
-      receipt,
-      ...(change.replaceCurrent ? { replaceCurrent: state } : {}),
-      ...(!change.replaceCurrent && change.putItems.length ? { putItems: change.putItems } : {}),
-      ...(!change.replaceCurrent && change.putComments.length ? { putComments: change.putComments } : {}),
-      ...(requiresCheckpoint ? { checkpoint: checkpoint(state, revision) } : {}),
+      return receiptResult(receipt, false);
     });
-    return receiptResult(receipt, false);
   }
 
   async history(atomId: AtomId): Promise<ReviewRevision[]> {
@@ -199,6 +202,22 @@ export class ReviewEngine {
       updatedAt: target.occurredAt,
     };
     return sortState(state);
+  }
+
+  private async withAtomWrite<T>(atomId: AtomId, operation: () => Promise<T>): Promise<T> {
+    const previous = this.atomWrites.get(atomId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.catch(() => undefined).then(() => gate);
+    this.atomWrites.set(atomId, tail);
+
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.atomWrites.get(atomId) === tail) this.atomWrites.delete(atomId);
+    }
   }
 
   private async applyOperation(
