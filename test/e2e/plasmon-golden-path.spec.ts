@@ -286,9 +286,11 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
       if (!root) throw new Error("Monaco editor root is unavailable before input");
       const state = globalThis as typeof globalThis & {
         __issue67EditorRoot?: Element;
+        __issue67BrowserInput?: Element;
         __issue67EditContext?: EditContext | null;
       };
       state.__issue67EditorRoot = root;
+      state.__issue67BrowserInput = element;
       state.__issue67EditContext = input.editContext ?? null;
     });
     await page.keyboard.insertText(options.persistedText);
@@ -299,16 +301,19 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
       const input = element as HTMLDivElement & { editContext?: EditContext | null };
       const state = globalThis as typeof globalThis & {
         __issue67EditorRoot?: Element;
+        __issue67BrowserInput?: Element;
         __issue67EditContext?: EditContext | null;
       };
       return {
         editorRootStable: element.closest(".monaco-editor") === state.__issue67EditorRoot,
+        browserInputStable: element === state.__issue67BrowserInput,
         editContextStable: (input.editContext ?? null) === state.__issue67EditContext,
         focusStable: document.activeElement === element,
       };
     });
-    expect(identity, `${options.appLabel} must keep one live Monaco/EditContext through the edit`).toEqual({
+    expect(identity, `${options.appLabel} must keep one live Monaco input through the edit`).toEqual({
       editorRootStable: true,
+      browserInputStable: true,
       editContextStable: true,
       focusStable: true,
     });
