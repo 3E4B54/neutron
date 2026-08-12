@@ -248,6 +248,15 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     }
   };
 
+  const typeMonacoText = async (line: ReturnType<typeof nativeWindows.last>, text: string) => {
+    let expected = "";
+    for (const character of text) {
+      await page.keyboard.type(character);
+      expected += character;
+      await expect(line, "Monaco must render each real key before the next key is sent").toHaveText(expected);
+    }
+  };
+
   const exercisePackagedEditor = async (options: {
     createButton: "New Text Document" | "New Markdown Document";
     generatedName: "New Text Document" | "New Markdown Document";
@@ -271,7 +280,7 @@ test("packaged Plasmon boots its real tile and protects native desktop workflows
     await expect(firstLine).toBeVisible();
     await firstLine.click({ position: { x: 8, y: 10 } });
     await expect(editContext).toBeFocused();
-    await page.keyboard.type(options.persistedText, { delay: 10 });
+    await typeMonacoText(firstLine, options.persistedText);
     await expect(opened.editorWindow.getByText("Modified", { exact: true })).toBeVisible();
     await expect(firstLine).toHaveText(options.persistedText);
     expectNoIssue67PageErrors(`${options.appLabel} edit must not emit browser errors`);
