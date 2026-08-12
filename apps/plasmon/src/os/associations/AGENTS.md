@@ -10,6 +10,7 @@ This subsystem owns handler registration, deterministic matching, persisted user
 - Association resolution chooses candidates; actual native/Neutron/external execution is delegated through public opening services.
 - One-off Open must not silently change a persisted default.
 - Persisted defaults must use the matcher/type identity produced by association logic rather than a UI-guessed key.
+- Production/default composition persists association preferences through `FsServiceAssociationDefaultStore`; `MemoryAssociationDefaultStore` is for explicitly isolated tests. Do not introduce foreground `localStorage` or another browser-local durable association-default authority.
 - Shared content/type metadata should be coherent across consumers; do not scatter extension/MIME conditionals through UI components.
 - Malformed optional metadata or preference-store failures should degrade predictably without making built-in resolution nondeterministic.
 - Preserve logical Atom/resource identity independently of filename/path and physical runtime identity.

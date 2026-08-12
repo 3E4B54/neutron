@@ -58,6 +58,22 @@ Use real browser/Neutron automation only when the claim depends on browser or in
 
 Keep Playwright intentionally small and semantic. Stable tests should target user intent and durable roles/identifiers rather than CSS geometry or transient visual structure.
 
+The packaged golden-path spec lives in the repository-wide Playwright tree at `test/e2e/plasmon-golden-path.spec.ts`, because it intentionally reuses the existing root Playwright configuration and Neutron provisioning/runtime helpers. Its dedicated deployment input is `plasmon-local.ndeploy.json`.
+
+From the repository root, run a local session with:
+
+```sh
+# Terminal 1
+npm run provision -- plasmon-local.ndeploy.json serve
+
+# Terminal 2
+npm run test:e2e:plasmon:fresh
+```
+
+Use `npm run test:e2e:plasmon` to rerun only the browser spec against the already deployed matching session. **Plasmon Packaged Browser CI** runs this same narrow installed-package boundary in CI.
+
+Do not add broad Desktop/FileManager/Start/Search scripts here merely because Playwright can click them. Their deterministic behavior belongs in production models/controllers/services and Bun/headless tests. Screenshot regression is also outside this lane unless visual fidelity itself becomes a separately accepted contract.
+
 ## Cross-surface workflow tests
 
 A major goal of the Plasmon harness is to test the same production authority through every relevant surface. When Desktop, FileManager, Start, Search, or native applications expose the same operation, prefer shared headless workflow tests over duplicating browser scripts.
@@ -68,4 +84,6 @@ Tests should call the same production models/controllers/commands that React ada
 
 `Plasmon Fast CI` executes the same fast command used locally. Agents without Bun must push their branch, use that workflow as the feedback loop, and report the exact CI result.
 
-A green fast suite does not supersede a failing package/browser/manual acceptance path. Escaped repeatable failures should gain the lowest-level reliable automated coverage possible.
+`Plasmon Packaged Browser CI` is a separate acceptance lane: it packages the Kernel and Plasmon, provisions the minimal Plasmon PocketIC config, runs the Plasmon package test, and executes only the golden-path browser spec. A green fast suite does not supersede a failure in this package/browser lane.
+
+Escaped repeatable failures should gain the lowest-level reliable automated coverage possible.

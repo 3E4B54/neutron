@@ -18,6 +18,8 @@ Hosted Plasmon keeps durable browser filesystem ownership behind the application
 
 `core.ts` composes the higher-level filesystem policy layer around the raw service: bootstrap/reconciliation, protected managed resources, Trash operations, external application projections, and the shared filesystem-aware open dispatcher. Durable seeds and demo/fixture seeds are intentionally separate inputs.
 
+The open dispatcher owns resource classification, shortcut dereference, system/native application dispatch, Neutron application dispatch, and association-based opening. Its optional directory presentation callback lets a caller such as an existing Explorer window navigate in place after the dispatcher has resolved the resource as a directory; without that callback the canonical default remains opening Explorer through the process service.
+
 ## Durable semantics
 
 - A node has stable identity independent of path and display name.
