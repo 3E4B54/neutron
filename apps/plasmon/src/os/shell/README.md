@@ -11,7 +11,7 @@ Filesystem-backed Start and Search activation delegates to the canonical `Filesy
 The directory already separates a number of deterministic concerns:
 
 - `activation.ts` — thin Start/Search adapters into canonical filesystem opening;
-- `model.ts` — taskbar/tray derivation and native task actions;
+- `model.ts` — taskbar/tray derivation, user-facing taskbar presentation state, and native task actions;
 - `preferences.ts` — persisted shell preferences;
 - `search.ts` — search/query inventory, classification, limits, and invalidation;
 - `startMenu.ts` — Start inventory, reconciliation, and shortcut presentation metadata;
@@ -20,6 +20,8 @@ The directory already separates a number of deterministic concerns:
 - `calendar.ts` — date/calendar calculations.
 
 `Shell.tsx` composes those models with DOM/browser lifecycle, flyouts, keyboard/pointer events, and rendering.
+
+Taskbar presentation is a projection of existing authorities rather than a lifecycle store. Native pinned/running/active state is derived from Process and Windowing snapshots; transient launch state may reflect an in-progress Shell action; Element running state comes from `NeutronBridge`, and an unavailable runtime observation remains explicitly uncertain rather than being interpreted as stopped.
 
 `/System/Start Menu` remains the durable filesystem authority for Start. Default Settings, Explorer, and Properties shortcuts are seeded directly at that Start root rather than under a managed visible `System` category. Retirement of the former managed `System` child is deliberately conservative: only the exact previously-seeded, uncustomized legacy default shape is migrated; user renames, moves, deletions, folder metadata, or extra content prevent migration and are preserved.
 
