@@ -87,5 +87,5 @@ jobs:
             npm run provision -- plasmon-local.ndeploy.json status
             npm run provision -- plasmon-local.ndeploy.json reinstall
             NEUTRON_NDEPLOY_CONFIG=plasmon-local.ndeploy.json \
-              npx playwright test test/e2e/plasmon-golden-path.spec.ts test/e2e/plasmon-demo-game.spec.ts
+              npx playwright test test/e2e/plasmon-golden-path.spec.ts test/e2e/plasmon-demo-game.spec.ts --reporter=github
           '
