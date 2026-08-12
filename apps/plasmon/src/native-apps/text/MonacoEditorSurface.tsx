@@ -86,6 +86,10 @@ export function MonacoEditorSurface({
           theme: "vs-dark",
           readOnly,
           ariaLabel,
+          // Monaco 0.54's EditContext input path is still experimental. The
+          // packaged Chromium path can cancel/dispose EditContext state during
+          // active input, so keep the stable textarea input path authoritative.
+          editContext: false,
           fontSize: 14,
           lineHeight: 21,
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
