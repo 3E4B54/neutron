@@ -7,6 +7,7 @@ Use the nearest subsystem `README.md` and `AGENTS.md` for day-to-day ownership a
 ## Parity and acceptance
 
 - [`DAEDALOS_PARITY_LEDGER.md`](DAEDALOS_PARITY_LEDGER.md) — concise evidence ledger for daedalOS feature-completeness reference behavior and Plasmon implementation, headless, packaged/browser, and human/manual acceptance state.
+- [`ACCEPTANCE_2026-08-11_BASELINE_GATE.md`](ACCEPTANCE_2026-08-11_BASELINE_GATE.md) — integrated disposition of the 2026-08-11 packaged/manual review findings and the remaining blockers to the next Plasmon acceptance milestone.
 
 The parity ledger is an acceptance index, not a second backlog. GitHub Issues remain canonical work. Advance each ledger evidence column only when that exact layer is actually proven: source presence can establish implementation, deterministic production tests establish headless verification, real installed/browser execution establishes package/browser verification, and dated human review establishes manual acceptance. Unknown evidence stays unverified rather than being inferred from a different layer.
 
