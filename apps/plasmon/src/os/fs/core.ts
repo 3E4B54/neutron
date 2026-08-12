@@ -18,6 +18,11 @@ import {
   type TrashEntry,
 } from "./managed.ts";
 import { FilesystemOpenDispatcher } from "./openDispatcher.ts";
+import {
+  ManagedProgramFilesService,
+  reconcileProgramFilesRoot,
+  type ProgramFilesService,
+} from "./programFiles.ts";
 import { ProtectedManagedFsService } from "./protectedService.ts";
 import { StableNeutronProjectionService } from "./stableProjection.ts";
 
@@ -47,6 +52,7 @@ export interface FilesystemTrashService {
 export interface FilesystemCoreServices {
   fs: ProtectedManagedFsService;
   ready: Promise<FilesystemCoreInitialization>;
+  programFiles: ProgramFilesService;
   trash: FilesystemTrashService;
   open: FilesystemOpenDispatcher;
   projections: StableNeutronProjectionService;
@@ -83,6 +89,10 @@ export function createFilesystemCore(options: FilesystemCoreOptions): Filesystem
       ...(options.durableSeeds ? { durableSeeds: options.durableSeeds } : {}),
       ...(options.demoSeeds ? { demoSeeds: options.demoSeeds } : {}),
     });
+    // Program Files has its own versioned reconciliation seam. Keep it in the
+    // canonical core startup even though legacy bootstrap already creates the
+    // directory, so metadata/version repair is guaranteed for every consumer.
+    await reconcileProgramFilesRoot(options.fs);
     await reconcileCoreDesktopSeeds(options.fs);
     let neutronProjectionError: string | null = null;
     try {
@@ -97,6 +107,7 @@ export function createFilesystemCore(options: FilesystemCoreOptions): Filesystem
 
   const ready = initialize();
   managed.setInitialization(ready);
+  const programFiles = new ManagedProgramFilesService(options.fs, ready);
 
   stopNeutron = options.neutron.subscribe(() => {
     if (disposed) return;
@@ -132,6 +143,7 @@ export function createFilesystemCore(options: FilesystemCoreOptions): Filesystem
   return {
     fs: managed,
     ready,
+    programFiles,
     trash,
     open,
     projections,
