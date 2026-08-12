@@ -155,12 +155,10 @@ test("FileManager, Start, and Search share canonical filesystem-open outcomes", 
     );
 
     const processCases: readonly {
-      name: string;
       nodes: SurfaceNodes;
       expected: { handlerId: string; nodeId: string | null };
     }[] = [
       {
-        name: "ordinary associated file",
         nodes: {
           "file-manager": note,
           start: noteShortcut,
@@ -169,7 +167,6 @@ test("FileManager, Start, and Search share canonical filesystem-open outcomes", 
         expected: { handlerId: "native:text", nodeId: note.id },
       },
       {
-        name: "shared shortcut dereference",
         nodes: {
           "file-manager": noteShortcut,
           start: noteShortcut,
@@ -178,7 +175,6 @@ test("FileManager, Start, and Search share canonical filesystem-open outcomes", 
         expected: { handlerId: "native:text", nodeId: note.id },
       },
       {
-        name: "native system application",
         nodes: {
           "file-manager": photos,
           start: photosShortcut,
@@ -193,7 +189,7 @@ test("FileManager, Start, and Search share canonical filesystem-open outcomes", 
       for (const surface of SURFACES) {
         outcomes.push(await processOutcome(environment, surface, resource.nodes[surface]));
       }
-      expect(outcomes, resource.name).toEqual([
+      expect(outcomes).toEqual([
         resource.expected,
         resource.expected,
         resource.expected,
