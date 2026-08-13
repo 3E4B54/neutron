@@ -7,11 +7,24 @@ import {
   type PackageMap,
 } from "./walk.ts";
 
+export type MotokoProgramPreparationCache = {
+  hashfiles: HashFiles;
+  writtenHashes: Set<string>;
+};
+
+export function createMotokoProgramPreparationCache(): MotokoProgramPreparationCache {
+  return {
+    hashfiles: {},
+    writtenHashes: new Set<string>(),
+  };
+}
+
 export type PrepareMotokoProgramOptions = {
   compiler: Pick<Motoko, "write">;
   sourcePath: string;
   packages?: PackageMap;
   allowDangerous?: boolean;
+  cache?: MotokoProgramPreparationCache;
 };
 
 export type PreparedMotokoProgram = {
@@ -24,23 +37,35 @@ export async function prepareMotokoProgram({
   sourcePath,
   packages = {},
   allowDangerous = false,
+  cache,
 }: PrepareMotokoProgramOptions): Promise<PreparedMotokoProgram> {
-  const hashfiles: HashFiles = {};
-  const cache: DependencyCache = {};
+  const preparationCache =
+    cache ?? createMotokoProgramPreparationCache();
+  // Dependency nodes contain parent-specific import-edge metadata,
+  // so each entrypoint needs its own dependency graph.
+  const dependencyCache: DependencyCache = {};
   const dependencies = await getDependencies(
     null,
     sourcePath,
     packages,
-    hashfiles,
-    cache,
+    preparationCache.hashfiles,
+    dependencyCache,
   );
   const used: string[] = [];
-  const [, entry] = walkReplace(dependencies, hashfiles, used, {
-    allowDangerous,
-  });
+  const [, entry] = walkReplace(
+    dependencies,
+    preparationCache.hashfiles,
+    used,
+    { allowDangerous },
+  );
   const sourceHashes = [...new Set(used)];
   for (const hash of sourceHashes) {
-    await compiler.write(`${hash}.mo`, hashfiles[hash]!.content);
+    if (preparationCache.writtenHashes.has(hash)) continue;
+    await compiler.write(
+      `${hash}.mo`,
+      preparationCache.hashfiles[hash]!.content,
+    );
+    preparationCache.writtenHashes.add(hash);
   }
   return {
     entryPath: `${entry}.mo`,
