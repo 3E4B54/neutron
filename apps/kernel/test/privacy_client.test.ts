@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
+import { assembleKernelWrapper } from "./helpers/kernel_wrapper.ts";
 
 test("kernel package assets use the HTTP asset reader", async () => {
   const [auth, apps, expose, backend, wrapper, manifestText] = await Promise.all([
@@ -7,7 +8,7 @@ test("kernel package assets use the HTTP asset reader", async () => {
     readFile(new URL("../src/reducer/apps.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/expose.ts", import.meta.url), "utf8"),
     readFile(new URL("../backend/main.mo", import.meta.url), "utf8"),
-    readFile(new URL("../backend/_neutron.mo", import.meta.url), "utf8"),
+    assembleKernelWrapper(),
     readFile(new URL("../neutron.json", import.meta.url), "utf8"),
   ]);
   const manifest = JSON.parse(manifestText) as {
