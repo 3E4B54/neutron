@@ -27,6 +27,11 @@
       devShells = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
+          fontsConf = pkgs.makeFontsConf {
+            fontDirectories = [
+              pkgs.dejavu_fonts
+            ];
+          };
           linuxPackages = pkgs.lib.optionals pkgs.stdenv.isLinux [
             pkgs.chromium
           ];
@@ -39,11 +44,15 @@
               pkgs.git
               pkgs.curl
               pkgs.bitcoin
+              pkgs.fontconfig
+              pkgs.dejavu_fonts
             ] ++ linuxPackages;
 
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
 
             shellHook = ''
+              export FONTCONFIG_FILE="${fontsConf}"
+
               if command -v chromium >/dev/null 2>&1; then
                 export PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v chromium)"
               fi
